@@ -222,14 +222,17 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
       <div className="pb-5 border-b border-white/[0.06] relative">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1.5 min-w-0">
-            <div className="flex items-center gap-2 font-mono text-xs text-cyan-300 font-bold uppercase tracking-widest">
-              <Sparkles size={14} className="text-cyan-400" />
-              <span>FINAL INTELLIGENCE REPORT // SYNTHESIS PROTOCOL</span>
+            <div className="flex items-center gap-2 font-mono text-xs font-extrabold uppercase tracking-widest">
+              <Sparkles size={14} className="text-cyan-400 animate-pulse" />
+              <span className="px-section-headline">
+                FINAL INTELLIGENCE REPORT // SYNTHESIS PROTOCOL
+              </span>
             </div>
 
-            <h2 className="text-xl sm:text-2xl font-black text-slate-100 tracking-tight font-sans m-0 leading-snug">
+            <h2 className="text-xl sm:text-2xl font-black px-headline-aurora tracking-tight font-sans m-0 leading-snug">
               &ldquo;{topic}&rdquo;
             </h2>
+            <div className="px-headline-laser-track !max-w-[320px]" />
 
             <div className="flex items-center gap-3 pt-1 flex-wrap font-mono text-xs">
               {summary.debateMode === 'genesis' && (
@@ -407,7 +410,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
-              <span className="uppercase tracking-wider">
+              <span className="uppercase tracking-wider px-section-headline font-extrabold">
                 01. QUERY & DELIBERATION SCOPE
               </span>
             </div>
@@ -450,7 +453,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
-              <span className="uppercase tracking-wider">
+              <span className="uppercase tracking-wider px-section-headline font-extrabold">
                 02. EXECUTION SUMMARY
               </span>
             </div>
@@ -504,7 +507,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
-              <span className="uppercase tracking-wider">
+              <span className="uppercase tracking-wider px-section-headline font-extrabold">
                 03. KEY FINDINGS & STRATEGIC TAKEAWAYS
               </span>
             </div>
@@ -538,7 +541,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
             >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]" />
-                <span className="uppercase tracking-wider">
+                <span className="uppercase tracking-wider px-section-headline font-extrabold">
                   04. EVIDENCE POOL & VERIFIED CLAIMS ({summary.verifiedClaims.length})
                 </span>
               </div>
@@ -597,7 +600,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-purple-400 shadow-[0_0_6px_#c084fc]" />
-              <span className="uppercase tracking-wider">
+              <span className="uppercase tracking-wider px-section-headline font-extrabold">
                 05. AGENT CONSENSUS & VALUE CONFLICTS
               </span>
             </div>
@@ -652,7 +655,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
             >
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#00f0ff]" />
-                <span className="uppercase tracking-wider">
+                <span className="uppercase tracking-wider px-section-headline font-extrabold">
                   06. VERIFIED CITATIONS & WEB SOURCES ({summary.evidenceSources.length})
                 </span>
               </div>
@@ -701,7 +704,7 @@ export const ParallaxSynthesisReport: React.FC<ParallaxSynthesisReportProps> = (
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#10b981]" />
-              <span className="uppercase tracking-wider">
+              <span className="uppercase tracking-wider px-section-headline font-extrabold">
                 07. GROUNDING CONFIDENCE & TELEMETRY
               </span>
             </div>

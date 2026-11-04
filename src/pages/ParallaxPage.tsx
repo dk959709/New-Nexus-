@@ -1353,12 +1353,32 @@ export const ParallaxPage: React.FC = () => {
               onClick={() => setActiveTab(activeTab === 'feed' ? 'settings' : 'feed')}
               className={`h-8 sm:h-9 px-3 sm:px-3.5 rounded-full flex items-center gap-1.5 text-xs sm:text-[13px] transition-all cursor-pointer truncate ${floatingPillClass} ${floatingPillHoverClass}`}
             >
-              {isRunning && (
+              {isRunning ? (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              ) : (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  className="shrink-0 overflow-visible"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="8"
+                    cy="8"
+                    r="6.2"
+                    fill="none"
+                    stroke="#38bdf8"
+                    strokeWidth="1.2"
+                    strokeDasharray="3 2"
+                    className="parallax-gfx-spin"
+                  />
+                  <circle cx="8" cy="8" r="2.5" fill="#c084fc" />
+                </svg>
               )}
-              <span className="font-semibold tracking-tight text-white">Parallax</span>
+              <span className="font-extrabold tracking-tight px-headline-aurora">Parallax</span>
               <span className="text-[#71767b]" aria-hidden="true">·</span>
-              <span className="text-[10.5px] sm:text-[11px] text-[#8b9097] font-mono tabular-nums truncate">
+              <span className="text-[10.5px] sm:text-[11px] px-subheadline-spectrum font-mono font-semibold tabular-nums truncate">
                 {isRunning
                   ? isGenesisMode
                     ? 'Round 1 of 1 Live'
@@ -1505,12 +1525,12 @@ export const ParallaxPage: React.FC = () => {
                 {/* Drawer Header */}
                 <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center font-bold text-xs shadow-sm">
+                    <div className="relative w-7 h-7 rounded-full bg-gradient-to-br from-cyan-400 via-violet-500 to-fuchsia-500 text-black flex items-center justify-center font-extrabold text-xs shadow-[0_0_12px_rgba(56,189,248,0.5)]">
                       P
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-white">Parallax Swarm</div>
-                      <div className="text-[10px] text-[#71767b]">
+                      <div className="text-xs font-extrabold px-headline-aurora">Parallax Swarm</div>
+                      <div className="text-[10px] px-subheadline-spectrum font-mono">
                         {selectedSwarmCount} of {enabledAgentsCount} Specialists Armed
                       </div>
                     </div>
@@ -1788,10 +1808,34 @@ export const ParallaxPage: React.FC = () => {
            ============================================================ */}
         {activeTab === 'archive' && (
           <div id="parallax-archive-tab" className="flex-1 py-2 space-y-3">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
-              <h3 className="m-0 text-xs sm:text-sm font-bold text-white">
-                Saved Swarm Discussions ({sessions.length})
-              </h3>
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-2.5">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 18 18"
+                    className="shrink-0"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="9"
+                      cy="9"
+                      r="7"
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="1.3"
+                      strokeDasharray="4 2"
+                      className="parallax-gfx-spin"
+                    />
+                    <circle cx="9" cy="9" r="3" fill="#ec4899" />
+                  </svg>
+                  <h3 className="m-0 text-xs sm:text-sm font-extrabold px-headline-aurora">
+                    Saved Swarm Discussions ({sessions.length})
+                  </h3>
+                </div>
+                <div className="px-headline-laser-track !max-w-[220px]" />
+              </div>
               {sessions.length > 0 && (
                 <button
                   id="parallax-clear-archive-btn"
@@ -1819,14 +1863,14 @@ export const ParallaxPage: React.FC = () => {
                   <div
                     key={sess.id}
                     id={`parallax-saved-swarm-${sess.id}`}
-                    className="p-3 flex flex-col gap-1.5 hover:bg-white/[0.02] transition-colors"
+                    className="p-3 flex flex-col gap-1.5 hover:bg-white/[0.02] transition-colors group"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[11px] font-mono text-[#71767b] tabular-nums">
+                        <span className="text-[11px] font-mono text-cyan-400/80 tabular-nums">
                           {String(idx + 1).padStart(2, '0')}
                         </span>
-                        <span className="text-xs sm:text-[13px] font-medium text-white truncate">
+                        <span className="text-xs sm:text-[13px] font-bold px-preset-headline truncate">
                           {sess.topic}
                         </span>
                       </div>
@@ -2206,10 +2250,10 @@ export const ParallaxPage: React.FC = () => {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-xs sm:text-sm">
+                        <span className="font-extrabold px-section-headline text-xs sm:text-sm">
                           {inspectedRosterAgent.name}
                         </span>
-                        <span className="text-[10.5px] text-[#8b9097]">
+                        <span className="text-[10.5px] px-subheadline-spectrum font-medium">
                           · {inspectedRosterAgent.role}
                         </span>
                       </div>
@@ -2366,9 +2410,11 @@ export const ParallaxPage: React.FC = () => {
               {isTelemetryDrawerOpen && (
                 <div className={`p-2.5 sm:p-4 space-y-4 animate-fadeIn min-w-0 overflow-hidden ${hairlineTableCardClass} divide-y-0`}>
                   <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/[0.06]">
-                    <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-white min-w-0">
-                      <Activity size={14} className="text-cyan-400 shrink-0" />
-                      <span className="truncate">Swarm Telemetry, Conviction Trajectory &amp; Constellation</span>
+                    <div className="flex items-center gap-2 text-xs sm:text-sm font-extrabold min-w-0">
+                      <Activity size={14} className="text-cyan-400 shrink-0 animate-pulse" />
+                      <span className="truncate px-section-headline">
+                        Swarm Telemetry, Conviction Trajectory &amp; Constellation
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -2483,24 +2529,149 @@ export const ParallaxPage: React.FC = () => {
               <div className="flex-1 flex flex-col justify-center py-3 sm:py-4 space-y-4 sm:space-y-5 select-text">
                 {/* Editorial Headline & Concise Lead + Live 20-Node Holographic Singularity Emblem */}
                 <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-1.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-[11px] font-mono text-[#8b9097]">
-                      <span>Parallax Multi-Agent Synthesis</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{currentModeObj.label}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{isGenesisMode ? 'Round 1 of 1' : '3 Rounds'}</span>
+                  <div className="space-y-2 min-w-0 flex-1">
+                    {/* Animated Kicker Badge with Orbital Quantum Node */}
+                    <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-cyan-400/35 bg-slate-900/60 backdrop-blur-md text-[10.5px] sm:text-[11px] font-mono px-kicker-pill">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 16 16"
+                        className="shrink-0 overflow-visible"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          cx="8"
+                          cy="8"
+                          r="6.2"
+                          fill="none"
+                          stroke="#00f0ff"
+                          strokeWidth="1.3"
+                          strokeDasharray="3.5 2"
+                          className="parallax-gfx-spin"
+                        />
+                        <circle
+                          cx="8"
+                          cy="8"
+                          r="3.8"
+                          fill="none"
+                          stroke="#ec4899"
+                          strokeWidth="1"
+                          strokeDasharray="2 2"
+                          className="parallax-gfx-spin-reverse"
+                        />
+                        <circle cx="8" cy="8" r="2" fill="#fbbf24" />
+                      </svg>
+                      <span className="px-round-headline font-bold">
+                        Parallax Multi-Agent Synthesis
+                      </span>
+                      <span className="text-white/30" aria-hidden="true">·</span>
+                      <span className="text-cyan-300 font-semibold">{currentModeObj.label}</span>
+                      <span className="text-white/30" aria-hidden="true">·</span>
+                      <span className="text-fuchsia-300 font-semibold">
+                        {isGenesisMode ? 'Round 1 of 1' : '3 Rounds'}
+                      </span>
                     </div>
 
-                    <h1 className="text-[18px] sm:text-[24px] font-semibold text-white tracking-tight leading-snug text-balance m-0">
-                      {isGenesisMode
-                        ? `${genesisAgentCount} auto-created minds. One ZENITH synthesis.`
-                        : `${selectedSwarmCount} specialized minds. One empirical synthesis.`}
-                    </h1>
-                    <p className="text-xs sm:text-[13.5px] text-[#8b9097] leading-relaxed max-w-[640px] m-0">
-                      {isGenesisMode
-                        ? `Assign any research question. ARCHITECT designs ${genesisAgentCount} custom specialists for your topic, runs targeted web searches in 1 round, and ZENITH synthesizes the complete answer.`
-                        : `Assign any research question or global dataset. Parallax mobilizes ${selectedSwarmCount} independent personas across Thesis (Round 1), Cross-Examination (Round 2), and Ranked Conviction Convergence (Round 3).`}
+                    {/* Colorful Animated Hero Headline + Graphic Equalizer & Laser Sweep */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <h1 className="text-[19px] sm:text-[26px] font-extrabold tracking-tight leading-snug text-balance m-0 px-headline-aurora">
+                          {isGenesisMode
+                            ? `${genesisAgentCount} auto-created minds. One ZENITH synthesis.`
+                            : `${selectedSwarmCount} specialized minds. One empirical synthesis.`}
+                        </h1>
+                        {/* Animated Synaptic Harmonic Equalizer Emblem beside Headline */}
+                        <svg
+                          width="34"
+                          height="20"
+                          viewBox="0 0 34 20"
+                          className="shrink-0 overflow-visible"
+                          aria-hidden="true"
+                        >
+                          <rect
+                            x="2"
+                            y="4"
+                            width="3"
+                            height="12"
+                            rx="1.5"
+                            fill="#00f0ff"
+                            className="mc-wave-bar"
+                            style={{ animationDelay: '0s' }}
+                          />
+                          <rect
+                            x="8"
+                            y="2"
+                            width="3"
+                            height="16"
+                            rx="1.5"
+                            fill="#38bdf8"
+                            className="mc-wave-bar"
+                            style={{ animationDelay: '0.18s' }}
+                          />
+                          <rect
+                            x="14"
+                            y="5"
+                            width="3"
+                            height="10"
+                            rx="1.5"
+                            fill="#a855f7"
+                            className="mc-wave-bar"
+                            style={{ animationDelay: '0.35s' }}
+                          />
+                          <rect
+                            x="20"
+                            y="1"
+                            width="3"
+                            height="18"
+                            rx="1.5"
+                            fill="#ec4899"
+                            className="mc-wave-bar"
+                            style={{ animationDelay: '0.52s' }}
+                          />
+                          <rect
+                            x="26"
+                            y="4"
+                            width="3"
+                            height="12"
+                            rx="1.5"
+                            fill="#fbbf24"
+                            className="mc-wave-bar"
+                            style={{ animationDelay: '0.7s' }}
+                          />
+                        </svg>
+                      </div>
+                      <div className="px-headline-laser-track" />
+                    </div>
+
+                    <p className="text-xs sm:text-[13.5px] text-slate-300 leading-relaxed max-w-[650px] m-0">
+                      {isGenesisMode ? (
+                        <>
+                          Assign any research question.{' '}
+                          <span className="font-semibold text-violet-300">ARCHITECT</span> designs{' '}
+                          <span className="font-semibold text-cyan-300">
+                            {genesisAgentCount} custom specialists
+                          </span>{' '}
+                          for your topic, runs targeted web searches in 1 round, and{' '}
+                          <span className="font-semibold text-amber-300">ZENITH</span> synthesizes
+                          the complete answer.
+                        </>
+                      ) : (
+                        <>
+                          Assign any research question or global dataset. Parallax mobilizes{' '}
+                          <span className="font-semibold text-cyan-300">
+                            {selectedSwarmCount} independent personas
+                          </span>{' '}
+                          across <span className="font-semibold text-sky-300">Thesis (Round 1)</span>,{' '}
+                          <span className="font-semibold text-fuchsia-300">
+                            Cross-Examination (Round 2)
+                          </span>
+                          , and{' '}
+                          <span className="font-semibold text-emerald-300">
+                            Ranked Conviction Convergence (Round 3)
+                          </span>
+                          .
+                        </>
+                      )}
                     </p>
                   </div>
 
@@ -2653,6 +2824,35 @@ export const ParallaxPage: React.FC = () => {
 
                 {/* Interactive Hairline Preview Table with Category Filter Tabs */}
                 <div className="space-y-2">
+                  {/* Colorful Section Headline for Benchmark Table */}
+                  <div className="flex items-center justify-between flex-wrap gap-2 px-0.5 pt-1">
+                    <div className="flex items-center gap-2">
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 16 16"
+                        className="shrink-0"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          cx="8"
+                          cy="8"
+                          r="6.2"
+                          fill="none"
+                          stroke="#38bdf8"
+                          strokeWidth="1.2"
+                          strokeDasharray="3 2"
+                          className="parallax-gfx-spin"
+                        />
+                        <circle cx="8" cy="8" r="2.5" fill="#10b981" />
+                      </svg>
+                      <h2 className="m-0 text-xs sm:text-[13.5px] font-extrabold tracking-tight px-section-headline">
+                        Featured Multi-Agent Intelligence Benchmarks
+                      </h2>
+                    </div>
+                    <div className="px-headline-laser-track !w-28 sm:!w-44" />
+                  </div>
+
                   <div className="flex items-center justify-between flex-wrap gap-2 px-0.5">
                     <div className="flex items-center gap-1">
                       {(
@@ -2677,7 +2877,7 @@ export const ParallaxPage: React.FC = () => {
                         </button>
                       ))}
                     </div>
-                    <span className="text-[10.5px] sm:text-[11px] font-mono text-[#71767b]">
+                    <span className="text-[10.5px] sm:text-[11px] font-mono px-subheadline-spectrum font-semibold">
                       Conviction
                     </span>
                   </div>
@@ -2699,19 +2899,29 @@ export const ParallaxPage: React.FC = () => {
                           className="w-full py-2.5 px-3 sm:py-3 sm:px-4 flex items-center justify-between gap-2.5 text-left hover:bg-white/[0.04] active:bg-white/[0.07] transition-colors cursor-pointer group"
                         >
                           <div className="flex items-center gap-3 sm:gap-5 min-w-0 flex-1">
-                            <span className="text-xs sm:text-[13.5px] font-mono text-[#8b9097] tabular-nums w-5 shrink-0">
+                            <span
+                              className="text-xs sm:text-[13.5px] font-mono font-bold tabular-nums w-5 shrink-0"
+                              style={{ color: preset.accent }}
+                            >
                               {String(idx + 1).padStart(2, '0')}
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs sm:text-[13.5px] font-medium text-white group-hover:text-emerald-300 transition-colors truncate">
+                                <span className="text-xs sm:text-[13.5px] font-bold px-preset-headline truncate">
                                   {preset.title}
                                 </span>
-                                <span className="hidden sm:inline text-[10.5px] text-[#71767b] shrink-0">
-                                  · {preset.badge}
+                                <span
+                                  className="hidden sm:inline text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-md border shrink-0"
+                                  style={{
+                                    color: preset.accent,
+                                    borderColor: `${preset.accent}40`,
+                                    backgroundColor: `${preset.accent}14`,
+                                  }}
+                                >
+                                  {preset.badge}
                                 </span>
                               </div>
-                              <div className="text-[10.5px] sm:text-xs text-[#71767b] truncate mt-0.5">
+                              <div className="text-[10.5px] sm:text-xs text-slate-400 group-hover:text-slate-200 transition-colors truncate mt-0.5">
                                 {preset.subtitle}
                               </div>
                             </div>
@@ -2795,9 +3005,33 @@ export const ParallaxPage: React.FC = () => {
 
                 {/* Editorial "Notes:" Preview Section on Idle (Mobile-friendly text size) */}
                 <div className="space-y-2 pt-0.5">
-                  <h2 className="text-xs sm:text-sm font-bold text-white tracking-tight m-0">
-                    Notes:
-                  </h2>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 16 16"
+                        className="shrink-0"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          cx="8"
+                          cy="8"
+                          r="6"
+                          fill="none"
+                          stroke="#a855f7"
+                          strokeWidth="1.2"
+                          strokeDasharray="3 2"
+                          className="parallax-gfx-spin-reverse"
+                        />
+                        <circle cx="8" cy="8" r="2.2" fill="#38bdf8" />
+                      </svg>
+                      <h2 className="text-xs sm:text-sm font-extrabold px-section-headline tracking-tight m-0">
+                        Notes &amp; Deliberation Architecture:
+                      </h2>
+                    </div>
+                    <div className="px-headline-laser-track !max-w-[230px]" />
+                  </div>
                   <ul className="list-disc pl-4 sm:pl-5 space-y-1.5 text-xs sm:text-[13px] text-[#e7e9ea] leading-relaxed m-0">
                     <li>
                       Data and conviction scores are synthesized directly from {selectedSwarmCount} autonomous domain personas (including VERITAS live web verification, AXIOM logic, and LEDGER economics).
@@ -2816,10 +3050,14 @@ export const ParallaxPage: React.FC = () => {
                  ACTIVE / COMPLETED SWARM VIEW (MOBILE-FRIENDLY SIZING + FULL TELEMETRY)
                  ========================================================== */
               <div className="flex-1 py-2.5 sm:py-3.5 space-y-4 select-text">
-                {/* 1. User Prompt Pill (Right-aligned subtle dark bubble) */}
+                {/* 1. User Prompt Pill (Right-aligned subtle dark bubble with colorful headline tag) */}
                 <div className="flex justify-end">
-                  <div className="rounded-2xl bg-[#16181c] border border-[#26292e] text-white px-3 py-2 sm:px-4 sm:py-2.5 text-xs sm:text-[13.5px] leading-relaxed max-w-[92%] sm:max-w-[80%]">
-                    {currentTopic}
+                  <div className="rounded-2xl bg-[#16181c] border border-cyan-500/30 shadow-[0_0_24px_rgba(6,182,212,0.12)] text-white px-3.5 py-2 sm:px-4 sm:py-3 text-xs sm:text-[13.5px] leading-relaxed max-w-[92%] sm:max-w-[82%] space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      <span className="px-round-headline font-bold">Active Swarm Inquiry</span>
+                    </div>
+                    <div className="font-semibold px-subheadline-spectrum">{currentTopic}</div>
                   </div>
                 </div>
 
@@ -2827,10 +3065,30 @@ export const ParallaxPage: React.FC = () => {
                 <div className={`p-2.5 sm:p-3 ${hairlineTableCardClass} divide-y-0 space-y-2.5`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      {isRunning && (
+                      {isRunning ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+                      ) : (
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          className="shrink-0"
+                          aria-hidden="true"
+                        >
+                          <circle
+                            cx="8"
+                            cy="8"
+                            r="6.2"
+                            fill="none"
+                            stroke="#38bdf8"
+                            strokeWidth="1.3"
+                            strokeDasharray="3 2"
+                            className="parallax-gfx-spin"
+                          />
+                          <circle cx="8" cy="8" r="2.4" fill="#10b981" />
+                        </svg>
                       )}
-                      <span className="text-[10.5px] sm:text-xs font-mono text-[#e7e9ea] truncate">
+                      <span className="text-[10.5px] sm:text-xs font-mono font-bold px-section-headline truncate">
                         {isRunning
                           ? statusText
                           : wasStoppedEarly
@@ -2945,7 +3203,13 @@ export const ParallaxPage: React.FC = () => {
                                 fill={isCurrent ? '#34d399' : isDone ? step.color : '#3f3f46'}
                               />
                             </svg>
-                            <span className="truncate">{step.title}</span>
+                            <span
+                              className={`truncate ${
+                                isCurrent || isDone ? 'px-round-headline font-bold' : ''
+                              }`}
+                            >
+                              {step.title}
+                            </span>
                           </div>
                           <span className="font-mono tabular-nums text-[10px] text-[#8b9097] shrink-0">
                             {step.count}t
@@ -3252,166 +3516,277 @@ export const ParallaxPage: React.FC = () => {
                 </div>
               )}
 
-              {/* MULTI-STATE STICKY BOTTOM MISSION COMPOSER:
+              {/* MULTI-STATE STICKY BOTTOM MISSION COMPOSER WITH ANIMATED GLOWING BORDER & GRAPHICS:
                   Visually distinct states for Running, Completed, Halted, and Idle */}
               <div
-                className={`rounded-[20px] sm:rounded-[24px] px-3.5 py-2 sm:px-4 sm:py-2.5 transition-all ${composerBoxClass} ${
-                  isRunning
-                    ? 'ring-1 ring-cyan-400/50'
-                    : summary
-                    ? 'ring-1 ring-emerald-500/30'
-                    : wasStoppedEarly
-                    ? 'ring-1 ring-amber-500/30'
+                data-generating={isRunning ? 'true' : 'false'}
+                className={`mc-glow-input-wrap !rounded-[21.5px] sm:!rounded-[25.5px] ${
+                  theme === 'minimal'
+                    ? 'theme-minimal-glow'
+                    : theme === 'fulldark'
+                    ? 'theme-fulldark-glow'
                     : ''
                 }`}
               >
-                {/* Live Running / Completed Status Micro-Strip inside Composer */}
-                {(isRunning || summary || wasStoppedEarly) && (
-                  <div className="flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-white/[0.06] text-[10.5px] font-mono">
-                    <div className="flex items-center gap-1.5 min-w-0 truncate">
-                      {isRunning ? (
-                        <>
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping shrink-0" />
-                          <span className="text-cyan-300 font-semibold truncate">
-                            {isGenesisMode
-                              ? 'Round 1 of 1 Active'
-                              : `Round 0${currentRound || 1} Active`}{' '}
-                            · {statusText}
+                <div
+                  className={`relative rounded-[20px] sm:rounded-[24px] px-3.5 py-2 sm:px-4 sm:py-2.5 transition-all ${composerBoxClass} ${
+                    isRunning
+                      ? 'ring-1 ring-cyan-400/60 shadow-[inset_0_1px_26px_rgba(6,182,212,0.18)]'
+                      : summary
+                      ? 'ring-1 ring-emerald-500/40 shadow-[inset_0_1px_24px_rgba(16,185,129,0.14)]'
+                      : wasStoppedEarly
+                      ? 'ring-1 ring-amber-500/40 shadow-[inset_0_1px_24px_rgba(245,158,11,0.14)]'
+                      : theme === 'classic'
+                      ? 'shadow-[inset_0_1px_24px_rgba(6,182,212,0.14)]'
+                      : theme === 'minimal'
+                      ? 'shadow-[inset_0_1px_22px_rgba(99,102,241,0.12)]'
+                      : 'shadow-[inset_0_1px_22px_rgba(168,85,247,0.1)]'
+                  }`}
+                >
+                  {/* Decorative Powerful Graphics & Dual Laser Animation Layer */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden z-0"
+                  >
+                    {/* Top & Bottom Animated Laser Sweep Beams */}
+                    <div className="mc-laser-line" />
+                    <div className="mc-laser-line-bottom" />
+
+                    {/* Ambient Plasma Glow Orbs */}
+                    <div
+                      className={`absolute -top-10 -left-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
+                        isRunning ? 'opacity-70 animate-pulse' : 'opacity-35'
+                      } ${
+                        isGenesisMode
+                          ? 'bg-violet-500/35'
+                          : summary
+                          ? 'bg-emerald-500/35'
+                          : theme === 'classic'
+                          ? 'bg-cyan-500/35'
+                          : 'bg-indigo-500/30'
+                      }`}
+                    />
+                    <div
+                      className={`absolute -bottom-10 -right-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
+                        isRunning ? 'opacity-70 animate-pulse' : 'opacity-35'
+                      } ${
+                        isGenesisMode
+                          ? 'bg-fuchsia-500/35'
+                          : summary
+                          ? 'bg-cyan-500/30'
+                          : theme === 'classic'
+                          ? 'bg-emerald-500/30'
+                          : 'bg-cyan-500/25'
+                      }`}
+                    />
+
+                    {/* Subtle Cybernetic Corner Reticle Graphics */}
+                    <svg
+                      className="absolute top-1.5 left-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M1 6V2C1 1.44772 1.44772 1 2 1H6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <svg
+                      className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-violet-400/45"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M15 6V2C15 1.44772 14.5523 1 14 1H10"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <svg
+                      className="absolute bottom-1.5 left-1.5 w-3.5 h-3.5 text-emerald-400/40"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M1 10V14C1 14.5523 1.44772 15 2 15H6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <svg
+                      className="absolute bottom-1.5 right-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M15 10V14C15 14.5523 14.5523 15 14 15H10"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+
+                  {/* Live Running / Completed Status Micro-Strip inside Composer */}
+                  {(isRunning || summary || wasStoppedEarly) && (
+                    <div className="relative z-10 flex items-center justify-between gap-2 pb-1.5 mb-1.5 border-b border-white/[0.06] text-[10.5px] font-mono">
+                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        {isRunning ? (
+                          <>
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping shrink-0" />
+                            <span className="text-cyan-300 font-semibold truncate">
+                              {isGenesisMode
+                                ? 'Round 1 of 1 Active'
+                                : `Round 0${currentRound || 1} Active`}{' '}
+                              · {statusText}
+                            </span>
+                          </>
+                        ) : summary ? (
+                          <>
+                            <Check size={11} className="text-emerald-400 shrink-0" />
+                            <span className="text-emerald-300 font-semibold truncate">
+                              Synthesis Complete · {messages.length} turns · Ask a follow-up below
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-amber-300 font-semibold truncate">
+                            Swarm Halted ({messages.length} turns logged) · Ready to resume or start new
                           </span>
-                        </>
-                      ) : summary ? (
-                        <>
-                          <Check size={11} className="text-emerald-400 shrink-0" />
-                          <span className="text-emerald-300 font-semibold truncate">
-                            Synthesis Complete · {messages.length} turns · Ask a follow-up below
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-amber-300 font-semibold truncate">
-                          Swarm Halted ({messages.length} turns logged) · Ready to resume or start new
-                        </span>
+                        )}
+                      </div>
+
+                      {isRunning && (
+                        <button
+                          type="button"
+                          onClick={() => setIsHumanModalOpen(true)}
+                          className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[10px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                        >
+                          <UserPlus size={10} />
+                          <span>Inject Directive</span>
+                        </button>
                       )}
                     </div>
+                  )}
 
-                    {isRunning && (
-                      <button
-                        type="button"
-                        onClick={() => setIsHumanModalOpen(true)}
-                        className="px-2 py-0.5 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[10px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
-                      >
-                        <UserPlus size={10} />
-                        <span>Inject Directive</span>
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Row 1: Mission Prompt Input */}
-                <div className="pb-1">
-                  <input
-                    id="parallax-topic-input"
-                    type="text"
-                    value={topicInput}
-                    onChange={(e) => setTopicInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !isRunning && topicInput.trim()) {
-                        e.preventDefault();
-                        handleStartSwarm();
+                  {/* Row 1: Mission Prompt Input */}
+                  <div className="relative z-10 pb-1">
+                    <input
+                      id="parallax-topic-input"
+                      type="text"
+                      value={topicInput}
+                      onChange={(e) => setTopicInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !isRunning && topicInput.trim()) {
+                          e.preventDefault();
+                          handleStartSwarm();
+                        }
+                      }}
+                      disabled={isRunning}
+                      placeholder={
+                        isRunning
+                          ? statusText
+                          : summary
+                          ? 'Ask a follow-up question or launch a new 20-agent mission...'
+                          : 'Ask anything or assign a research mission...'
                       }
-                    }}
-                    disabled={isRunning}
-                    placeholder={
-                      isRunning
-                        ? statusText
-                        : summary
-                        ? 'Ask a follow-up question or launch a new 20-agent mission...'
-                        : 'Ask anything or assign a research mission...'
-                    }
-                    className="w-full bg-transparent text-[13px] sm:text-[14px] text-white placeholder-[#71767b] focus:outline-none"
-                  />
-                </div>
-
-                {/* Row 2: Left Paperclip / Presets | Right Protocol Selector + Launch/Stop Button */}
-                <div className="flex items-center justify-between gap-2">
-                  {/* Left: Paperclip / Quick Presets & Directives */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsModeSelectorOpen(false);
-                        setIsPlusMenuOpen((prev) => !prev);
-                      }}
-                      className="w-7 h-7 sm:w-8 sm:h-8 -ml-1 rounded-full flex items-center justify-center text-[#8b9097] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
-                      title="Attach Preset Topic or Inject Directive"
-                    >
-                      <Paperclip size={15} strokeWidth={1.9} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsModeSelectorOpen(false);
-                        setIsPlusMenuOpen((prev) => !prev);
-                      }}
-                      className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#8b9097] hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer"
-                    >
-                      <span>Presets</span>
-                    </button>
+                      className="w-full bg-transparent text-[13px] sm:text-[14px] text-white placeholder-[#71767b] focus:outline-none"
+                    />
                   </div>
 
-                  {/* Right: "⚡ Fast ∨" Mode Dropdown + Solid Action Circle Button */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsPlusMenuOpen(false);
-                        setIsModeSelectorOpen((prev) => !prev);
-                      }}
-                      className="h-7 sm:h-8 px-2.5 rounded-full flex items-center gap-1 text-[#e7e9ea] hover:bg-white/[0.08] text-xs font-medium transition-colors cursor-pointer shrink-0"
-                      title="Switch Swarm Speed, Size & Protocol"
-                    >
-                      <Zap size={12} className="text-cyan-400 shrink-0" />
-                      <span>
-                        {currentModeObj.shortLabel} ·{' '}
-                        {isGenesisMode ? `2+${genesisAgentCount}A` : `${selectedSwarmCount}A`}
-                      </span>
-                      <ChevronDown size={12} className="text-[#71767b] shrink-0" />
-                    </button>
-
-                    {isRunning ? (
+                  {/* Row 2: Left Paperclip / Presets | Right Protocol Selector + Launch/Stop Button */}
+                  <div className="relative z-10 flex items-center justify-between gap-2">
+                    {/* Left: Paperclip / Quick Presets & Directives */}
+                    <div className="flex items-center gap-1">
                       <button
-                        id="parallax-stop-swarm-btn"
-                        type="button"
-                        onClick={handleStopSwarm}
-                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
-                        title="Stop Swarm"
-                      >
-                        <Square size={11} fill="currentColor" />
-                      </button>
-                    ) : (
-                      <button
-                        id="parallax-start-swarm-btn"
                         type="button"
                         onClick={() => {
-                          if (topicInput.trim()) {
-                            handleStartSwarm();
-                          } else if (messages.length > 0) {
-                            handleListenToFullSwarm();
-                          } else {
-                            handleStartSwarm(SAMPLE_TOPICS[0]);
-                          }
+                          setIsModeSelectorOpen(false);
+                          setIsPlusMenuOpen((prev) => !prev);
                         }}
-                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white hover:bg-zinc-200 text-black flex items-center justify-center shrink-0 shadow-sm cursor-pointer transition-transform active:scale-95"
-                        title={
-                          topicInput.trim()
-                            ? `Launch ${selectedSwarmCount}-Agent Swarm`
-                            : messages.length > 0
-                            ? 'Listen to Swarm Audio Briefing'
-                            : 'Launch Featured Swarm Task'
-                        }
+                        className="w-7 h-7 sm:w-8 sm:h-8 -ml-1 rounded-full flex items-center justify-center text-[#8b9097] hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer shrink-0"
+                        title="Attach Preset Topic or Inject Directive"
                       >
-                        <AudioLines size={15} strokeWidth={2.3} />
+                        <Paperclip size={15} strokeWidth={1.9} />
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsModeSelectorOpen(false);
+                          setIsPlusMenuOpen((prev) => !prev);
+                        }}
+                        className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#8b9097] hover:text-white hover:bg-white/[0.05] transition-colors cursor-pointer"
+                      >
+                        <span>Presets</span>
+                      </button>
+                    </div>
+
+                    {/* Right: "⚡ Fast ∨" Mode Dropdown + Solid Action Circle Button */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPlusMenuOpen(false);
+                          setIsModeSelectorOpen((prev) => !prev);
+                        }}
+                        className="h-7 sm:h-8 px-2.5 rounded-full flex items-center gap-1 text-[#e7e9ea] hover:bg-white/[0.08] text-xs font-medium transition-colors cursor-pointer shrink-0"
+                        title="Switch Swarm Speed, Size & Protocol"
+                      >
+                        <Zap size={12} className="text-cyan-400 shrink-0" />
+                        <span>
+                          {currentModeObj.shortLabel} ·{' '}
+                          {isGenesisMode ? `2+${genesisAgentCount}A` : `${selectedSwarmCount}A`}
+                        </span>
+                        <ChevronDown size={12} className="text-[#71767b] shrink-0" />
+                      </button>
+
+                      {isRunning ? (
+                        <button
+                          id="parallax-stop-swarm-btn"
+                          type="button"
+                          onClick={handleStopSwarm}
+                          className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(244,63,94,0.65)] cursor-pointer transition-all active:scale-95"
+                          title="Stop Swarm"
+                        >
+                          <Square size={11} fill="currentColor" />
+                        </button>
+                      ) : (
+                        <button
+                          id="parallax-start-swarm-btn"
+                          type="button"
+                          onClick={() => {
+                            if (topicInput.trim()) {
+                              handleStartSwarm();
+                            } else if (messages.length > 0) {
+                              handleListenToFullSwarm();
+                            } else {
+                              handleStartSwarm(SAMPLE_TOPICS[0]);
+                            }
+                          }}
+                          className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-all active:scale-95 ${
+                            topicInput.trim()
+                              ? theme === 'classic'
+                                ? 'bg-gradient-to-br from-cyan-400 to-emerald-400 text-slate-950 shadow-[0_0_18px_rgba(6,182,212,0.75)] scale-105'
+                                : theme === 'minimal'
+                                ? 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 text-white shadow-[0_0_18px_rgba(99,102,241,0.7)] scale-105'
+                                : 'bg-white hover:bg-zinc-200 text-black shadow-[0_0_16px_rgba(255,255,255,0.6)] scale-105'
+                              : 'bg-white hover:bg-zinc-200 text-black shadow-[0_0_12px_rgba(255,255,255,0.35)]'
+                          }`}
+                          title={
+                            topicInput.trim()
+                              ? `Launch ${selectedSwarmCount}-Agent Swarm`
+                              : messages.length > 0
+                              ? 'Listen to Swarm Audio Briefing'
+                              : 'Launch Featured Swarm Task'
+                          }
+                        >
+                          <AudioLines size={15} strokeWidth={2.3} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

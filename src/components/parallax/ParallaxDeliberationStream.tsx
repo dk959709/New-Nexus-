@@ -325,7 +325,7 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
           {/* Left: Live Chat Status & Turn Count */}
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <span
-              className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-bold tracking-wide uppercase ${
+              className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-extrabold tracking-wide uppercase ${
                 isRunning
                   ? 'text-cyan-300'
                   : wasStoppedEarly
@@ -342,7 +342,9 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                     : 'bg-emerald-400'
                 }`}
               />
-              <span>{isRunning ? 'Live Swarm Chat' : 'Swarm Chat Stream'}</span>
+              <span className="px-round-headline">
+                {isRunning ? 'Live Swarm Chat' : 'Swarm Chat Stream'}
+              </span>
             </span>
 
             <span className="text-white/20" aria-hidden="true">·</span>
@@ -528,12 +530,13 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
       {/* Main Conversational Live Chat Feed */}
       <div className="relative z-20 space-y-2">
         {messages.length === 0 && !isRunning ? (
-          <div className="py-12 px-4 text-center text-slate-400 font-mono text-xs">
-            <Terminal size={26} className="mx-auto mb-2.5 text-cyan-400/50" />
-            <h3 className="m-0 text-xs sm:text-sm font-bold text-slate-200 uppercase tracking-wider">
+          <div className="py-12 px-4 text-center text-slate-400 font-mono text-xs space-y-2">
+            <Terminal size={26} className="mx-auto mb-2 text-cyan-400 animate-pulse" />
+            <h3 className="m-0 text-xs sm:text-sm font-extrabold uppercase tracking-wider px-headline-aurora">
               Live Deliberation Chat Standby
             </h3>
-            <p className="m-0 text-slate-400 text-xs mt-1 max-w-md mx-auto font-sans">
+            <div className="px-headline-laser-track mx-auto !max-w-[200px]" />
+            <p className="m-0 text-slate-300 text-xs mt-1 max-w-md mx-auto font-sans">
               Enter a research inquiry below to watch the 20-agent swarm debate in real time with agent-colored live chat turns.
             </p>
           </div>
@@ -547,8 +550,8 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
               >
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Sparkles size={13} className="text-violet-400 shrink-0" />
-                    <span className="font-mono text-[11px] font-semibold text-violet-200 truncate">
+                    <Sparkles size={13} className="text-violet-400 shrink-0 animate-pulse" />
+                    <span className="font-mono text-[11px] font-bold px-section-headline truncate">
                       Round 00 · Dynamic Specialists Recruited (
                       {specialistDeliberation.allSpecialists?.map((s) => s.name).join(', ') || '3 Specialists'})
                     </span>
@@ -624,21 +627,52 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
                   id={`parallax-round-section-${roundNum}`}
                   className="space-y-0.5"
                 >
-                  {/* Subtle, Compact Round Transition Separator */}
-                  <div className="flex items-center justify-between gap-2 py-2 px-2 my-1 border-y border-white/[0.06] bg-white/[0.015] text-[10.5px] sm:text-[11px] font-mono text-slate-400">
+                  {/* Subtle, Compact Round Transition Separator with Colorful Animated Headline */}
+                  <div className="flex items-center justify-between gap-2 py-2 px-2.5 my-1 border-y border-cyan-500/20 bg-gradient-to-r from-cyan-500/[0.06] via-violet-500/[0.05] to-transparent text-[10.5px] sm:text-[11px] font-mono text-slate-400">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          isRunning && currentRound === roundNum
-                            ? 'bg-cyan-400 animate-pulse'
-                            : 'bg-slate-500'
-                        }`}
-                      />
-                      <span className="font-semibold text-slate-200 truncate">{roundTitle}</span>
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 16 16"
+                        className="shrink-0"
+                        aria-hidden="true"
+                      >
+                        <circle
+                          cx="8"
+                          cy="8"
+                          r="6"
+                          fill="none"
+                          stroke={
+                            roundNum === 1
+                              ? '#00f0ff'
+                              : roundNum === 2
+                              ? '#c084fc'
+                              : '#34d399'
+                          }
+                          strokeWidth="1.3"
+                          strokeDasharray="3.5 2"
+                          className="mc-orbit-cw"
+                        />
+                        <circle
+                          cx="8"
+                          cy="8"
+                          r="2.4"
+                          fill={
+                            roundNum === 1
+                              ? '#38bdf8'
+                              : roundNum === 2
+                              ? '#ec4899'
+                              : '#10b981'
+                          }
+                        />
+                      </svg>
+                      <span className="font-extrabold px-round-headline truncate">{roundTitle}</span>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="tabular-nums text-slate-400">{roundMsgs.length} turns</span>
+                      <span className="tabular-nums px-subheadline-spectrum font-semibold">
+                        {roundMsgs.length} turns
+                      </span>
                     </div>
                   </div>
 

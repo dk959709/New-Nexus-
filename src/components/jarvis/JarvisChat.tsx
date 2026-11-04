@@ -1831,631 +1831,744 @@ export function JarvisChat({
 
             return (
               <div
-                className={`jarvis-composer-box relative rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all ${composerBoxClass} ${
-                  isRunning ? 'ring-1 ring-cyan-400/40' : ''
+                data-generating={isRunning ? 'true' : 'false'}
+                className={`mc-glow-input-wrap !rounded-[17.5px] ${
+                  activeTheme === 'minimal'
+                    ? 'theme-minimal-glow'
+                    : activeTheme === 'fulldark'
+                    ? 'theme-fulldark-glow'
+                    : ''
                 }`}
               >
-                {/* Live Running Status Micro-Strip inside Composer */}
-                {isRunning && (
-                  <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.06] text-[10.5px] font-mono">
-                    <div className="flex items-center gap-1.5 min-w-0 truncate">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-ping shrink-0" />
-                      <span className="text-[var(--j-accent)] font-semibold truncate">
-                        ● Pipeline Active · {liveStatusLabel}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Row 1: Leading Quantum Orb (xs) + Text Input */}
-                <div className="flex items-center gap-2.5 px-1">
+                <div
+                  className={`jarvis-composer-box relative rounded-2xl p-2.5 sm:p-3 flex flex-col gap-2 transition-all ${composerBoxClass} ${
+                    isRunning
+                      ? 'ring-1 ring-cyan-400/55 shadow-[inset_0_1px_26px_rgba(6,182,212,0.18)]'
+                      : activeTheme === 'classic'
+                      ? 'shadow-[inset_0_1px_24px_rgba(6,182,212,0.14)]'
+                      : activeTheme === 'minimal'
+                      ? 'shadow-[inset_0_1px_22px_rgba(99,102,241,0.12)]'
+                      : 'shadow-[inset_0_1px_22px_rgba(168,85,247,0.1)]'
+                  }`}
+                >
+                  {/* Decorative Powerful Graphics & Dual Laser Animation Layer (clipped to box bounds without clipping upward popovers) */}
                   <div
-                    className="jarvis-input-orb-wrapper w-6 h-6 rounded-full flex items-center justify-center shrink-0 cursor-pointer hover:scale-105 transition-transform"
-                    onClick={() => inputRef.current?.focus()}
-                    title="JARVIS Quantum Neural Core Active"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden z-0"
                   >
-                    <JarvisQuantumOrb
-                      size="xs"
-                      showBadge={false}
-                      isRunning={isRunning}
-                      isListening={voiceListening}
-                      query={query}
-                      status={
-                        isRunning
-                          ? 'thinking'
-                          : voiceListening
-                          ? 'listening'
-                          : query
-                          ? 'synthesizing'
-                          : 'idle'
+                    {/* Top & Bottom Animated Laser Sweep Beams */}
+                    <div className="mc-laser-line" />
+                    <div className="mc-laser-line-bottom" />
+
+                    {/* Ambient Plasma Glow Orbs */}
+                    <div
+                      className={`absolute -top-10 -left-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
+                        isRunning ? 'opacity-70 animate-pulse' : 'opacity-35'
+                      } ${
+                        deepResearch
+                          ? 'bg-cyan-500/35'
+                          : coderMode
+                          ? 'bg-emerald-500/35'
+                          : imageMode
+                          ? 'bg-fuchsia-500/35'
+                          : 'bg-indigo-500/30'
+                      }`}
+                    />
+                    <div
+                      className={`absolute -bottom-10 -right-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
+                        isRunning ? 'opacity-70 animate-pulse' : 'opacity-35'
+                      } ${
+                        newAgentMode
+                          ? 'bg-violet-500/35'
+                          : diagramMode
+                          ? 'bg-amber-500/35'
+                          : chartMode
+                          ? 'bg-sky-500/35'
+                          : 'bg-cyan-500/30'
+                      }`}
+                    />
+
+                    {/* Subtle Cybernetic Corner Reticle Graphics */}
+                    <svg
+                      className="absolute top-1.5 left-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M1 6V2C1 1.44772 1.44772 1 2 1H6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <svg
+                      className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-violet-400/45"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M15 6V2C15 1.44772 14.5523 1 14 1H10"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <svg
+                      className="absolute bottom-1.5 left-1.5 w-3.5 h-3.5 text-emerald-400/40"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M1 10V14C1 14.5523 1.44772 15 2 15H6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <svg
+                      className="absolute bottom-1.5 right-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <path
+                        d="M15 10V14C15 14.5523 14.5523 15 14 15H10"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+
+                  {/* Live Running Status Micro-Strip inside Composer */}
+                  {isRunning && (
+                    <div className="relative z-10 flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.06] text-[10.5px] font-mono">
+                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-ping shrink-0" />
+                        <span className="text-[var(--j-accent)] font-semibold truncate">
+                          ● Pipeline Active · {liveStatusLabel}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Row 1: Leading Quantum Orb (xs) + Text Input */}
+                  <div className="relative z-10 flex items-center gap-2.5 px-1">
+                    <div
+                      className="jarvis-input-orb-wrapper w-6 h-6 rounded-full flex items-center justify-center shrink-0 cursor-pointer hover:scale-105 transition-transform"
+                      onClick={() => inputRef.current?.focus()}
+                      title="JARVIS Quantum Neural Core Active"
+                    >
+                      <JarvisQuantumOrb
+                        size="xs"
+                        showBadge={false}
+                        isRunning={isRunning}
+                        isListening={voiceListening}
+                        query={query}
+                        status={
+                          isRunning
+                            ? 'thinking'
+                            : voiceListening
+                            ? 'listening'
+                            : query
+                            ? 'synthesizing'
+                            : 'idle'
+                        }
+                      />
+                    </div>
+
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder={
+                        attachedFiles.length > 0
+                          ? `Instruct JARVIS about ${
+                              attachedFiles.length === 1
+                                ? attachedFiles[0].name
+                                : `${attachedFiles.length} attached files`
+                            }...`
+                          : 'Instruct 10-Agent Cognitive Mesh...'
                       }
+                      disabled={isRunning}
+                      className="jarvis-search-input flex-1 min-w-0 w-full bg-transparent border-none outline-none text-[13px] sm:text-[14px] text-[var(--j-text)] placeholder:text-[var(--j-faint)] focus:outline-none focus:ring-0 disabled:opacity-50 py-0.5"
                     />
                   </div>
 
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder={
-                      attachedFiles.length > 0
-                        ? `Instruct JARVIS about ${
-                            attachedFiles.length === 1
-                              ? attachedFiles[0].name
-                              : `${attachedFiles.length} attached files`
-                          }...`
-                        : 'Instruct 10-Agent Cognitive Mesh...'
-                    }
-                    disabled={isRunning}
-                    className="jarvis-search-input flex-1 min-w-0 w-full bg-transparent border-none outline-none text-[13px] sm:text-[14px] text-[var(--j-text)] placeholder:text-[var(--j-faint)] focus:outline-none focus:ring-0 disabled:opacity-50 py-0.5"
-                  />
-                </div>
+                  {/* Row 2: Left (Paperclip + Deep Research Pill + MODES ^) | Right (Mic + Round White Send) */}
+                  <div className="relative z-10 flex items-center justify-between gap-2 pt-1">
+                    {/* Left Controls: Paperclip + Deep Research + Modes ^ */}
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      {/* Attach Paperclip Button + Popover (anchored to .jarvis-composer-box) */}
+                      <div className="static" ref={attachMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAttachMenu((prev) => !prev);
+                            setShowModesMenu(false);
+                            setAttachmentError(null);
+                          }}
+                          className={`jarvis-attach-btn relative p-1.5 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
+                            showAttachMenu || attachedFiles.length > 0
+                              ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                              : 'bg-[var(--j-card)] text-[var(--j-muted)] hover:text-[var(--j-text)] hover:bg-[var(--j-high)]'
+                          }`}
+                          title="Attach text/code/PDF file or paste from clipboard"
+                          aria-label="Add attachment or paste from clipboard"
+                        >
+                          <Paperclip size={15} strokeWidth={1.9} />
+                          {attachedFiles.length > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--j-accent)] text-[#07080a] text-[9px] font-black flex items-center justify-center">
+                              {attachedFiles.length}
+                            </span>
+                          )}
+                        </button>
 
-                {/* Row 2: Left (Paperclip + Deep Research Pill + MODES ^) | Right (Mic + Round White Send) */}
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  {/* Left Controls: Paperclip + Deep Research + Modes ^ */}
-                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                    {/* Attach Paperclip Button + Popover (anchored to .jarvis-composer-box) */}
-                    <div className="static" ref={attachMenuRef}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAttachMenu((prev) => !prev);
-                          setShowModesMenu(false);
-                          setAttachmentError(null);
-                        }}
-                        className={`jarvis-attach-btn relative p-1.5 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${
-                          showAttachMenu || attachedFiles.length > 0
-                            ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                            : 'bg-[var(--j-card)] text-[var(--j-muted)] hover:text-[var(--j-text)] hover:bg-[var(--j-high)]'
-                        }`}
-                        title="Attach text/code/PDF file or paste from clipboard"
-                        aria-label="Add attachment or paste from clipboard"
-                      >
-                        <Paperclip size={15} strokeWidth={1.9} />
-                        {attachedFiles.length > 0 && (
-                          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[var(--j-accent)] text-[#07080a] text-[9px] font-black flex items-center justify-center">
-                            {attachedFiles.length}
-                          </span>
-                        )}
-                      </button>
+                        {/* Attach Popover Menu */}
+                        {showAttachMenu && (
+                          <div className="jarvis-attach-menu absolute bottom-full mb-2 left-0 w-[min(100%,18rem)] max-w-full overflow-x-hidden rounded-2xl p-2 z-50 flex flex-col gap-1 bg-[var(--j-card)] shadow-2xl border border-white/[0.06]">
+                            <div className="px-2.5 py-1.5 border-b border-white/[0.06] text-[10px] font-mono text-[var(--j-faint)] uppercase tracking-wider font-semibold flex items-center justify-between gap-2">
+                              <span className="truncate">Attachment Options</span>
+                              <span className="text-[var(--j-accent)] font-bold shrink-0">TEXT / PDF</span>
+                            </div>
 
-                      {/* Attach Popover Menu */}
-                      {showAttachMenu && (
-                        <div className="jarvis-attach-menu absolute bottom-full mb-2 left-0 w-[min(100%,18rem)] max-w-full overflow-x-hidden rounded-2xl p-2 z-50 flex flex-col gap-1 bg-[var(--j-card)] shadow-2xl border border-white/[0.06]">
-                          <div className="px-2.5 py-1.5 border-b border-white/[0.06] text-[10px] font-mono text-[var(--j-faint)] uppercase tracking-wider font-semibold flex items-center justify-between gap-2">
-                            <span className="truncate">Attachment Options</span>
-                            <span className="text-[var(--j-accent)] font-bold shrink-0">TEXT / PDF</span>
+                            <button
+                              type="button"
+                              onClick={handleAttachFileClick}
+                              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-[var(--j-text)] hover:bg-[var(--j-high)] transition-all cursor-pointer min-w-0"
+                            >
+                              <div className="w-7 h-7 rounded-lg bg-[var(--j-low)] flex items-center justify-center shrink-0 text-[var(--j-accent)]">
+                                <Paperclip size={13} />
+                              </div>
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <span className="font-semibold text-[var(--j-text)] truncate">Attach File</span>
+                                <span className="text-[10px] text-[var(--j-faint)] truncate">
+                                  .txt, .pdf, .py, .html, .js, .ts, .json, .md
+                                </span>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handlePasteFromClipboard}
+                              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-[var(--j-text)] hover:bg-[var(--j-high)] transition-all cursor-pointer min-w-0"
+                            >
+                              <div className="w-7 h-7 rounded-lg bg-[var(--j-low)] flex items-center justify-center shrink-0 text-[var(--j-accent2)]">
+                                <Clipboard size={13} />
+                              </div>
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <span className="font-semibold text-[var(--j-text)] truncate">Paste from Clipboard</span>
+                                <span className="text-[10px] text-[var(--j-faint)] truncate">
+                                  Insert copied text or code into input
+                                </span>
+                              </div>
+                            </button>
                           </div>
+                        )}
+                      </div>
 
-                          <button
-                            type="button"
-                            onClick={handleAttachFileClick}
-                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-[var(--j-text)] hover:bg-[var(--j-high)] transition-all cursor-pointer min-w-0"
-                          >
-                            <div className="w-7 h-7 rounded-lg bg-[var(--j-low)] flex items-center justify-center shrink-0 text-[var(--j-accent)]">
-                              <Paperclip size={13} />
-                            </div>
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-semibold text-[var(--j-text)] truncate">Attach File</span>
-                              <span className="text-[10px] text-[var(--j-faint)] truncate">
-                                .txt, .pdf, .py, .html, .js, .ts, .json, .md
-                              </span>
-                            </div>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={handlePasteFromClipboard}
-                            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-xs text-[var(--j-text)] hover:bg-[var(--j-high)] transition-all cursor-pointer min-w-0"
-                          >
-                            <div className="w-7 h-7 rounded-lg bg-[var(--j-low)] flex items-center justify-center shrink-0 text-[var(--j-accent2)]">
-                              <Clipboard size={13} />
-                            </div>
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <span className="font-semibold text-[var(--j-text)] truncate">Paste from Clipboard</span>
-                              <span className="text-[10px] text-[var(--j-faint)] truncate">
-                                Insert copied text or code into input
-                              </span>
-                            </div>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Deep Research Pill Button */}
-                    <button
-                      type="button"
-                      onClick={() => setDeepResearch((prev) => !prev)}
-                      className={`px-2 sm:px-2.5 py-1 rounded-lg bg-[var(--j-card)] hover:bg-[var(--j-high)] inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider font-semibold transition-colors cursor-pointer select-none ${
-                        deepResearch
-                          ? 'text-[var(--j-accent)] ring-1 ring-cyan-400/30'
-                          : 'text-[var(--j-muted)] hover:text-[var(--j-text)]'
-                      }`}
-                      title="Deep Research (5-agent mesh)"
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          deepResearch
-                            ? 'bg-[var(--j-accent)] shadow-[0_0_6px_#00f0ff]'
-                            : 'bg-[var(--j-faint)]'
-                        }`}
-                      />
-                      <span>
-                        DEEP<span className="hidden min-[380px]:inline"> RESEARCH</span>
-                      </span>
-                    </button>
-
-                    {/* '^' Modes Popover Trigger + Menu (anchored to .jarvis-composer-box) */}
-                    <div className="static" ref={modesMenuRef}>
+                      {/* Deep Research Pill Button */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setShowModesMenu((prev) => !prev);
-                          setShowAttachMenu(false);
-                        }}
-                        className={`px-2 sm:px-2.5 py-1 rounded-lg bg-[var(--j-card)] hover:bg-[var(--j-high)] inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider font-semibold transition-colors cursor-pointer select-none ${
-                          showModesMenu || activePopoverModesCount > 0
+                        onClick={() => setDeepResearch((prev) => !prev)}
+                        className={`px-2 sm:px-2.5 py-1 rounded-lg bg-[var(--j-card)] hover:bg-[var(--j-high)] inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider font-semibold transition-colors cursor-pointer select-none ${
+                          deepResearch
                             ? 'text-[var(--j-accent)] ring-1 ring-cyan-400/30'
                             : 'text-[var(--j-muted)] hover:text-[var(--j-text)]'
                         }`}
-                        title="Open Jarvis Modes & Visual Theme"
+                        title="Deep Research (5-agent mesh)"
                       >
-                        <span>
-                          {activePopoverModesCount > 0
-                            ? `Modes · ${activePopoverModesCount}`
-                            : 'Modes'}
-                        </span>
-                        <ChevronUp
-                          className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                            showModesMenu ? 'rotate-180 text-[var(--j-accent)]' : 'text-[var(--j-muted)]'
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                            deepResearch
+                              ? 'bg-[var(--j-accent)] shadow-[0_0_6px_#00f0ff]'
+                              : 'bg-[var(--j-faint)]'
                           }`}
                         />
+                        <span>
+                          DEEP<span className="hidden min-[380px]:inline"> RESEARCH</span>
+                        </span>
                       </button>
 
-                      {/* '^' Modes Popover Panel */}
-                      {showModesMenu && (
-                        <div
-                          className="jarvis-modes-popover absolute bottom-full left-0 right-0 mb-2 w-full max-w-full sm:w-[min(100%,28rem)] rounded-2xl px-2.5 pb-2.5 pt-0 z-50 bg-[var(--j-card)] shadow-2xl border border-white/[0.06] overflow-y-auto overflow-x-hidden overscroll-contain"
-                          style={{
-                            maxHeight: 'min(60dvh, 420px)',
-                            WebkitOverflowScrolling: 'touch',
-                            overscrollBehavior: 'contain',
+                      {/* '^' Modes Popover Trigger + Menu (anchored to .jarvis-composer-box) */}
+                      <div className="static" ref={modesMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowModesMenu((prev) => !prev);
+                            setShowAttachMenu(false);
                           }}
+                          className={`px-2 sm:px-2.5 py-1 rounded-lg bg-[var(--j-card)] hover:bg-[var(--j-high)] inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider font-semibold transition-colors cursor-pointer select-none ${
+                            showModesMenu || activePopoverModesCount > 0
+                              ? 'text-[var(--j-accent)] ring-1 ring-cyan-400/30'
+                              : 'text-[var(--j-muted)] hover:text-[var(--j-text)]'
+                          }`}
+                          title="Open Jarvis Modes & Visual Theme"
                         >
-                          {/* Sticky Title Row */}
-                          <div className="sticky top-0 z-10 bg-[var(--j-card)] flex items-center justify-between px-1.5 pt-2.5 pb-1.5 mb-2 border-b border-white/[0.06]">
-                            <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--j-muted)] truncate">
-                              Jarvis Modes &amp; Theme
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setShowModesMenu(false)}
-                              className="text-[var(--j-faint)] hover:text-[var(--j-text)] p-0.5 rounded cursor-pointer shrink-0"
-                              aria-label="Close modes menu"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          <span>
+                            {activePopoverModesCount > 0
+                              ? `Modes · ${activePopoverModesCount}`
+                              : 'Modes'}
+                          </span>
+                          <ChevronUp
+                            className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                              showModesMenu ? 'rotate-180 text-[var(--j-accent)]' : 'text-[var(--j-muted)]'
+                            }`}
+                          />
+                        </button>
 
-                          {/* 1. Visual Theme 3-Button Selector */}
-                          <div className="px-0.5 pb-2 mb-2 border-b border-white/[0.06]">
-                            <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-[var(--j-muted)] mb-1.5 px-1">
-                              <Palette size={11} className="text-[var(--j-accent)] shrink-0" />
-                              <span className="truncate">Visual Theme</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-1 w-full">
-                              {(
-                                [
-                                  { id: 'minimal', label: 'Minimal' },
-                                  { id: 'classic', label: 'Classic' },
-                                  { id: 'fulldark', label: 'Full Dark' },
-                                ] as const
-                              ).map((t) => (
-                                <button
-                                  key={t.id}
-                                  type="button"
-                                  onClick={() => handleThemeSelect(t.id)}
-                                  className={`px-1 py-1.5 rounded-lg border text-[9.5px] font-mono uppercase tracking-tight font-medium text-center whitespace-nowrap truncate transition-all cursor-pointer ${
-                                    activeTheme === t.id
-                                      ? 'border-white bg-white text-black font-semibold'
-                                      : 'border-white/[0.08] bg-[var(--j-low)] text-[var(--j-muted)] hover:text-[var(--j-text)]'
-                                  }`}
-                                >
-                                  {t.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* 2. Modes Toggles (All 6 Modes) */}
-                          <div className="flex flex-col gap-1 pb-2 mb-2 border-b border-white/[0.06]">
-                            <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-[var(--j-muted)] mb-0.5 px-1.5">
-                              <Zap size={11} className="text-[var(--j-accent)] shrink-0" />
-                              <span className="truncate">Modes</span>
+                        {/* '^' Modes Popover Panel */}
+                        {showModesMenu && (
+                          <div
+                            className="jarvis-modes-popover absolute bottom-full left-0 right-0 mb-2 w-full max-w-full sm:w-[min(100%,28rem)] rounded-2xl px-2.5 pb-2.5 pt-0 z-50 bg-[var(--j-card)] shadow-2xl border border-white/[0.06] overflow-y-auto overflow-x-hidden overscroll-contain"
+                            style={{
+                              maxHeight: 'min(60dvh, 420px)',
+                              WebkitOverflowScrolling: 'touch',
+                              overscrollBehavior: 'contain',
+                            }}
+                          >
+                            {/* Sticky Title Row */}
+                            <div className="sticky top-0 z-10 bg-[var(--j-card)] flex items-center justify-between px-1.5 pt-2.5 pb-1.5 mb-2 border-b border-white/[0.06]">
+                              <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--j-muted)] truncate">
+                                Jarvis Modes &amp; Theme
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowModesMenu(false)}
+                                className="text-[var(--j-faint)] hover:text-[var(--j-text)] p-0.5 rounded cursor-pointer shrink-0"
+                                aria-label="Close modes menu"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
 
-                            {/* 1. New Agent Mode */}
-                            <label
-                              className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
-                                newAgentMode
-                                  ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                                  : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
-                              }`}
-                              title={
-                                newAgentMode
-                                  ? 'New Agent Mode active: 5-node dynamic pipeline (Planner → 3 Query-Tailored Specialists → Synthesizer)'
-                                  : 'Enable New Agent Mode (dynamic 5-node specialist pipeline)'
-                              }
-                            >
-                              <input
-                                type="checkbox"
-                                checked={newAgentMode}
-                                onChange={(e) => setNewAgentMode(e.target.checked)}
-                                className="hidden"
-                              />
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span className="text-xs shrink-0 leading-none">✨</span>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-[11px] font-semibold leading-tight truncate">
-                                    New Agent
-                                  </span>
-                                  <span className="text-[9.5px] text-[var(--j-faint)] truncate">
-                                    Dynamic 5-node specialist pipeline
-                                  </span>
-                                </div>
+                            {/* 1. Visual Theme 3-Button Selector */}
+                            <div className="px-0.5 pb-2 mb-2 border-b border-white/[0.06]">
+                              <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-[var(--j-muted)] mb-1.5 px-1">
+                                <Palette size={11} className="text-[var(--j-accent)] shrink-0" />
+                                <span className="truncate">Visual Theme</span>
                               </div>
-                              <div
-                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                                  newAgentMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
-                                }`}
-                              >
-                                <div
-                                  className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
-                                    newAgentMode ? 'translate-x-3.5' : 'translate-x-0'
-                                  }`}
-                                />
+                              <div className="grid grid-cols-3 gap-1 w-full">
+                                {(
+                                  [
+                                    { id: 'minimal', label: 'Minimal' },
+                                    { id: 'classic', label: 'Classic' },
+                                    { id: 'fulldark', label: 'Full Dark' },
+                                  ] as const
+                                ).map((t) => (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    onClick={() => handleThemeSelect(t.id)}
+                                    className={`px-1 py-1.5 rounded-lg border text-[9.5px] font-mono uppercase tracking-tight font-medium text-center whitespace-nowrap truncate transition-all cursor-pointer ${
+                                      activeTheme === t.id
+                                        ? 'border-white bg-white text-black font-semibold'
+                                        : 'border-white/[0.08] bg-[var(--j-low)] text-[var(--j-muted)] hover:text-[var(--j-text)]'
+                                    }`}
+                                  >
+                                    {t.label}
+                                  </button>
+                                ))}
                               </div>
-                            </label>
+                            </div>
 
-                            {/* 2. Diagram Mode */}
-                            <label
-                              className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
-                                diagramMode
-                                  ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                                  : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={diagramMode}
-                                onChange={(e) => setDiagramMode(e.target.checked)}
-                                className="hidden"
-                              />
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span className="text-xs shrink-0 leading-none">🏗️</span>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-[11px] font-semibold leading-tight truncate">
-                                    Diagram Mode
-                                  </span>
-                                  <span className="text-[9.5px] text-[var(--j-faint)] truncate">
-                                    SVG architectural blueprint
-                                  </span>
-                                </div>
+                            {/* 2. Modes Toggles (All 6 Modes) */}
+                            <div className="flex flex-col gap-1 pb-2 mb-2 border-b border-white/[0.06]">
+                              <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold uppercase tracking-wider text-[var(--j-muted)] mb-0.5 px-1.5">
+                                <Zap size={11} className="text-[var(--j-accent)] shrink-0" />
+                                <span className="truncate">Modes</span>
                               </div>
-                              <div
-                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                                  diagramMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
-                                }`}
-                              >
-                                <div
-                                  className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
-                                    diagramMode ? 'translate-x-3.5' : 'translate-x-0'
-                                  }`}
-                                />
-                              </div>
-                            </label>
 
-                            {/* 3. Chart Mode */}
-                            <label
-                              className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
-                                chartMode
-                                  ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                                  : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={chartMode}
-                                onChange={(e) => setChartMode(e.target.checked)}
-                                className="hidden"
-                              />
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span className="text-xs shrink-0 leading-none">📊</span>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-[11px] font-semibold leading-tight truncate">
-                                    Chart Mode
-                                  </span>
-                                  <span className="text-[9.5px] text-[var(--j-faint)] truncate">
-                                    Interactive quantitative chart
-                                  </span>
-                                </div>
-                              </div>
-                              <div
-                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                                  chartMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
-                                }`}
-                              >
-                                <div
-                                  className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
-                                    chartMode ? 'translate-x-3.5' : 'translate-x-0'
-                                  }`}
-                                />
-                              </div>
-                            </label>
-
-                            {/* 4. Image Mode */}
-                            <label
-                              className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
-                                imageMode
-                                  ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                                  : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={imageMode}
-                                onChange={(e) => setImageMode(e.target.checked)}
-                                className="hidden"
-                              />
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span className="text-xs shrink-0 leading-none">🖼️</span>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-[11px] font-semibold leading-tight truncate">
-                                    Image Mode
-                                  </span>
-                                  <span className="text-[9.5px] text-[var(--j-faint)] truncate">
-                                    Retrieve visual media gallery
-                                  </span>
-                                </div>
-                              </div>
-                              <div
-                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                                  imageMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
-                                }`}
-                              >
-                                <div
-                                  className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
-                                    imageMode ? 'translate-x-3.5' : 'translate-x-0'
-                                  }`}
-                                />
-                              </div>
-                            </label>
-
-                            {/* 5. Coder Mode */}
-                            <label
-                              className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
-                                coderMode
-                                  ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                                  : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
-                              }`}
-                              title={
-                                coderMode
-                                  ? 'Coder Agent enabled (auto-detection active)'
-                                  : 'Coder Agent disabled (auto-detection disabled)'
-                              }
-                            >
-                              <input
-                                type="checkbox"
-                                checked={coderMode}
-                                onChange={(e) => handleToggleCoderMode(e.target.checked)}
-                                className="hidden"
-                              />
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span className="text-xs shrink-0 leading-none">💻</span>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="text-[11px] font-semibold leading-tight truncate">
-                                    Coder
-                                  </span>
-                                  <span className="text-[9.5px] text-[var(--j-faint)] truncate">
-                                    Specialized software engineer agent
-                                  </span>
-                                </div>
-                              </div>
-                              <div
-                                className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                                  coderMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
-                                }`}
-                              >
-                                <div
-                                  className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
-                                    coderMode ? 'translate-x-3.5' : 'translate-x-0'
-                                  }`}
-                                />
-                              </div>
-                            </label>
-
-                            {/* 6. Search My Docs (RAG) + Document Selector */}
-                            <div
-                              className={`flex flex-col gap-1.5 px-2 py-1.5 rounded-xl transition-colors w-full min-w-0 ${
-                                searchMyDocs
-                                  ? 'bg-[var(--j-high)] text-[var(--j-text)]'
-                                  : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
-                              }`}
-                            >
+                              {/* 1. New Agent Mode */}
                               <label
-                                className="flex items-center justify-between gap-2 cursor-pointer w-full min-w-0"
+                                className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
+                                  newAgentMode
+                                    ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                                    : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
+                                }`}
                                 title={
-                                  availableDocs.length === 0
-                                    ? 'Upload documents in Settings > Document Library to search vector memory'
-                                    : searchMyDocs
-                                    ? `Searching ${
-                                        docSearchMode === 'specific' && selectedDocId
-                                          ? availableDocs.find((d) => d.id === selectedDocId)?.name ||
-                                            'selected document'
-                                          : 'all indexed library documents'
-                                      }`
-                                    : 'Enable Document Library (Vector Memory / RAG) search'
+                                  newAgentMode
+                                    ? 'New Agent Mode active: 5-node dynamic pipeline (Planner → 3 Query-Tailored Specialists → Synthesizer)'
+                                    : 'Enable New Agent Mode (dynamic 5-node specialist pipeline)'
                                 }
                               >
                                 <input
                                   type="checkbox"
-                                  checked={searchMyDocs}
-                                  onChange={(e) => setSearchMyDocs(e.target.checked)}
+                                  checked={newAgentMode}
+                                  onChange={(e) => setNewAgentMode(e.target.checked)}
                                   className="hidden"
                                 />
                                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                  <span className="text-xs shrink-0 leading-none">📚</span>
+                                  <span className="text-xs shrink-0 leading-none">✨</span>
                                   <div className="flex flex-col min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5 min-w-0">
-                                      <span className="text-[11px] font-semibold leading-tight truncate">
-                                        Search My Docs
-                                      </span>
-                                      {availableDocs.length > 0 && (
-                                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[var(--j-low)] text-[var(--j-accent)] font-mono shrink-0">
-                                          {availableDocs.filter((d) => d.enabledForJarvis).length}
-                                        </span>
-                                      )}
-                                    </div>
+                                    <span className="text-[11px] font-semibold leading-tight truncate">
+                                      New Agent
+                                    </span>
                                     <span className="text-[9.5px] text-[var(--j-faint)] truncate">
-                                      Vector memory / RAG search
+                                      Dynamic 5-node specialist pipeline
                                     </span>
                                   </div>
                                 </div>
                                 <div
                                   className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                                    searchMyDocs ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
+                                    newAgentMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
                                   }`}
                                 >
                                   <div
                                     className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
-                                      searchMyDocs ? 'translate-x-3.5' : 'translate-x-0'
+                                      newAgentMode ? 'translate-x-3.5' : 'translate-x-0'
                                     }`}
                                   />
                                 </div>
                               </label>
 
-                              {searchMyDocs && availableDocs.length > 0 && (
-                                <select
-                                  value={docSearchMode === 'specific' ? selectedDocId : 'all'}
-                                  onChange={(e) => {
-                                    if (e.target.value === 'all') {
-                                      setDocSearchMode('all');
-                                      setSelectedDocId('');
-                                    } else {
-                                      setDocSearchMode('specific');
-                                      setSelectedDocId(e.target.value);
-                                    }
-                                  }}
-                                  className="w-full bg-[var(--j-lowest)] text-[var(--j-text)] text-[11px] font-mono border border-white/[0.08] rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                              {/* 2. Diagram Mode */}
+                              <label
+                                className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
+                                  diagramMode
+                                    ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                                    : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={diagramMode}
+                                  onChange={(e) => setDiagramMode(e.target.checked)}
+                                  className="hidden"
+                                />
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <span className="text-xs shrink-0 leading-none">🏗️</span>
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-[11px] font-semibold leading-tight truncate">
+                                      Diagram Mode
+                                    </span>
+                                    <span className="text-[9.5px] text-[var(--j-faint)] truncate">
+                                      SVG architectural blueprint
+                                    </span>
+                                  </div>
+                                </div>
+                                <div
+                                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                    diagramMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
+                                  }`}
                                 >
-                                  <option value="all">
-                                    All Docs ({availableDocs.filter((d) => d.enabledForJarvis).length})
-                                  </option>
-                                  {availableDocs.map((doc) => (
-                                    <option key={doc.id} value={doc.id}>
-                                      📄 {doc.name.length > 26 ? doc.name.slice(0, 24) + '...' : doc.name}
+                                  <div
+                                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
+                                      diagramMode ? 'translate-x-3.5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </label>
+
+                              {/* 3. Chart Mode */}
+                              <label
+                                className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
+                                  chartMode
+                                    ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                                    : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={chartMode}
+                                  onChange={(e) => setChartMode(e.target.checked)}
+                                  className="hidden"
+                                />
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <span className="text-xs shrink-0 leading-none">📊</span>
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-[11px] font-semibold leading-tight truncate">
+                                      Chart Mode
+                                    </span>
+                                    <span className="text-[9.5px] text-[var(--j-faint)] truncate">
+                                      Interactive quantitative chart
+                                    </span>
+                                  </div>
+                                </div>
+                                <div
+                                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                    chartMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
+                                      chartMode ? 'translate-x-3.5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </label>
+
+                              {/* 4. Image Mode */}
+                              <label
+                                className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
+                                  imageMode
+                                    ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                                    : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={imageMode}
+                                  onChange={(e) => setImageMode(e.target.checked)}
+                                  className="hidden"
+                                />
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <span className="text-xs shrink-0 leading-none">🖼️</span>
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-[11px] font-semibold leading-tight truncate">
+                                      Image Mode
+                                    </span>
+                                    <span className="text-[9.5px] text-[var(--j-faint)] truncate">
+                                      Retrieve visual media gallery
+                                    </span>
+                                  </div>
+                                </div>
+                                <div
+                                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                    imageMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
+                                      imageMode ? 'translate-x-3.5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </label>
+
+                              {/* 5. Coder Mode */}
+                              <label
+                                className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl cursor-pointer transition-colors w-full min-w-0 ${
+                                  coderMode
+                                    ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                                    : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
+                                }`}
+                                title={
+                                  coderMode
+                                    ? 'Coder Agent enabled (auto-detection active)'
+                                    : 'Coder Agent disabled (auto-detection disabled)'
+                                }
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={coderMode}
+                                  onChange={(e) => handleToggleCoderMode(e.target.checked)}
+                                  className="hidden"
+                                />
+                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                  <span className="text-xs shrink-0 leading-none">💻</span>
+                                  <div className="flex flex-col min-w-0 flex-1">
+                                    <span className="text-[11px] font-semibold leading-tight truncate">
+                                      Coder
+                                    </span>
+                                    <span className="text-[9.5px] text-[var(--j-faint)] truncate">
+                                      Specialized software engineer agent
+                                    </span>
+                                  </div>
+                                </div>
+                                <div
+                                  className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                    coderMode ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
+                                  }`}
+                                >
+                                  <div
+                                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
+                                      coderMode ? 'translate-x-3.5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </div>
+                              </label>
+
+                              {/* 6. Search My Docs (RAG) + Document Selector */}
+                              <div
+                                className={`flex flex-col gap-1.5 px-2 py-1.5 rounded-xl transition-colors w-full min-w-0 ${
+                                  searchMyDocs
+                                    ? 'bg-[var(--j-high)] text-[var(--j-text)]'
+                                    : 'hover:bg-[var(--j-low)] text-[var(--j-text)]'
+                                }`}
+                              >
+                                <label
+                                  className="flex items-center justify-between gap-2 cursor-pointer w-full min-w-0"
+                                  title={
+                                    availableDocs.length === 0
+                                      ? 'Upload documents in Settings > Document Library to search vector memory'
+                                      : searchMyDocs
+                                      ? `Searching ${
+                                          docSearchMode === 'specific' && selectedDocId
+                                            ? availableDocs.find((d) => d.id === selectedDocId)?.name ||
+                                              'selected document'
+                                            : 'all indexed library documents'
+                                        }`
+                                      : 'Enable Document Library (Vector Memory / RAG) search'
+                                  }
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={searchMyDocs}
+                                    onChange={(e) => setSearchMyDocs(e.target.checked)}
+                                    className="hidden"
+                                  />
+                                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                    <span className="text-xs shrink-0 leading-none">📚</span>
+                                    <div className="flex flex-col min-w-0 flex-1">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="text-[11px] font-semibold leading-tight truncate">
+                                          Search My Docs
+                                        </span>
+                                        {availableDocs.length > 0 && (
+                                          <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[var(--j-low)] text-[var(--j-accent)] font-mono shrink-0">
+                                            {availableDocs.filter((d) => d.enabledForJarvis).length}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="text-[9.5px] text-[var(--j-faint)] truncate">
+                                        Vector memory / RAG search
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div
+                                    className={`w-7 h-3.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                                      searchMyDocs ? 'bg-[var(--j-accent)]' : 'bg-zinc-700'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform duration-200 ${
+                                        searchMyDocs ? 'translate-x-3.5' : 'translate-x-0'
+                                      }`}
+                                    />
+                                  </div>
+                                </label>
+
+                                {searchMyDocs && availableDocs.length > 0 && (
+                                  <select
+                                    value={docSearchMode === 'specific' ? selectedDocId : 'all'}
+                                    onChange={(e) => {
+                                      if (e.target.value === 'all') {
+                                        setDocSearchMode('all');
+                                        setSelectedDocId('');
+                                      } else {
+                                        setDocSearchMode('specific');
+                                        setSelectedDocId(e.target.value);
+                                      }
+                                    }}
+                                    className="w-full bg-[var(--j-lowest)] text-[var(--j-text)] text-[11px] font-mono border border-white/[0.08] rounded-lg px-2 py-1 focus:outline-none cursor-pointer"
+                                  >
+                                    <option value="all">
+                                      All Docs ({availableDocs.filter((d) => d.enabledForJarvis).length})
                                     </option>
-                                  ))}
-                                </select>
-                              )}
+                                    {availableDocs.map((doc) => (
+                                      <option key={doc.id} value={doc.id}>
+                                        📄 {doc.name.length > 26 ? doc.name.slice(0, 24) + '...' : doc.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+
+                              {/* 7. Skills Add-On Row */}
+                              <SkillsQuickPanel onNavigateToSettings={() => setShowModesMenu(false)} />
                             </div>
 
-                            {/* 7. Skills Add-On Row */}
-                            <SkillsQuickPanel onNavigateToSettings={() => setShowModesMenu(false)} />
-                          </div>
-
-                          {/* 3. Footer Row inside Popover: Configure Agents, New Inquiry, Clear */}
-                          <div className="flex items-center justify-between gap-1.5 pt-0.5 px-0.5 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowModesMenu(false);
-                                onOpenSettings();
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[var(--j-low)] hover:bg-[var(--j-high)] text-[9.5px] font-mono uppercase tracking-tight text-[var(--j-muted)] hover:text-[var(--j-text)] transition-colors cursor-pointer whitespace-nowrap"
-                              title="Configure Agent parameters, providers and models"
-                            >
-                              <Cpu size={11} className="text-[var(--j-accent)] shrink-0" />
-                              <span>Configure Agents</span>
-                            </button>
-
-                            <div className="flex items-center gap-1 flex-wrap">
+                            {/* 3. Footer Row inside Popover: Configure Agents, New Inquiry, Clear */}
+                            <div className="flex items-center justify-between gap-1.5 pt-0.5 px-0.5 flex-wrap">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setShowModesMenu(false);
-                                  handleNewChat();
+                                  onOpenSettings();
                                 }}
                                 className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[var(--j-low)] hover:bg-[var(--j-high)] text-[9.5px] font-mono uppercase tracking-tight text-[var(--j-muted)] hover:text-[var(--j-text)] transition-colors cursor-pointer whitespace-nowrap"
-                                title="Start a fresh inquiry"
+                                title="Configure Agent parameters, providers and models"
                               >
-                                <Plus size={11} className="text-[var(--j-accent)] shrink-0" />
-                                <span>New Inquiry</span>
+                                <Cpu size={11} className="text-[var(--j-accent)] shrink-0" />
+                                <span>Configure Agents</span>
                               </button>
 
-                              {messages.length > 0 && (
+                              <div className="flex items-center gap-1 flex-wrap">
                                 <button
                                   type="button"
                                   onClick={() => {
                                     setShowModesMenu(false);
-                                    setShowClearConfirm(true);
+                                    handleNewChat();
                                   }}
-                                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[var(--j-low)] hover:bg-[var(--j-high)] text-[9.5px] font-mono uppercase tracking-tight text-[var(--j-danger)] transition-colors cursor-pointer whitespace-nowrap"
-                                  title="Clear conversation history"
+                                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[var(--j-low)] hover:bg-[var(--j-high)] text-[9.5px] font-mono uppercase tracking-tight text-[var(--j-muted)] hover:text-[var(--j-text)] transition-colors cursor-pointer whitespace-nowrap"
+                                  title="Start a fresh inquiry"
                                 >
-                                  <Trash2 size={11} className="shrink-0" />
-                                  <span>Clear ({messages.length})</span>
+                                  <Plus size={11} className="text-[var(--j-accent)] shrink-0" />
+                                  <span>New Inquiry</span>
                                 </button>
-                              )}
+
+                                {messages.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowModesMenu(false);
+                                      setShowClearConfirm(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg bg-[var(--j-low)] hover:bg-[var(--j-high)] text-[9.5px] font-mono uppercase tracking-tight text-[var(--j-danger)] transition-colors cursor-pointer whitespace-nowrap"
+                                    title="Clear conversation history"
+                                  >
+                                    <Trash2 size={11} className="shrink-0" />
+                                    <span>Clear ({messages.length})</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Right Controls: Mic + Round White Send */}
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Mic / Voice Button */}
-                    <button
-                      type="button"
-                      onClick={toggleVoiceInput}
-                      aria-label="Voice input"
-                      title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
-                      className={`jarvis-mic-btn p-2 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
-                        voiceListening
-                          ? 'bg-rose-500 text-white animate-pulse'
-                          : 'text-[var(--j-muted)] hover:text-[var(--j-text)] hover:bg-[var(--j-card)]'
-                      }`}
-                    >
-                      <Mic size={16} className={voiceListening ? 'animate-bounce' : ''} />
-                    </button>
+                    {/* Right Controls: Mic + Round Send */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Mic / Voice Button */}
+                      <button
+                        type="button"
+                        onClick={toggleVoiceInput}
+                        aria-label="Voice input"
+                        title={voiceListening ? 'Stop Listening' : 'Speak Prompt'}
+                        className={`jarvis-mic-btn p-2 rounded-full flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                          voiceListening
+                            ? 'bg-rose-500 text-white animate-pulse'
+                            : 'text-[var(--j-muted)] hover:text-[var(--j-text)] hover:bg-[var(--j-card)]'
+                        }`}
+                      >
+                        <Mic size={16} className={voiceListening ? 'animate-bounce' : ''} />
+                      </button>
 
-                    {/* Round White Send Button (Stitch + Parallax Replica) */}
-                    <button
-                      type="submit"
-                      disabled={
-                        (!query.trim() && attachedFiles.length === 0) ||
-                        isRunning ||
-                        isExtractingAttachment
-                      }
-                      title={
-                        isRunning
-                          ? 'Orchestrating...'
-                          : isExtractingAttachment
-                          ? 'Extracting...'
-                          : 'Ask JARVIS'
-                      }
-                      aria-label="Ask JARVIS"
-                      className="jarvis-submit-btn w-9 h-9 rounded-full bg-[#e4e1e7] hover:bg-white text-[#07080a] flex items-center justify-center transition-transform active:scale-95 shrink-0 shadow-[0_0_12px_rgba(255,255,255,0.25)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      {isRunning ? (
-                        <Loader2 className="w-4 h-4 animate-spin text-[#07080a]" />
-                      ) : (
-                        <Send className="w-4 h-4 text-[#07080a]" />
-                      )}
-                    </button>
+                      {/* Round Send Button with Reactive Neon Glow */}
+                      <button
+                        type="submit"
+                        disabled={
+                          (!query.trim() && attachedFiles.length === 0) ||
+                          isRunning ||
+                          isExtractingAttachment
+                        }
+                        title={
+                          isRunning
+                            ? 'Orchestrating...'
+                            : isExtractingAttachment
+                            ? 'Extracting...'
+                            : 'Ask JARVIS'
+                        }
+                        aria-label="Ask JARVIS"
+                        className={`jarvis-submit-btn w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                          (query.trim() || attachedFiles.length > 0) && !isRunning
+                            ? activeTheme === 'classic'
+                              ? 'bg-gradient-to-br from-cyan-400 to-teal-500 text-[#041016] shadow-[0_0_18px_rgba(6,182,212,0.75)] scale-105'
+                              : activeTheme === 'minimal'
+                              ? 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 text-white shadow-[0_0_18px_rgba(99,102,241,0.7)] scale-105'
+                              : 'bg-white hover:bg-zinc-200 text-[#07080a] shadow-[0_0_18px_rgba(255,255,255,0.6)] scale-105'
+                            : 'bg-[#e4e1e7] hover:bg-white text-[#07080a] shadow-[0_0_12px_rgba(255,255,255,0.25)]'
+                        }`}
+                      >
+                        {isRunning ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-current" />
+                        ) : (
+                          <Send className="w-4 h-4 text-current" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

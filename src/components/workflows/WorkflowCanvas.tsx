@@ -83,6 +83,7 @@ export const NODE_CONFIG: Record<
     label: string;
     icon: React.ComponentType<{ size?: number; className?: string }>;
     color: string;
+    textColor: string;
     desc: string;
   }
 > = {
@@ -90,54 +91,63 @@ export const NODE_CONFIG: Record<
     label: 'Input',
     icon: Terminal,
     color: 'text-cyan-400 bg-cyan-500/10',
+    textColor: 'text-cyan-300',
     desc: 'Starting payload text',
   },
   webSearch: {
     label: 'Web Search',
     icon: Search,
     color: 'text-sky-400 bg-sky-500/10',
+    textColor: 'text-sky-300',
     desc: 'Live web search results',
   },
   webFetch: {
     label: 'Web Fetch',
     icon: Globe,
     color: 'text-teal-400 bg-teal-500/10',
+    textColor: 'text-teal-300',
     desc: 'Read webpage article content',
   },
   scholar: {
     label: 'Scholar',
     icon: GraduationCap,
     color: 'text-indigo-400 bg-indigo-500/10',
+    textColor: 'text-indigo-300',
     desc: 'Academic papers & abstracts',
   },
   ai: {
     label: 'AI Agent',
     icon: Sparkles,
     color: 'text-violet-400 bg-violet-500/10',
+    textColor: 'text-violet-300',
     desc: 'LLM reasoning & synthesis',
   },
   image: {
     label: 'Generate Image',
     icon: ImageIcon,
     color: 'text-pink-400 bg-pink-500/10',
+    textColor: 'text-pink-300',
     desc: 'AI studio image creation',
   },
   weather: {
     label: 'Weather',
     icon: CloudSun,
     color: 'text-amber-400 bg-amber-500/10',
+    textColor: 'text-amber-300',
     desc: 'Realtime city weather telemetry',
   },
   nasa: {
     label: 'NASA APOD',
     icon: Rocket,
     color: 'text-rose-400 bg-rose-500/10',
+    textColor: 'text-rose-300',
     desc: 'Astronomy picture of the day',
   },
   if: {
     label: 'Condition (If)',
     icon: GitFork,
     color: 'text-emerald-400 bg-emerald-500/10',
+    textColor: 'text-emerald-300',
     desc: 'Branch execution based on rule',
   },
 };
@@ -329,26 +339,35 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
 
   return (
     <div
-      className={`wf-cyber-card wf-step-card-enter relative rounded-xl backdrop-blur-2xl transition-all duration-200 select-none min-w-[240px] max-w-[280px] px-4 py-3.5 ${
+      className={`wf-cyber-card wf-step-card-enter group/node relative rounded-2xl backdrop-blur-2xl transition-all duration-300 select-none min-w-[244px] max-w-[284px] px-4 py-3.5 ${
         isDisabled ? 'opacity-55 ' : ''
       }${
         isSelected
-          ? 'wf-cyber-card-active border-[#49effd]/75 shadow-[0_16px_40px_-10px_rgba(73,239,253,0.32)]'
+          ? 'wf-cyber-card-active border-[#49effd]/80 shadow-[0_18px_44px_-10px_rgba(73,239,253,0.36)]'
           : status === 'running'
-          ? 'wf-cyber-card-active wf-step-running border-[#49effd]/65 shadow-[0_16px_40px_-10px_rgba(73,239,253,0.28)]'
+          ? 'wf-cyber-card-active wf-step-running border-[#49effd]/70 shadow-[0_18px_44px_-10px_rgba(73,239,253,0.32)]'
           : status === 'error'
-          ? 'wf-step-error border-[#ffb4ab]/60 shadow-[0_16px_36px_-12px_rgba(255,180,171,0.22)]'
+          ? 'wf-step-error border-[#ffb4ab]/65 shadow-[0_16px_36px_-12px_rgba(255,180,171,0.25)]'
           : status === 'done'
-          ? 'wf-step-done border-emerald-500/40 shadow-[0_12px_32px_-12px_rgba(16,185,129,0.16)]'
+          ? 'wf-step-done border-emerald-500/45 shadow-[0_12px_32px_-12px_rgba(16,185,129,0.2)]'
           : status === 'skipped'
           ? 'wf-step-skipped opacity-55'
-          : 'hover:border-[#3b494b]'
+          : ''
       }`}
     >
+      {/* Top Laser Sweep on Selected / Running / Hover */}
+      <div
+        className={`mc-laser-line transition-opacity duration-300 ${
+          isSelected || status === 'running'
+            ? 'opacity-100'
+            : 'opacity-0 group-hover/node:opacity-75'
+        }`}
+      />
+
       {/* Quick-action Floating Bar when node is selected (Touch-friendly >= 40px targets) */}
       {isSelected && (
         <div
-          className="wf-popover-enter nodrag nopan absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 flex items-center gap-1 p-1.5 rounded-xl bg-[#131317]/98 border border-[#49effd]/40 shadow-[0_16px_40px_rgba(0,0,0,0.85),0_0_16px_rgba(73,239,253,0.16)] backdrop-blur-2xl whitespace-nowrap"
+          className="wf-popover-enter nodrag nopan absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 flex items-center gap-1 p-1.5 rounded-xl bg-[#131317]/98 border border-[#49effd]/45 shadow-[0_16px_40px_rgba(0,0,0,0.85),0_0_18px_rgba(73,239,253,0.2)] backdrop-blur-2xl whitespace-nowrap"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -436,14 +455,14 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
       {/* Header: icon, label, status indicator */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className={`p-2 rounded-lg border border-[#3b494b]/40 flex-shrink-0 ${cfg.color}`}>
+          <div className={`p-2 rounded-xl border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] flex-shrink-0 ${cfg.color}`}>
             <IconComponent size={15} />
           </div>
           <div className="min-w-0">
-            <h4 className="text-[13px] font-bold text-[#e4e1e7] truncate leading-snug">
+            <h4 className={`text-[13px] font-extrabold tracking-tight truncate leading-snug ${cfg.textColor}`}>
               {label}
             </h4>
-            <span className="text-[10px] font-mono uppercase tracking-wider text-[#b9cacb] block truncate">
+            <span className="text-[10px] font-mono font-semibold uppercase tracking-wider wf-label-gradient block truncate">
               {cfg.label}
             </span>
           </div>
@@ -452,35 +471,35 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         {/* Cyber semantic status indicator */}
         <div className="flex-shrink-0 pt-0.5">
           {isDisabled ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-400/35 text-[9px] font-mono font-bold uppercase tracking-wider text-amber-300">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-400/35 text-[9px] font-mono font-bold uppercase tracking-wider text-amber-300">
               <Ban size={10} />
               <span>Disabled</span>
             </span>
           ) : status === 'running' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#49effd]/15 border border-[#49effd]/50 text-[9px] font-mono font-bold uppercase tracking-wider text-[#49effd]">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#49effd]/15 border border-[#49effd]/55 text-[9px] font-mono font-bold uppercase tracking-wider text-[#49effd] shadow-[0_0_10px_rgba(73,239,253,0.25)]">
               <Loader2 size={10} className="animate-spin" />
               <span>Running</span>
             </span>
           ) : status === 'done' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/40 text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-300">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/45 text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-300">
               <CheckCircle2 size={10} className="wf-check-pop" />
               <span>Done</span>
             </span>
           ) : status === 'error' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 text-[9px] font-mono font-bold uppercase tracking-wider text-[#ffb4ab]">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 text-[9px] font-mono font-bold uppercase tracking-wider text-[#ffb4ab]">
               <AlertCircle size={10} />
               <span>Error</span>
             </span>
           ) : status === 'skipped' ? (
             <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#0e0e12] border border-[#2a292e] text-[9px] font-mono font-bold uppercase tracking-wider text-[#b9cacb]"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#0b0d14] border border-white/10 text-[9px] font-mono font-bold uppercase tracking-wider text-[#94a3b8]"
               title="Skipped"
             >
               <MinusCircle size={10} />
               <span>Skipped</span>
             </span>
           ) : (
-            <span className="px-1.5 py-0.5 rounded bg-[#0e0e12] border border-[#2a292e] text-[9px] font-mono font-semibold uppercase tracking-wider text-[#b9cacb]">
+            <span className="px-1.5 py-0.5 rounded-md bg-[#0b0d14] border border-white/10 text-[9px] font-mono font-semibold uppercase tracking-wider text-cyan-300">
               Idle
             </span>
           )}
@@ -499,7 +518,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
             <span aria-hidden="true" className="text-[#3b494b]">·</span>
           )}
           {type === 'ai' && aiRoleMeta && (
-            <span className="text-[#e4e1e7] inline-flex items-center gap-1">
+            <span className="text-fuchsia-300 inline-flex items-center gap-1">
               {React.createElement(aiRoleMeta.icon, { size: 11 })}
               <span>{aiRoleMeta.label}</span>
             </span>
@@ -535,7 +554,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               />
             </div>
           ) : output.value ? (
-            <p className="text-[11px] text-[#e4e1e7]/90 font-mono line-clamp-2 break-words leading-relaxed bg-[#0e0e12] border border-[#2a292e] rounded px-2 py-1.5">
+            <p className="text-[11px] text-cyan-200 font-mono line-clamp-2 break-words leading-relaxed bg-[#0e0e12] border border-[#2a292e] rounded px-2 py-1.5">
               {output.value}
             </p>
           ) : null}

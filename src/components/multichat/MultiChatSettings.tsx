@@ -16,12 +16,21 @@ import {
   Smile,
   Compass,
   CheckCircle2,
+  Palette,
 } from 'lucide-react';
 import { storage, DEFAULT_MULTICHAT_CONFIG } from '@/lib/storage';
-import type { MultiChatSystemConfig, MultiChatPersonaConfig, AIProvidersState } from '@/types';
+import type {
+  MultiChatSystemConfig,
+  MultiChatPersonaConfig,
+  MultiChatTheme,
+  AIProvidersState,
+  Skill,
+} from '@/types';
 
 interface MultiChatSettingsProps {
   onSaved?: (config: MultiChatSystemConfig) => void;
+  theme?: MultiChatTheme;
+  onChangeTheme?: (theme: MultiChatTheme) => void;
 }
 
 const PERSONA_THEMES: Record<string, { icon: React.ElementType; color: string; bg: string; border: string }> = {
@@ -45,9 +54,14 @@ const PERSONA_THEMES: Record<string, { icon: React.ElementType; color: string; b
   },
 };
 
-export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
+export function MultiChatSettings({
+  onSaved,
+  theme: propTheme,
+  onChangeTheme,
+}: MultiChatSettingsProps) {
   const [config, setConfig] = useState<MultiChatSystemConfig>(() => storage.getMultiChatConfig());
   const [providersState, setProvidersState] = useState<AIProvidersState>(() => storage.getAIProvidersState());
+  const [localTheme, setLocalTheme] = useState<MultiChatTheme>(() => propTheme || storage.getMultiChatTheme());
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isSavedRecently, setIsSavedRecently] = useState(false);
   const [expandedPrompts, setExpandedPrompts] = useState<Record<string, boolean>>({
@@ -58,6 +72,15 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
   const [showResetModal, setShowResetModal] = useState(false);
   const [memories, setMemories] = useState<string[]>(() => storage.getMultiChatMemories());
   const [newMemoryInput, setNewMemoryInput] = useState('');
+  const [installedSkills, setInstalledSkills] = useState<Skill[]>(() => storage.getSkills());
+
+  const activeTheme = propTheme || localTheme;
+
+  const handleSelectTheme = (next: MultiChatTheme) => {
+    setLocalTheme(next);
+    storage.setMultiChatTheme(next);
+    onChangeTheme?.(next);
+  };
 
   const handleAddMemory = () => {
     const trimmed = newMemoryInput.trim();
@@ -77,12 +100,18 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
       setProvidersState(storage.getAIProvidersState());
       setConfig(storage.getMultiChatConfig());
       setMemories(storage.getMultiChatMemories());
+      setInstalledSkills(storage.getSkills());
+      setLocalTheme(storage.getMultiChatTheme());
     };
     window.addEventListener('storage', handleStorage);
     window.addEventListener('focus', handleStorage);
+    window.addEventListener('nexus-skills-changed', handleStorage);
+    window.addEventListener('nexus-multichat-theme-changed', handleStorage);
     return () => {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('focus', handleStorage);
+      window.removeEventListener('nexus-skills-changed', handleStorage);
+      window.removeEventListener('nexus-multichat-theme-changed', handleStorage);
     };
   }, []);
 
@@ -217,6 +246,124 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
         </div>
       )}
 
+      {/* Visual Theme Selector (3 Themes like AI Assistant Page) */}
+      <div
+        className={`rounded-2xl p-4 sm:p-5 border space-y-3 font-sans ${
+          activeTheme === 'classic'
+            ? 'bg-slate-950/85 border-cyan-500/25 shadow-lg'
+            : activeTheme === 'fulldark'
+            ? 'bg-[#141414] border-[#292929]'
+            : 'bg-zinc-900/90 border-zinc-800'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Palette size={15} className="text-purple-400" />
+            <span className="font-bold text-white uppercase tracking-wider text-xs font-mono">
+              VISUAL THEME
+            </span>
+          </div>
+          <span className="text-[11px] text-zinc-400">
+            Choose between NEXUS Minimal, NEXUS Classic, and Full Dark
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          {/* Theme 1: NEXUS Minimal (Claude style) */}
+          <button
+            type="button"
+            onClick={() => handleSelectTheme('minimal')}
+            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+              activeTheme === 'minimal'
+                ? 'border-zinc-400 bg-zinc-800/90 shadow-md ring-1 ring-zinc-400/40'
+                : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/60 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-semibold text-xs text-zinc-100">
+                  NEXUS Minimal
+                </span>
+                {activeTheme === 'minimal' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/50">
+                    <Check size={10} /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3 m-0">
+                Claude-inspired neutral dark aesthetic with refined spacing and clean sans-serif typography.
+              </p>
+            </div>
+            <div className="h-5 w-full rounded-md bg-[#111113] border border-zinc-700/60 p-1 flex items-center gap-1">
+              <div className="h-full w-1/3 rounded bg-[#26262a]" />
+              <div className="h-full w-2/3 rounded bg-[#1e1e21]" />
+            </div>
+          </button>
+
+          {/* Theme 2: NEXUS Classic (Glassmorphic Space) */}
+          <button
+            type="button"
+            onClick={() => handleSelectTheme('classic')}
+            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+              activeTheme === 'classic'
+                ? 'border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.2)] ring-1 ring-cyan-400/40'
+                : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/60 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-semibold text-xs text-cyan-200">
+                  NEXUS Classic
+                </span>
+                {activeTheme === 'classic' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-500/50">
+                    <Check size={10} /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3 m-0">
+                Glassmorphic cosmic dark space theme with glowing cyan accents and deep stellar backdrop.
+              </p>
+            </div>
+            <div className="h-5 w-full rounded-md bg-[#060b13] border border-cyan-500/30 p-1 flex items-center gap-1">
+              <div className="h-full w-1/3 rounded bg-cyan-900/60 border border-cyan-500/30" />
+              <div className="h-full w-2/3 rounded bg-slate-900/80 border border-cyan-500/20" />
+            </div>
+          </button>
+
+          {/* Theme 3: Full Dark (ChatGPT style) */}
+          <button
+            type="button"
+            onClick={() => handleSelectTheme('fulldark')}
+            className={`p-3.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
+              activeTheme === 'fulldark'
+                ? 'border-zinc-400 bg-[#212121] shadow-md ring-1 ring-zinc-400/40'
+                : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800/60 hover:border-zinc-700'
+            }`}
+          >
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="font-semibold text-xs text-[#ececec]">
+                  Full Dark
+                </span>
+                {activeTheme === 'fulldark' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/50">
+                    <Check size={10} /> Active
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed mb-3 m-0">
+                ChatGPT-style high-contrast pure dark mode with deep black backdrop and clean cards.
+              </p>
+            </div>
+            <div className="h-5 w-full rounded-md bg-[#0d0d0d] border border-[#2f2f2f] p-1 flex items-center gap-1">
+              <div className="h-full w-1/3 rounded bg-[#212121]" />
+              <div className="h-full w-2/3 rounded bg-[#2f2f2f]" />
+            </div>
+          </button>
+        </div>
+      </div>
+
       {/* Response Language & Global Defaults */}
       <div className="rounded-xl p-4 sm:p-5 bg-black/60 border border-white/10 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -343,7 +490,7 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
 
               {/* Persona Engine Controls Grid */}
               <div className="p-4 sm:p-5 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Provider Selector */}
                   <div>
                     <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5">
@@ -392,6 +539,29 @@ export function MultiChatSettings({ onSaved }: MultiChatSettingsProps) {
                       }
                       className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono text-xs"
                     />
+                  </div>
+
+                  {/* Pinned Persona Skill */}
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1.5">
+                      PINNED SKILL (OPTIONAL):
+                    </label>
+                    <select
+                      value={persona.pinnedSkillId || ''}
+                      onChange={(e) =>
+                        handlePersonaChange(personaId, {
+                          pinnedSkillId: e.target.value || undefined,
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/15 text-white focus:outline-none focus:border-cyan-400 font-mono text-xs"
+                    >
+                      <option value="">Global Active Skills Only</option>
+                      {installedSkills.map((sk) => (
+                        <option key={sk.id} value={sk.id}>
+                          📌 {sk.name} {sk.enabled ? '(ON)' : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 

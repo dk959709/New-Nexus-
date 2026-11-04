@@ -129,10 +129,10 @@ export const ParallaxAgentMatrix: React.FC<ParallaxAgentMatrixProps> = ({
             <Users size={14} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-semibold text-white flex-wrap">
-              <span>Swarm Agent Matrix</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-extrabold flex-wrap">
+              <span className="px-headline-aurora">Swarm Agent Matrix</span>
               <span className="text-slate-500" aria-hidden="true">·</span>
-              <span className="font-mono text-[11px] text-cyan-300 tabular-nums">
+              <span className="font-mono text-[11px] px-subheadline-spectrum tabular-nums">
                 {enabledCoreCount}/{configuredCoreCount} Enabled
                 {dynamicPersonas.length > 0 ? ` + ${dynamicPersonas.length} Dynamic` : ''}
               </span>

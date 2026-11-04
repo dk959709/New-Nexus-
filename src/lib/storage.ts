@@ -15,6 +15,7 @@ import type {
   MultiChatSystemConfig,
   MultiChatMessage,
   MultiChatPersonaConfig,
+  MultiChatSession,
   LibraryDocument,
   DocumentRagSettings,
   ParallaxSystemConfig,
@@ -2120,17 +2121,151 @@ export const storage = {
   },
 
   saveMultiChatMessages(messages: MultiChatMessage[]): void {
-    write(KEYS.multiChatMessages, messages.slice(-50));
+    const trimmed = messages.slice(-50);
+    write(KEYS.multiChatMessages, trimmed);
+    try {
+      const sessions = read<MultiChatSession[]>('nexus-multichat-sessions-v1', []);
+      const activeId = read<string>('nexus-multichat-active-session-v1', '');
+      if (sessions.length > 0 && activeId) {
+        const idx = sessions.findIndex((s) => s.id === activeId);
+        if (idx !== -1) {
+          const existing = sessions[idx];
+          const firstQuery = trimmed[0]?.query?.trim();
+          const autoTitle =
+            existing.title === 'New Board' && firstQuery
+              ? firstQuery.slice(0, 38) + (firstQuery.length > 38 ? '…' : '')
+              : existing.title;
+          sessions[idx] = {
+            ...existing,
+            title: autoTitle,
+            updatedAt: Date.now(),
+            messages: trimmed,
+          };
+          write('nexus-multichat-sessions-v1', sessions);
+        }
+      }
+    } catch {
+      // ignore session sync error
+    }
   },
 
   clearMultiChatMessages(): void {
     write(KEYS.multiChatMessages, []);
+    try {
+      const sessions = read<MultiChatSession[]>('nexus-multichat-sessions-v1', []);
+      const activeId = read<string>('nexus-multichat-active-session-v1', '');
+      if (sessions.length > 0 && activeId) {
+        const idx = sessions.findIndex((s) => s.id === activeId);
+        if (idx !== -1) {
+          sessions[idx] = {
+            ...sessions[idx],
+            updatedAt: Date.now(),
+            messages: [],
+          };
+          write('nexus-multichat-sessions-v1', sessions);
+        }
+      }
+    } catch {
+      // ignore
+    }
   },
 
   deleteMultiChatMessage(messageId: string): void {
     const current = read<MultiChatMessage[]>(KEYS.multiChatMessages, []);
     const filtered = current.filter((m) => m.id !== messageId);
-    write(KEYS.multiChatMessages, filtered);
+    this.saveMultiChatMessages(filtered);
+  },
+
+  getMultiChatSessions(): MultiChatSession[] {
+    const sessions = read<MultiChatSession[]>('nexus-multichat-sessions-v1', []);
+    if (sessions.length > 0) return sessions;
+    const currentMsgs = this.getMultiChatMessages();
+    const firstQuery = currentMsgs[0]?.query?.trim();
+    const defaultSession: MultiChatSession = {
+      id: 'mc_session_default',
+      title: firstQuery ? firstQuery.slice(0, 38) + (firstQuery.length > 38 ? '…' : '') : 'Main Board',
+      createdAt: currentMsgs[0]?.timestamp || Date.now(),
+      updatedAt: Date.now(),
+      messages: currentMsgs,
+    };
+    write('nexus-multichat-sessions-v1', [defaultSession]);
+    write('nexus-multichat-active-session-v1', defaultSession.id);
+    return [defaultSession];
+  },
+
+  saveMultiChatSessions(sessions: MultiChatSession[]): void {
+    write('nexus-multichat-sessions-v1', sessions.slice(0, 15));
+  },
+
+  getActiveMultiChatSessionId(): string {
+    const sessions = this.getMultiChatSessions();
+    const storedId = read<string>('nexus-multichat-active-session-v1', '');
+    if (storedId && sessions.some((s) => s.id === storedId)) {
+      return storedId;
+    }
+    const fallbackId = sessions[0]?.id || 'mc_session_default';
+    write('nexus-multichat-active-session-v1', fallbackId);
+    return fallbackId;
+  },
+
+  setActiveMultiChatSessionId(sessionId: string): MultiChatMessage[] {
+    const sessions = this.getMultiChatSessions();
+    const target = sessions.find((s) => s.id === sessionId) || sessions[0];
+    if (!target) return [];
+    write('nexus-multichat-active-session-v1', target.id);
+    write(KEYS.multiChatMessages, target.messages || []);
+    return target.messages || [];
+  },
+
+  createMultiChatSession(title?: string): { session: MultiChatSession; sessions: MultiChatSession[] } {
+    const sessions = this.getMultiChatSessions();
+    const newSession: MultiChatSession = {
+      id: `mc_session_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: (title || '').trim() || 'New Board',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    const updated = [newSession, ...sessions].slice(0, 15);
+    write('nexus-multichat-sessions-v1', updated);
+    write('nexus-multichat-active-session-v1', newSession.id);
+    write(KEYS.multiChatMessages, []);
+    return { session: newSession, sessions: updated };
+  },
+
+  renameMultiChatSession(sessionId: string, newTitle: string): MultiChatSession[] {
+    const clean = (newTitle || '').trim().slice(0, 50);
+    if (!clean) return this.getMultiChatSessions();
+    const sessions = this.getMultiChatSessions().map((s) =>
+      s.id === sessionId ? { ...s, title: clean, updatedAt: Date.now() } : s,
+    );
+    write('nexus-multichat-sessions-v1', sessions);
+    return sessions;
+  },
+
+  deleteMultiChatSession(sessionId: string): { sessions: MultiChatSession[]; activeId: string; messages: MultiChatMessage[] } {
+    const current = this.getMultiChatSessions();
+    let remaining = current.filter((s) => s.id !== sessionId);
+    if (remaining.length === 0) {
+      const fresh: MultiChatSession = {
+        id: `mc_session_${Date.now()}`,
+        title: 'Main Board',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: [],
+      };
+      remaining = [fresh];
+    }
+    write('nexus-multichat-sessions-v1', remaining);
+    const currentActiveId = read<string>('nexus-multichat-active-session-v1', '');
+    const nextActive = remaining.find((s) => s.id === currentActiveId) || remaining[0];
+    write('nexus-multichat-active-session-v1', nextActive.id);
+    write(KEYS.multiChatMessages, nextActive.messages || []);
+    return {
+      sessions: remaining,
+      activeId: nextActive.id,
+      messages: nextActive.messages || [],
+    };
   },
 
   getMultiChatCategory(): string {
@@ -2211,6 +2346,22 @@ export const storage = {
 
   setAssistantTheme(theme: 'minimal' | 'classic' | 'fulldark'): void {
     write('nexus-ai-assistant-theme', theme);
+  },
+
+  getMultiChatTheme(): 'minimal' | 'classic' | 'fulldark' {
+    const val = read<string>('nexus-multichat-theme', '');
+    if (val === 'minimal' || val === 'classic' || val === 'fulldark') {
+      return val;
+    }
+    return this.getAssistantTheme();
+  },
+
+  setMultiChatTheme(theme: 'minimal' | 'classic' | 'fulldark'): void {
+    const valid = theme === 'minimal' || theme === 'classic' || theme === 'fulldark' ? theme : 'classic';
+    write('nexus-multichat-theme', valid);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nexus-multichat-theme-changed', { detail: valid }));
+    }
   },
 
   getAssistantMultiChatEnabled(): boolean {

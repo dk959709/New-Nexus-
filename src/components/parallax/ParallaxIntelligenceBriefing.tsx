@@ -66,7 +66,7 @@ export const ParallaxIntelligenceBriefing: React.FC<ParallaxIntelligenceBriefing
               <span className="text-[10px] sm:text-xs font-black tracking-wider px-2 py-0.5 rounded-full bg-slate-900/40 backdrop-blur-xl text-cyan-300">
                 ROUND 00
               </span>
-              <h3 className="m-0 text-xs sm:text-sm font-black text-slate-100 uppercase tracking-wider truncate">
+              <h3 className="m-0 text-xs sm:text-sm font-black px-headline-aurora uppercase tracking-wider truncate">
                 INTELLIGENCE BRIEFING
               </h3>
               <span className="text-[9.5px] sm:text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center gap-1">

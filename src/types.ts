@@ -477,6 +477,29 @@ export interface MultiChatPersonaConfig {
   fallbackProviderId?: string;
   fallbackModelId?: string;
   systemPrompt: string;
+  pinnedSkillId?: string;
+}
+
+export type MultiChatDialogueMode = 'harmony' | 'debate' | 'parallel';
+
+export interface MultiChatWebSource {
+  title: string;
+  url: string;
+  domain: string;
+  snippet: string;
+}
+
+export interface MultiChatConsensusChecklistItem {
+  id: string;
+  text: string;
+  done?: boolean;
+}
+
+export interface MultiChatConsensusData {
+  verdict: string;
+  agreements: string[];
+  actionChecklist: MultiChatConsensusChecklistItem[];
+  generatedAt: number;
 }
 
 export interface MultiChatSystemConfig {
@@ -504,6 +527,7 @@ export interface MultiChatPersonaResponse {
   status: 'pending' | 'running' | 'completed' | 'failed';
   error?: string;
   model?: string;
+  modelName?: string;
   providerName?: string;
   durationMs?: number;
   branches?: MultiChatBranchTurn[];
@@ -536,8 +560,25 @@ export interface MultiChatMessage {
   responses: MultiChatPersonaResponse[];
   docChunks?: DocumentRetrievalResult[];
   docLensEnabled?: boolean;
+  webSources?: MultiChatWebSource[];
+  webLensEnabled?: boolean;
+  dialogueMode?: MultiChatDialogueMode;
+  targetPersonaIds?: MultiChatPersonaId[];
+  consensus?: MultiChatConsensusData;
+  pinned?: boolean;
   category?: MultiChatCategoryId | string;
 }
+
+export interface MultiChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  category?: MultiChatCategoryId | string;
+  messages: MultiChatMessage[];
+}
+
+export type MultiChatTheme = 'minimal' | 'classic' | 'fulldark';
 
 export type ParallaxAgentId =
   | 'veritas'

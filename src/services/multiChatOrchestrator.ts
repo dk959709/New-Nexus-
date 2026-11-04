@@ -3,6 +3,11 @@ import { api } from '@/services/api';
 import { searchDocumentLibrary } from '@/services/documentLibraryService';
 import { applyReasoningConfig } from '@/lib/reasoningConfig';
 import { getCategoryById } from '@/data/multiChatCategories';
+import {
+  buildActiveSkillsText,
+  getSkillTextById,
+  appendSkillsToMessages,
+} from '@/lib/skills';
 import type {
   AIProviderConfig,
   MultiChatMessage,
@@ -12,6 +17,10 @@ import type {
   MultiChatBranchTurn,
   DocumentRetrievalResult,
   MultiChatCategoryId,
+  MultiChatDialogueMode,
+  MultiChatWebSource,
+  MultiChatConsensusData,
+  MultiChatPersonaId,
 } from '@/types';
 
 /**
@@ -896,6 +905,117 @@ export function buildPersonaDocLensDirective(
 }
 
 /**
+ * Parses @nova, @orbit, @cosmos mentions from a user query
+ */
+export function parseMultiChatMentions(rawQuery: string): {
+  cleanQuery: string;
+  mentionedIds: MultiChatPersonaId[];
+} {
+  const mentioned = new Set<MultiChatPersonaId>();
+  const mentionRegex = /(?:^|\s)@(nova|orbit|cosmos)\b/gi;
+  let match: RegExpExecArray | null;
+  while ((match = mentionRegex.exec(rawQuery)) !== null) {
+    if (match[1]) {
+      mentioned.add(match[1].toLowerCase());
+    }
+  }
+  const cleaned = rawQuery.replace(/(?:^|\s)@(?:nova|orbit|cosmos)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  return {
+    cleanQuery: cleaned || rawQuery.trim(),
+    mentionedIds: Array.from(mentioned),
+  };
+}
+
+/**
+ * Builds Persona-Specific Live Web Lens directive
+ */
+export function buildPersonaWebLensDirective(
+  personaId: string,
+  sources: MultiChatWebSource[],
+): string {
+  if (!sources || sources.length === 0) return '';
+  const sourcesBlock = sources
+    .map(
+      (s, i) =>
+        `[WEB SOURCE ${i + 1} — ${s.domain || 'web'} | "${s.title}"]:\nURL: ${s.url}\nSnippet: "${s.snippet}"`,
+    )
+    .join('\n\n');
+
+  let guidance = '';
+  if (personaId === 'nova') {
+    guidance = `[LIVE WEB LENS — NOVA (RESEARCHER)]:
+- Ground your factual analysis in the verified real-time web sources above.
+- Cite key facts or domain names naturally (e.g. [Source: ${sources[0]?.domain || 'Web'}]) and avoid hallucinating unverified metrics.`;
+  } else if (personaId === 'orbit') {
+    guidance = `[LIVE WEB LENS — ORBIT (BUDDY)]:
+- Use the real-world facts from the live web sources above to keep your examples, analogies, and practical takeaways current and accurate!`;
+  } else {
+    guidance = `[LIVE WEB LENS — COSMOS (MENTOR)]:
+- Reflect on the broader meaning, trajectory, and long-term implications of the verified real-time developments above.`;
+  }
+
+  return `\n\n=== VERIFIED LIVE WEB SEARCH GROUNDING ===\n${sourcesBlock}\n==========================================\n${guidance}`;
+}
+
+/**
+ * Builds Dialogue Mode directive (Harmony vs. Debate / Red-Team vs. Blind Parallel)
+ */
+export function buildPersonaDialogueModeDirective(
+  personaId: string,
+  dialogueMode?: MultiChatDialogueMode,
+): string {
+  if (!dialogueMode || dialogueMode === 'harmony') return '';
+
+  if (dialogueMode === 'debate') {
+    if (personaId === 'nova') {
+      return `\n\n[ROUNDTABLE DEBATE MODE — NOVA: PRIMARY THESIS]:
+- Establish a rigorous, evidence-backed primary thesis with clear assumptions and analytical claims so the panel can debate and test them.`;
+    }
+    if (personaId === 'orbit') {
+      return `\n\n[ROUNDTABLE DEBATE MODE — ORBIT: RED-TEAM / DEVIL'S ADVOCATE CHALLENGER]:
+- Actively challenge, stress-test, and poke holes in NOVA's assumptions or conventional wisdom!
+- Highlight blind spots, real-world friction, counter-examples, or bold alternative angles while keeping your energetic ORBIT voice.`;
+    }
+    return `\n\n[ROUNDTABLE DEBATE MODE — COSMOS: FINAL ARBITER & JUDGE]:
+- Weigh NOVA's analytical thesis against ORBIT's Red-Team challenge.
+- Resolve the tension with balanced wisdom and deliver a clear final verdict on where the truth lies.`;
+  }
+
+  if (dialogueMode === 'parallel') {
+    return `\n\n[BLIND PARALLEL MODE]:
+- You are answering simultaneously and independently alongside the other personas without seeing their responses. Deliver your sharpest, most authentic perspective.`;
+  }
+
+  return '';
+}
+
+/**
+ * Resolves combined skills text for a persona (pinned skill + global active skills)
+ */
+export function resolvePersonaSkillsText(
+  persona: MultiChatPersonaConfig,
+  enableSkills = true,
+): string | undefined {
+  if (!enableSkills) return undefined;
+  const blocks: string[] = [];
+
+  if (persona.pinnedSkillId && persona.pinnedSkillId !== 'none') {
+    const pinned = getSkillTextById(persona.pinnedSkillId);
+    if (pinned) {
+      blocks.push(`### Pinned Persona Skill (${persona.name}): ${pinned.name}\n${pinned.text}`);
+    }
+  }
+
+  const globalActive = buildActiveSkillsText();
+  if (globalActive) {
+    blocks.push(globalActive);
+  }
+
+  if (blocks.length === 0) return undefined;
+  return blocks.join('\n\n').slice(0, 30000);
+}
+
+/**
  * Executes a single persona call
  */
 export async function executeSinglePersona(
@@ -907,6 +1027,11 @@ export async function executeSinglePersona(
   responseLanguage?: string,
   documentChunks?: DocumentRetrievalResult[],
   category?: MultiChatCategoryId | string,
+  options?: {
+    webSources?: MultiChatWebSource[];
+    dialogueMode?: MultiChatDialogueMode;
+    enableSkills?: boolean;
+  },
 ): Promise<MultiChatPersonaResponse> {
   const startTime = Date.now();
   const baseResponse: MultiChatPersonaResponse = {
@@ -957,6 +1082,16 @@ export async function executeSinglePersona(
   // Inject Document Lens excerpts if available
   if (documentChunks && documentChunks.length > 0) {
     systemContent += buildPersonaDocLensDirective(persona.id, documentChunks);
+  }
+
+  // Inject Live Web Lens sources if available
+  if (options?.webSources && options.webSources.length > 0) {
+    systemContent += buildPersonaWebLensDirective(persona.id, options.webSources);
+  }
+
+  // Inject Dialogue Mode directive (Harmony / Debate / Parallel)
+  if (options?.dialogueMode) {
+    systemContent += buildPersonaDialogueModeDirective(persona.id, options.dialogueMode);
   }
 
   // Inject chosen response language instruction
@@ -1039,6 +1174,10 @@ export async function executeSinglePersona(
       const ackNote =
         lengthProfile.category === 'acknowledgment'
           ? '\n(Since the user gave a simple acknowledgment, stay brief and natural. Do NOT start a new story, debate, or go off-topic based on what other personas said.)'
+          : options?.dialogueMode === 'debate'
+          ? persona.id === 'orbit'
+            ? '\n(DEBATE MODE: Directly challenge or stress-test NOVA\'s claims above with sharp counter-points and practical reality checks in your ORBIT style!)'
+            : '\n(DEBATE MODE: Weigh NOVA\'s thesis and ORBIT\'s counter-arguments above, and deliver a wise, balanced final judgment as COSMOS.)'
           : '\n(You may react to, agree/disagree with, or build on what they said, while answering the user in your own voice and following your adaptive length rules.)';
 
       userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================${ackNote}`;
@@ -1056,11 +1195,14 @@ export async function executeSinglePersona(
     }
   }
 
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+  const baseMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemContent },
     ...historyMessages,
     { role: 'user', content: userContent },
   ];
+
+  const skillsText = resolvePersonaSkillsText(persona, options?.enableSkills ?? true);
+  const messages = appendSkillsToMessages(baseMessages, skillsText);
 
   try {
     const res = await api.jarvisAgentCall({
@@ -1135,6 +1277,7 @@ export async function executePersonaBranch(args: {
   permanentMemories?: string[];
   responseLanguage?: string;
   documentChunks?: DocumentRetrievalResult[];
+  enableSkills?: boolean;
 }): Promise<MultiChatBranchTurn> {
   const startTime = Date.now();
   const branchTurnId = `branch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -1229,6 +1372,11 @@ export async function executePersonaBranch(args: {
     systemContent += buildPersonaDocLensDirective(persona.id, documentChunks);
   }
 
+  // Inject Web Lens if present on parent message
+  if (args.message?.webSources && args.message.webSources.length > 0) {
+    systemContent += buildPersonaWebLensDirective(persona.id, args.message.webSources);
+  }
+
   // Response language
   const rawLang = args.responseLanguage ?? storage.getMultiChatResponseLanguage();
   const lang = typeof rawLang === 'string' && rawLang.trim() ? rawLang.trim() : 'English';
@@ -1257,12 +1405,15 @@ export async function executePersonaBranch(args: {
     branchThreadMessages.push({ role: 'assistant', content: bText });
   }
 
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+  const baseMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemContent },
     ...historyMessages,
     ...branchThreadMessages,
     { role: 'user', content: branchQuery.trim() },
   ];
+
+  const skillsText = resolvePersonaSkillsText(persona, args.enableSkills ?? true);
+  const messages = appendSkillsToMessages(baseMessages, skillsText);
 
   try {
     const res = await api.jarvisAgentCall({
@@ -1354,9 +1505,7 @@ export async function executePersonaBranch(args: {
 }
 
 /**
- * Runs a Multi Chat turn across all enabled personas in SEQUENCE (NOVA -> ORBIT -> COSMOS).
- * Each subsequent persona receives what prior personas answered in THIS turn as additional context.
- * If enableDocLens is true, retrieves on-device document chunks and injects tailored lenses into each persona.
+ * Runs a Multi Chat turn across enabled (or @mentioned) personas in Harmony, Debate, or Parallel mode.
  */
 export async function executeMultiChatTurn({
   query,
@@ -1367,6 +1516,10 @@ export async function executeMultiChatTurn({
   responseLanguage,
   enableDocLens = false,
   category,
+  enableWebLens = false,
+  dialogueMode = 'harmony',
+  targetPersonaIds,
+  enableSkills = true,
 }: {
   query: string;
   conversationHistory: MultiChatMessage[];
@@ -1376,11 +1529,34 @@ export async function executeMultiChatTurn({
   responseLanguage?: string;
   enableDocLens?: boolean;
   category?: MultiChatCategoryId | string;
-}): Promise<{ responses: MultiChatPersonaResponse[]; docChunks?: DocumentRetrievalResult[] }> {
+  enableWebLens?: boolean;
+  dialogueMode?: MultiChatDialogueMode;
+  targetPersonaIds?: MultiChatPersonaId[];
+  enableSkills?: boolean;
+}): Promise<{
+  responses: MultiChatPersonaResponse[];
+  docChunks?: DocumentRetrievalResult[];
+  webSources?: MultiChatWebSource[];
+}> {
   const activeMemories = permanentMemories ?? storage.getMultiChatMemories();
   const activeLanguage = responseLanguage ?? config.responseLanguage ?? storage.getMultiChatResponseLanguage();
   const personas = Object.values(config.personas);
-  const enabledPersonas = personas.filter((p) => p.enabled);
+
+  const { cleanQuery, mentionedIds } = parseMultiChatMentions(query);
+  const effectiveTargetIds =
+    targetPersonaIds && targetPersonaIds.length > 0
+      ? targetPersonaIds
+      : mentionedIds.length > 0
+      ? mentionedIds
+      : [];
+
+  let enabledPersonas = personas.filter((p) => p.enabled);
+  if (effectiveTargetIds.length > 0) {
+    const targeted = personas.filter((p) => effectiveTargetIds.includes(p.id));
+    if (targeted.length > 0) {
+      enabledPersonas = targeted;
+    }
+  }
 
   if (enabledPersonas.length === 0) {
     throw new Error('All personas are currently disabled. Please enable at least one persona in Agent Configurations.');
@@ -1390,14 +1566,30 @@ export async function executeMultiChatTurn({
   let retrievedChunks: DocumentRetrievalResult[] = [];
   if (enableDocLens) {
     try {
-      retrievedChunks = await searchDocumentLibrary(query, { mode: 'all', topK: 4 });
+      retrievedChunks = await searchDocumentLibrary(cleanQuery, { mode: 'all', topK: 4 });
     } catch {
-      // Fallback gracefully if search fails
       retrievedChunks = [];
     }
   }
 
-  // Enforce connected sequential order: NOVA -> ORBIT -> COSMOS
+  // Retrieve Live Web Sources if Web Lens is enabled
+  let retrievedWebSources: MultiChatWebSource[] = [];
+  if (enableWebLens) {
+    try {
+      const searchRes = await api.search(cleanQuery, 'web', 1);
+      const rawResults = searchRes?.results || [];
+      retrievedWebSources = rawResults.slice(0, 4).map((r) => ({
+        title: r.title || 'Web Result',
+        url: r.url || '',
+        domain: r.domain || '',
+        snippet: r.description || '',
+      }));
+    } catch {
+      retrievedWebSources = [];
+    }
+  }
+
+  // Enforce canonical order: NOVA -> ORBIT -> COSMOS
   const orderedIds = ['nova', 'orbit', 'cosmos'];
   enabledPersonas.sort((a, b) => {
     const idxA = orderedIds.indexOf(a.id);
@@ -1405,8 +1597,50 @@ export async function executeMultiChatTurn({
     return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
   });
 
-  // Notify initial statuses:
-  // First persona is 'running'; subsequent personas are queued as 'pending'
+  // PARALLEL EXECUTION MODE
+  if (dialogueMode === 'parallel' && enabledPersonas.length > 1) {
+    enabledPersonas.forEach((p) => {
+      onPersonaUpdate?.({
+        personaId: p.id,
+        name: p.name,
+        icon: p.icon,
+        accentColor: p.accentColor,
+        toneBadge: p.toneBadge,
+        text: '',
+        status: 'running',
+      });
+    });
+
+    const parallelResults = await Promise.all(
+      enabledPersonas.map(async (persona) => {
+        const res = await executeSinglePersona(
+          persona,
+          cleanQuery,
+          conversationHistory,
+          [],
+          activeMemories,
+          activeLanguage,
+          retrievedChunks,
+          category,
+          {
+            webSources: retrievedWebSources,
+            dialogueMode: 'parallel',
+            enableSkills,
+          },
+        );
+        onPersonaUpdate?.(res);
+        return res;
+      }),
+    );
+
+    return {
+      responses: parallelResults,
+      docChunks: retrievedChunks,
+      webSources: retrievedWebSources,
+    };
+  }
+
+  // SEQUENTIAL EXECUTION MODE (Harmony or Debate)
   enabledPersonas.forEach((p, index) => {
     onPersonaUpdate?.({
       personaId: p.id,
@@ -1422,11 +1656,9 @@ export async function executeMultiChatTurn({
   const results: MultiChatPersonaResponse[] = [];
   const turnContext: PriorPersonaTurnAnswer[] = [];
 
-  // Execute personas sequentially
   for (let i = 0; i < enabledPersonas.length; i++) {
     const persona = enabledPersonas[i];
 
-    // If not the first, transition status from 'pending' to 'running'
     if (i > 0) {
       onPersonaUpdate?.({
         personaId: persona.id,
@@ -1441,19 +1673,23 @@ export async function executeMultiChatTurn({
 
     const result = await executeSinglePersona(
       persona,
-      query,
+      cleanQuery,
       conversationHistory,
       [...turnContext],
       activeMemories,
       activeLanguage,
       retrievedChunks,
       category,
+      {
+        webSources: retrievedWebSources,
+        dialogueMode,
+        enableSkills,
+      },
     );
 
     results.push(result);
     onPersonaUpdate?.(result);
 
-    // If completed, record this persona's clean answer for subsequent personas
     const cleanAnswer = getPersonaCleanText(result);
     if (result.status === 'completed' && cleanAnswer) {
       turnContext.push({
@@ -1464,5 +1700,129 @@ export async function executeMultiChatTurn({
     }
   }
 
-  return { responses: results, docChunks: retrievedChunks };
+  return {
+    responses: results,
+    docChunks: retrievedChunks,
+    webSources: retrievedWebSources,
+  };
+}
+
+/**
+ * Generates a Consensus Action Card (Executive Verdict, Key Agreements, and Action Checklist)
+ * from the completed persona responses of a MultiChat turn.
+ */
+export async function generateMultiChatConsensus(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatConsensusData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const fallbackConsensus = (): MultiChatConsensusData => {
+    const snippets = completed.map((r) => {
+      const firstSentence =
+        getPersonaCleanText(r)
+          .split(/(?<=[.!?])\s+/)[0]
+          ?.trim() || getPersonaCleanText(r).slice(0, 120);
+      return `${r.name}: ${firstSentence}`;
+    });
+    return {
+      verdict:
+        completed.length > 0
+          ? `Across ${completed.map((r) => r.name).join(', ')}, the panel converges on combining analytical rigor with practical execution and mindful long-term balance for "${msg.query.slice(0, 60)}".`
+          : 'No completed responses available to synthesize.',
+      agreements:
+        snippets.length > 0
+          ? snippets
+          : ['Clarify core factual baseline before taking action.'],
+      actionChecklist: [
+        { id: `act_1_${Date.now()}`, text: 'Verify the core factual assumptions highlighted by NOVA', done: false },
+        { id: `act_2_${Date.now()}`, text: 'Apply ORBIT’s practical quick-win recommendation first', done: false },
+        { id: `act_3_${Date.now()}`, text: 'Review COSMOS’s long-term perspective before finalizing', done: false },
+      ],
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length === 0) {
+    return fallbackConsensus();
+  }
+
+  const personaConfig =
+    config.personas.cosmos || config.personas.nova || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 600);
+  if (primary.error) {
+    return fallbackConsensus();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.toneBadge || 'Persona'}):\n${getPersonaCleanText(r)}`)
+    .join('\n\n');
+
+  const rawLang = config.responseLanguage ?? storage.getMultiChatResponseLanguage() ?? 'English';
+
+  const systemPrompt = `You are the NEXUS Multi-Chat Consensus Synthesizer.
+Given a user query and responses from the Multi-Chat cognitive panel (NOVA, ORBIT, COSMOS), output ONLY a valid JSON object summarizing their consensus in ${rawLang}:
+{
+  "verdict": "1-2 sentence executive verdict combining all personas' insights",
+  "agreements": ["Key point of agreement 1", "Key point of agreement 2", "Key point of agreement 3"],
+  "actions": ["Concrete actionable next step 1", "Concrete actionable next step 2", "Concrete actionable next step 3"]
+}
+Output raw JSON only. No markdown fences or extra text.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_consensus',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `User Query: "${msg.query}"\n\nPanel Responses:\n${transcript}`,
+        },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.2,
+      maxTokens: 600,
+      timeoutMs: 30000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        verdict?: string;
+        agreements?: string[];
+        actions?: string[];
+      };
+      const verdict =
+        typeof parsed.verdict === 'string' && parsed.verdict.trim()
+          ? parsed.verdict.trim()
+          : fallbackConsensus().verdict;
+      const agreements = Array.isArray(parsed.agreements)
+        ? parsed.agreements.map((a) => String(a).trim()).filter(Boolean).slice(0, 4)
+        : fallbackConsensus().agreements;
+      const actions = Array.isArray(parsed.actions)
+        ? parsed.actions.map((a) => String(a).trim()).filter(Boolean).slice(0, 4)
+        : [];
+
+      return {
+        verdict,
+        agreements: agreements.length > 0 ? agreements : fallbackConsensus().agreements,
+        actionChecklist:
+          actions.length > 0
+            ? actions.map((text, idx) => ({
+                id: `act_${idx}_${Date.now()}`,
+                text,
+                done: false,
+              }))
+            : fallbackConsensus().actionChecklist,
+        generatedAt: Date.now(),
+      };
+    }
+  } catch {
+    // use fallback
+  }
+
+  return fallbackConsensus();
 }

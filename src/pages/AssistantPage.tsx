@@ -8813,20 +8813,117 @@ DIRECTIVES:
             </div>
           )}
 
-          {/* Input Box */}
+          {/* Input Box with Animated Glowing Border & Graphics */}
+          <div
+            data-generating={loading ? 'true' : 'false'}
+            className={`mc-glow-input-wrap ${
+              theme === 'minimal'
+                ? 'theme-minimal-glow !rounded-[17.5px]'
+                : theme === 'fulldark'
+                ? 'theme-fulldark-glow !rounded-[29.5px]'
+                : '!rounded-[17.5px]'
+            }`}
+          >
           <form
             onSubmit={(e) => {
               e.preventDefault();
               sendMessage();
             }}
-            className={`transition-all ${
+            className={`relative transition-all ${
               theme === 'classic'
-                ? 'rounded-2xl border border-cyan-500/40 bg-slate-900/85 backdrop-blur-md shadow-[0_0_20px_rgba(6,182,212,0.15)] focus-within:border-cyan-400 p-2.5 flex flex-col gap-2'
+                ? 'rounded-2xl border border-cyan-400/30 bg-slate-950/95 backdrop-blur-xl shadow-[inset_0_1px_24px_rgba(6,182,212,0.14)] p-2.5 flex flex-col gap-2'
                 : theme === 'fulldark'
-                ? 'rounded-[28px] border border-[#303030] bg-[#212121] shadow-none focus-within:border-[#525252] p-3 flex flex-col gap-2'
-                : 'rounded-2xl border border-zinc-700/70 bg-[#1e1e21] shadow-lg focus-within:border-zinc-500 p-2.5 flex flex-col gap-2'
+                ? 'rounded-[28px] border border-white/15 bg-[#121215]/95 backdrop-blur-xl shadow-[inset_0_1px_24px_rgba(168,85,247,0.1)] p-3 flex flex-col gap-2'
+                : 'rounded-2xl border border-indigo-500/25 bg-[#16161a]/95 backdrop-blur-xl shadow-[inset_0_1px_22px_rgba(99,102,241,0.12)] p-2.5 flex flex-col gap-2'
             }`}
           >
+            {/* Decorative Powerful Graphics & Dual Laser Animation Layer (clipped to form bounds without clipping upward popovers) */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden z-0"
+            >
+              {/* Top & Bottom Animated Laser Sweep Beams */}
+              <div className="mc-laser-line" />
+              <div className="mc-laser-line-bottom" />
+
+              {/* Ambient Plasma Glow Orbs */}
+              <div
+                className={`absolute -top-10 -left-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
+                  loading ? 'opacity-65 animate-pulse' : 'opacity-30'
+                } ${
+                  deepResearchEnabled
+                    ? 'bg-emerald-500/35'
+                    : imageGenEnabled
+                    ? 'bg-purple-500/35'
+                    : theme === 'classic'
+                    ? 'bg-cyan-500/35'
+                    : 'bg-indigo-500/30'
+                }`}
+              />
+              <div
+                className={`absolute -bottom-10 -right-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
+                  loading ? 'opacity-65 animate-pulse' : 'opacity-30'
+                } ${
+                  deepResearchEnabled
+                    ? 'bg-cyan-500/30'
+                    : imageGenEnabled
+                    ? 'bg-fuchsia-500/35'
+                    : theme === 'classic'
+                    ? 'bg-violet-500/30'
+                    : 'bg-cyan-500/25'
+                }`}
+              />
+
+              {/* Subtle Cybernetic Corner Reticle Graphics */}
+              <svg
+                className="absolute top-1.5 left-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M1 6V2C1 1.44772 1.44772 1 2 1H6"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <svg
+                className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-violet-400/45"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M15 6V2C15 1.44772 14.5523 1 14 1H10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <svg
+                className="absolute bottom-1.5 left-1.5 w-3.5 h-3.5 text-emerald-400/40"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M1 10V14C1 14.5523 1.44772 15 2 15H6"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <svg
+                className="absolute bottom-1.5 right-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M15 10V14C15 14.5523 14.5523 15 14 15H10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
             {/* Hidden File Input for Attachments (JPG, PNG, WebP, GIF, PDF, MD, TXT) */}
             <input
               ref={fileInputRef}
@@ -10043,14 +10140,14 @@ DIRECTIVES:
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                     (input.trim() || attachedFile) && !loading
                       ? theme === 'classic'
-                        ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.4)] cursor-pointer'
+                        ? 'bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-950 hover:from-cyan-300 hover:to-blue-500 shadow-[0_0_18px_rgba(6,182,212,0.75)] cursor-pointer scale-105'
                         : theme === 'fulldark'
-                        ? 'bg-white text-black hover:bg-neutral-200 cursor-pointer'
+                        ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_16px_rgba(255,255,255,0.55)] cursor-pointer scale-105'
                         : deepResearchEnabled
-                        ? 'bg-emerald-500 text-white hover:bg-emerald-400 cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+                        ? 'bg-gradient-to-br from-emerald-400 to-teal-600 text-white hover:from-emerald-300 hover:to-teal-500 cursor-pointer shadow-[0_0_18px_rgba(16,185,129,0.7)] scale-105'
                         : imageGenEnabled
-                        ? 'bg-purple-500 text-white hover:bg-purple-400 cursor-pointer'
-                        : 'bg-zinc-100 text-zinc-900 hover:bg-white cursor-pointer'
+                        ? 'bg-gradient-to-br from-purple-500 to-fuchsia-600 text-white hover:from-purple-400 hover:to-fuchsia-500 cursor-pointer shadow-[0_0_18px_rgba(168,85,247,0.7)] scale-105'
+                        : 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-500 text-white hover:brightness-110 cursor-pointer shadow-[0_0_18px_rgba(99,102,241,0.65)] scale-105'
                       : theme === 'classic'
                       ? 'bg-cyan-950/40 text-cyan-700 cursor-not-allowed opacity-50 border border-cyan-500/10'
                       : theme === 'fulldark'
@@ -10064,6 +10161,7 @@ DIRECTIVES:
               </div>
             </div>
           </form>
+          </div>
 
           {/* Subtext info */}
           <div className="text-center pt-2 pb-0.5 text-[11px] text-zinc-500 flex items-center justify-center gap-2 flex-wrap select-none">
