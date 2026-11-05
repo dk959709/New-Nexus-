@@ -79,6 +79,11 @@ import {
   CommanderLiveFeed,
   type CommanderFeedSavedState,
 } from '@/components/assistant/CommanderLiveFeed';
+import {
+  LiveArtifactCanvas,
+  extractArtifactsFromMessage,
+  type CanvasArtifact,
+} from '@/components/assistant/LiveArtifactCanvas';
 import { getTargetProviderConfig } from '@/services/commanderOrchestrator';
 import {
   enhanceCommanderPlan,
@@ -1354,7 +1359,109 @@ export function AssistantPage() {
   const [savedSkills, setSavedSkills] = useState<Skill[]>(() => storage.getSkills());
   const [skillsPanelOpen, setSkillsPanelOpen] = useState<boolean>(false);
   const [skillsLimitWarning, setSkillsLimitWarning] = useState<string | null>(null);
+  const [canvasOpen, setCanvasOpen] = useState<boolean>(false);
+  const [canvasArtifacts, setCanvasArtifacts] = useState<CanvasArtifact[]>([]);
+  const [activeCanvasArtifactId, setActiveCanvasArtifactId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncSessionArtifacts = useCallback(
+    (targetMessageIndex?: number) => {
+      setCanvasArtifacts((prev) => {
+        const byId = new Map<string, CanvasArtifact>();
+        for (const item of prev) {
+          byId.set(item.id, item);
+        }
+
+        const merged: CanvasArtifact[] = [];
+        // Keep any custom starter-template artifacts created by the user
+        for (const item of prev) {
+          if (item.messageIndex < 0) {
+            merged.push(item);
+          }
+        }
+
+        messages.forEach((m, idx) => {
+          if (m.role !== 'assistant' || !m.content?.trim()) return;
+          if (idx === 0 && m.content === welcomeMessage.content) return;
+          const extracted = extractArtifactsFromMessage(m.content, idx, m.diagramSvg);
+          for (const art of extracted) {
+            const existing = byId.get(art.id);
+            if (existing && existing.versions.length > 1) {
+              merged.push(existing);
+            } else {
+              merged.push(art);
+            }
+          }
+        });
+
+        if (typeof targetMessageIndex === 'number') {
+          const matchForMsg = merged.find((a) => a.messageIndex === targetMessageIndex);
+          if (matchForMsg) {
+            setActiveCanvasArtifactId(matchForMsg.id);
+          } else if (merged.length > 0) {
+            setActiveCanvasArtifactId(merged[merged.length - 1].id);
+          }
+        } else if (merged.length > 0 && !activeCanvasArtifactId) {
+          setActiveCanvasArtifactId(merged[merged.length - 1].id);
+        }
+
+        return merged;
+      });
+    },
+    [messages, activeCanvasArtifactId],
+  );
+
+  const handleOpenCanvasForMessage = useCallback(
+    (messageIndex: number) => {
+      playTapSound();
+      syncSessionArtifacts(messageIndex);
+      setCanvasOpen(true);
+    },
+    [syncSessionArtifacts],
+  );
+
+  const handleOpenGlobalCanvas = useCallback(() => {
+    playTapSound();
+    syncSessionArtifacts();
+    setCanvasOpen((prev) => !prev);
+  }, [syncSessionArtifacts]);
+
+  const handleSyncArtifactToMessage = useCallback(
+    (messageIndex: number, updatedArtifact: CanvasArtifact) => {
+      if (messageIndex < 0) return;
+      setMessages((prev) => {
+        const target = prev[messageIndex];
+        if (!target || target.role !== 'assistant') return prev;
+        let nextContent = target.content;
+        const nextDiagramSvg =
+          updatedArtifact.kind === 'svg' && updatedArtifact.id.endsWith('-architect-svg')
+            ? updatedArtifact.content
+            : target.diagramSvg;
+
+        if (updatedArtifact.id.endsWith('-doc')) {
+          nextContent = updatedArtifact.content;
+        } else if (!updatedArtifact.id.endsWith('-architect-svg')) {
+          const fenceLang = updatedArtifact.language || (updatedArtifact.kind === 'html' ? 'html' : '');
+          const fencedBlock = `\`\`\`${fenceLang}\n${updatedArtifact.content}\n\`\`\``;
+          const anyFenceRegex = /```[a-zA-Z0-9_-]*\n[\s\S]*?```/;
+          if (anyFenceRegex.test(nextContent)) {
+            nextContent = nextContent.replace(anyFenceRegex, fencedBlock);
+          } else {
+            nextContent = `${nextContent}\n\n${fencedBlock}`;
+          }
+        }
+
+        const next = [...prev];
+        next[messageIndex] = {
+          ...target,
+          content: nextContent,
+          diagramSvg: nextDiagramSvg,
+        };
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const refreshSkills = () => {
@@ -6803,6 +6910,25 @@ DIRECTIVES:
                   className={universalSaved ? 'fill-amber-400 text-amber-400' : ''}
                 />
               </button>
+
+              {/* Live AI Canvas Studio Icon Only */}
+              <button
+                type="button"
+                onClick={handleOpenGlobalCanvas}
+                className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
+                  canvasOpen
+                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                    : theme === 'classic'
+                    ? 'border-transparent text-cyan-200 hover:bg-cyan-950/50 hover:text-white'
+                    : theme === 'fulldark'
+                    ? 'border-transparent text-[#d4d4d8] hover:bg-[#282828] hover:text-white'
+                    : 'border-transparent text-zinc-300 hover:bg-zinc-800 hover:text-white'
+                }`}
+                title="Live AI Canvas & Interactive Artifact Studio (Split-Screen Workspace)"
+                aria-label="Open Live AI Canvas Studio"
+              >
+                <Code2 size={14} className={canvasOpen ? 'text-cyan-400' : ''} />
+              </button>
             </div>
           )}
 
@@ -8922,6 +9048,21 @@ DIRECTIVES:
                               )}
                             </button>
 
+                            {/* Open in Live AI Canvas Studio Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCanvasForMessage(index)}
+                              className={`p-1.5 rounded-md transition-colors flex items-center gap-1 text-xs ${
+                                theme === 'fulldark'
+                                  ? 'hover:text-cyan-300 hover:bg-[#282828]'
+                                  : 'hover:text-cyan-300 hover:bg-zinc-800'
+                              }`}
+                              title="Open in Live AI Canvas & Interactive Artifact Studio"
+                              aria-label="Open in Live AI Canvas Studio"
+                            >
+                              <Code2 size={13} />
+                            </button>
+
                             {/* Delete Answer Button */}
                             <button
                               type="button"
@@ -9740,6 +9881,40 @@ DIRECTIVES:
                         </div>
                         <div className="text-[10px] text-cyan-400 opacity-80 group-hover:opacity-100 font-mono px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/20 shrink-0">
                           Pick
+                        </div>
+                      </button>
+
+                      {/* 0a. Live AI Canvas Studio Action (One-tap action: opens Split-Screen Artifact Studio) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMoreOptionsOpen(false);
+                          handleOpenGlobalCanvas();
+                        }}
+                        className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all group cursor-pointer ${
+                          canvasOpen
+                            ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-200'
+                            : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-7 h-7 rounded-lg grid place-items-center shrink-0 bg-zinc-800 text-cyan-400 group-hover:bg-cyan-500/20 group-hover:text-cyan-300 transition-colors">
+                            <Code2 size={13} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                              <span>Live AI Canvas</span>
+                              <span className="text-[9px] font-mono text-cyan-400 uppercase px-1 py-0.2 rounded bg-cyan-950/60 border border-cyan-500/20">
+                                Studio
+                              </span>
+                            </div>
+                            <div className="text-[10.5px] text-zinc-400 truncate">
+                              Interactive apps, code, SVG &amp; live preview
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-cyan-400 opacity-80 group-hover:opacity-100 font-mono px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/20 shrink-0">
+                          Open
                         </div>
                       </button>
 
@@ -14733,6 +14908,28 @@ DIRECTIVES:
           </div>
         </div>
       )}
+
+      {/* Live AI Canvas & Interactive Artifact Studio (Split-Screen Workspace) */}
+      <LiveArtifactCanvas
+        isOpen={canvasOpen}
+        onClose={() => setCanvasOpen(false)}
+        theme={theme}
+        artifacts={canvasArtifacts}
+        activeArtifactId={activeCanvasArtifactId}
+        onSelectArtifact={(id) => setActiveCanvasArtifactId(id)}
+        onUpdateArtifact={(updated) =>
+          setCanvasArtifacts((prev) =>
+            prev.map((a) => (a.id === updated.id ? updated : a)),
+          )
+        }
+        onCreateArtifact={(created) => {
+          setCanvasArtifacts((prev) => [created, ...prev]);
+          setActiveCanvasArtifactId(created.id);
+        }}
+        onSyncToMessage={handleSyncArtifactToMessage}
+        activeProvider={activeTurnProvider}
+        responseLanguage={responseLanguage}
+      />
     </div>
   );
 }
