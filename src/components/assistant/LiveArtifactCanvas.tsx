@@ -992,6 +992,112 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [editorDraft, setEditorDraft] = useState('');
   const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
 
+  // Live Coding Process Studio State
+  const [liveCodingActive, setLiveCodingActive] = useState(false);
+  const [liveCodingPhase, setLiveCodingPhase] = useState<'planning' | 'streaming' | 'compiling'>('planning');
+  const [liveCodingBuffer, setLiveCodingBuffer] = useState('');
+  const [liveCodingTotalLen, setLiveCodingTotalLen] = useState(0);
+  const [liveCodingElapsedMs, setLiveCodingElapsedMs] = useState(0);
+  const [liveCodingSpeed, setLiveCodingSpeed] = useState<'normal' | 'turbo'>('normal');
+  const [liveCodingStatusText, setLiveCodingStatusText] = useState('Initializing AI Canvas Compiler...');
+  const liveCodeScrollRef = useRef<HTMLDivElement | null>(null);
+  const liveCodingSkipRef = useRef(false);
+  const liveCodingSpeedRef = useRef<'normal' | 'turbo'>('normal');
+
+  useEffect(() => {
+    liveCodingSpeedRef.current = liveCodingSpeed;
+  }, [liveCodingSpeed]);
+
+  // Auto-scroll live coding terminal to bottom as lines stream in
+  useEffect(() => {
+    if (liveCodingActive && liveCodeScrollRef.current) {
+      liveCodeScrollRef.current.scrollTop = liveCodeScrollRef.current.scrollHeight;
+    }
+  }, [liveCodingBuffer, liveCodingActive]);
+
+  // Live stopwatch while aiRefining or liveCodingActive is running
+  useEffect(() => {
+    if (!aiRefining && !liveCodingActive) {
+      setLiveCodingElapsedMs(0);
+      return;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setLiveCodingElapsedMs(Date.now() - started);
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [aiRefining, liveCodingActive]);
+
+  const streamCodeIntoCanvas = async (
+    fullCode: string,
+    onProgressDraft?: (partial: string) => void,
+  ): Promise<void> => {
+    liveCodingSkipRef.current = false;
+    setLiveCodingActive(true);
+    setLiveCodingPhase('streaming');
+    setLiveCodingTotalLen(fullCode.length);
+    setLiveCodingStatusText('Streaming synthesized code & binding interactive DOM...');
+
+    const lines = fullCode.split('\n');
+    const totalLines = lines.length;
+    let currentLineIdx = 0;
+
+    return new Promise<void>((resolve) => {
+      const step = () => {
+        if (liveCodingSkipRef.current) {
+          setLiveCodingBuffer(fullCode);
+          if (onProgressDraft) onProgressDraft(fullCode);
+          setLiveCodingPhase('compiling');
+          setLiveCodingStatusText('Mounting live sandbox preview...');
+          window.setTimeout(() => {
+            setLiveCodingActive(false);
+            resolve();
+          }, 120);
+          return;
+        }
+
+        const isTurbo = liveCodingSpeedRef.current === 'turbo';
+        const linesPerTick = isTurbo
+          ? Math.max(3, Math.ceil(totalLines / 18))
+          : Math.max(1, Math.ceil(totalLines / 42));
+
+        currentLineIdx = Math.min(totalLines, currentLineIdx + linesPerTick);
+        const partial = lines.slice(0, currentLineIdx).join('\n');
+        setLiveCodingBuffer(partial);
+        if (onProgressDraft) onProgressDraft(partial);
+
+        const ratio = currentLineIdx / Math.max(1, totalLines);
+        if (ratio < 0.35) {
+          setLiveCodingStatusText('Scaffolding document head, layout grid & Tailwind tokens...');
+        } else if (ratio < 0.75) {
+          setLiveCodingStatusText('Writing UI components, cards & responsive layout...');
+        } else {
+          setLiveCodingStatusText('Binding interactive event listeners & state handlers...');
+        }
+
+        if (currentLineIdx >= totalLines) {
+          setLiveCodingPhase('compiling');
+          setLiveCodingStatusText('Compiling & mounting live interactive sandbox...');
+          window.setTimeout(() => {
+            setLiveCodingActive(false);
+            resolve();
+          }, 220);
+        } else {
+          window.setTimeout(step, isTurbo ? 22 : 38);
+        }
+      };
+      step();
+    });
+  };
+
+  const handleWatchLiveCodeReplay = async () => {
+    if (!activeArtifact || aiRefining || liveCodingActive) return;
+    const targetCode = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+    setAiRefiningLabel(`Live Coding: ${activeArtifact.title}`);
+    await streamCodeIntoCanvas(targetCode);
+    setAiRefiningLabel('');
+  };
+
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const activeArtifact = useMemo(() => {
@@ -1389,8 +1495,32 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     setAiRefining(true);
     setAiRefiningLabel(shortLabel);
     setAiError(null);
+    liveCodingSkipRef.current = false;
+    setLiveCodingActive(true);
+    setLiveCodingPhase('planning');
+    setLiveCodingStatusText(`Analyzing "${activeArtifact.title}" & planning AST transformations...`);
 
     const sourceContent = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+    const sourceLines = sourceContent.split('\n');
+    setLiveCodingTotalLen(sourceContent.length);
+
+    // Stage 1: Progressive live code inspection stream while waiting for AI response
+    let preStreamIdx = 0;
+    const preStreamHeader = [
+      `// ⚡ NEXUS LIVE AI CANVAS COMPILER — ${shortLabel.toUpperCase()}`,
+      `// 🤖 Model: ${activeCanvasModelLabel}`,
+      `// 🎯 Directive: ${instruction.slice(0, 90)}${instruction.length > 90 ? '...' : ''}`,
+      ``,
+      ...sourceLines.slice(0, 90),
+    ];
+    const preTimer = window.setInterval(() => {
+      preStreamIdx = Math.min(preStreamHeader.length, preStreamIdx + 2);
+      setLiveCodingBuffer(preStreamHeader.slice(0, preStreamIdx).join('\n'));
+      if (preStreamIdx > 8) {
+        setLiveCodingStatusText(`Synthesizing updated ${targetLangOverride || activeArtifact.kind.toUpperCase()} code with ${activeCanvasModelLabel}...`);
+      }
+    }, 65);
+
     const inspectContext = inspectedElement
       ? `\nFOCUS SPECIFICALLY ON THIS CLICKED ELEMENT (<${inspectedElement.tagName}>): ${inspectedElement.outerHTML}\n`
       : '';
@@ -1429,6 +1559,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         },
       );
 
+      window.clearInterval(preTimer);
+
       let extracted = (response.answer || '').trim();
       const fenceMatch = extracted.match(/```(?:[a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
       if (fenceMatch && fenceMatch[1]) {
@@ -1449,6 +1581,11 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           ? 'svg'
           : activeArtifact.kind);
 
+      // Stage 2: Stream the generated code live into the Live Coding Terminal & Editor
+      await streamCodeIntoCanvas(extracted, (partial) => {
+        setEditorDraft(partial);
+      });
+
       commitNewVersion(extracted, shortLabel, nextKind, targetLangOverride);
       if (forceHtmlOutput || nextKind === 'html' || nextKind === 'svg') {
         if (activeTab !== 'split') setActiveTab('preview');
@@ -1456,8 +1593,11 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         setActiveTab('code');
       }
     } catch (err) {
+      window.clearInterval(preTimer);
+      setLiveCodingActive(false);
       setAiError(err instanceof Error ? err.message : 'Failed to refine artifact with AI');
     } finally {
+      window.clearInterval(preTimer);
       setAiRefining(false);
       setAiRefiningLabel('');
     }
@@ -1468,8 +1608,51 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     setAiRefining(true);
     setAiRefiningLabel(`Building: ${userPrompt.slice(0, 28)}`);
     setAiError(null);
+    liveCodingSkipRef.current = false;
+    setLiveCodingActive(true);
+    setLiveCodingPhase('planning');
+    setLiveCodingStatusText(`Architecting new application from prompt with ${activeCanvasModelLabel}...`);
 
     const isSvgRequest = /\b(svg|diagram|flowchart|blueprint|vector)\b/i.test(userPrompt);
+    const bootstrapScaffold = isSvgRequest
+      ? [
+          `<!-- ⚡ NEXUS LIVE AI CANVAS COMPILER -->`,
+          `<!-- 🤖 Model: ${activeCanvasModelLabel} -->`,
+          `<!-- 🎯 Prompt: ${userPrompt.slice(0, 80)} -->`,
+          `<svg viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg" style="background:#09090b;font-family:system-ui,sans-serif">`,
+          `  <defs>`,
+          `    <linearGradient id="nexusGrad" x1="0%" y1="0%" x2="100%" y2="100%">`,
+          `      <stop offset="0%" stop-color="#06b6d4" />`,
+          `      <stop offset="100%" stop-color="#6366f1" />`,
+          `    </linearGradient>`,
+          `  </defs>`,
+          `  <!-- Synthesizing vector topology & nodes... -->`,
+        ]
+      : [
+          `<!DOCTYPE html>`,
+          `<html lang="en" class="dark">`,
+          `<head>`,
+          `  <meta charset="UTF-8" />`,
+          `  <meta name="viewport" content="width=device-width, initial-scale=1.0" />`,
+          `  <title>${userPrompt.slice(0, 42)}</title>`,
+          `  <script src="https://cdn.tailwindcss.com"></script>`,
+          `</head>`,
+          `<body class="bg-zinc-950 text-zinc-100 min-h-screen p-6 font-sans">`,
+          `  <!-- ⚡ NEXUS Live AI Canvas Studio (${activeCanvasModelLabel}) -->`,
+          `  <!-- 🎯 Building: ${userPrompt.slice(0, 80)} -->`,
+          `  <main class="max-w-4xl mx-auto space-y-6">`,
+        ];
+
+    setLiveCodingTotalLen(1800);
+    let bootIdx = 0;
+    const bootTimer = window.setInterval(() => {
+      bootIdx = Math.min(bootstrapScaffold.length, bootIdx + 1);
+      setLiveCodingBuffer(bootstrapScaffold.slice(0, bootIdx).join('\n'));
+      if (bootIdx >= 4) {
+        setLiveCodingStatusText(`Generating interactive components & logic with ${activeCanvasModelLabel}...`);
+      }
+    }, 90);
+
     const prompt = [
       `You are the NEXUS Live AI Canvas Studio engine.`,
       `User Request: ${userPrompt}`,
@@ -1491,6 +1674,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         },
       );
 
+      window.clearInterval(bootTimer);
+
       let extracted = (response.answer || '').trim();
       const fenceMatch = extracted.match(/```(?:[a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
       if (fenceMatch && fenceMatch[1]) {
@@ -1499,6 +1684,9 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       if (!extracted) {
         throw new Error('AI returned an empty response.');
       }
+
+      // Stream the newly generated application code live into the Live Coding Terminal
+      await streamCodeIntoCanvas(extracted);
 
       const kind: ArtifactKind = extracted.startsWith('<svg') ? 'svg' : 'html';
       const now = Date.now();
@@ -1523,8 +1711,11 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       onCreateArtifact(created);
       setActiveTab('preview');
     } catch (err) {
+      window.clearInterval(bootTimer);
+      setLiveCodingActive(false);
       setAiError(err instanceof Error ? err.message : 'Failed to generate artifact with AI');
     } finally {
+      window.clearInterval(bootTimer);
       setAiRefining(false);
       setAiRefiningLabel('');
     }
@@ -2012,6 +2203,20 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             <GitCompare size={12} className={activeTab === 'diff' ? 'text-purple-400' : ''} />
             <span>Diff</span>
           </button>
+
+          {/* Watch Live Coding Process Button */}
+          {activeArtifact && (
+            <button
+              type="button"
+              disabled={aiRefining || liveCodingActive}
+              onClick={handleWatchLiveCodeReplay}
+              className="px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer shrink-0 text-cyan-300 hover:bg-cyan-500/15 hover:text-cyan-200 disabled:opacity-40"
+              title="Watch the Live Coding Process step-by-step in real time"
+            >
+              <Play size={11} className="text-cyan-400 fill-cyan-400/30" />
+              <span>Live Code</span>
+            </button>
+          )}
         </div>
 
         {/* Right contextual controls for Preview / Split / Code */}
@@ -2348,15 +2553,154 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
       {/* Main Workspace Body */}
       <div className="flex-1 min-h-0 relative flex flex-col overflow-hidden bg-zinc-950">
-        {aiRefining && (
-          <div className="absolute inset-0 z-30 bg-black/65 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-6 text-center">
-            <Loader2 size={26} className="animate-spin text-cyan-400" />
-            <div className="text-sm font-semibold text-white">
-              AI Canvas Studio: {aiRefiningLabel || 'Updating Artifact'}...
+        {(aiRefining || liveCodingActive) && (
+          <div className="absolute inset-0 z-30 bg-zinc-950/95 backdrop-blur-md flex flex-col overflow-hidden">
+            {/* Live Coding Process Top Telemetry Header */}
+            <div className="px-3 sm:px-4 py-2.5 border-b border-cyan-500/30 bg-gradient-to-r from-slate-950 via-zinc-900 to-slate-950 flex items-center justify-between gap-2 flex-wrap shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500" />
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 border border-cyan-400/50 text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300 shrink-0">
+                  LIVE CODING
+                </span>
+                <span className="text-xs font-semibold text-white truncate">
+                  {aiRefiningLabel || 'Synthesizing Live Code'}
+                </span>
+                <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 text-[10px] font-mono text-purple-300 shrink-0">
+                  <Cpu size={10} />
+                  <span>{activeCanvasModelLabel}</span>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+                  <span className="text-cyan-300">
+                    {liveCodingBuffer.split('\n').length} lines
+                  </span>
+                  <span>·</span>
+                  <span>{liveCodingBuffer.length.toLocaleString()} chars</span>
+                  <span>·</span>
+                  <span className="text-emerald-400">
+                    {(liveCodingElapsedMs / 1000).toFixed(1)}s
+                  </span>
+                </div>
+
+                {/* Speed Toggle (1x / 3x Turbo) */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLiveCodingSpeed((prev) => (prev === 'normal' ? 'turbo' : 'normal'))
+                  }
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-mono font-semibold transition-colors cursor-pointer ${
+                    liveCodingSpeed === 'turbo'
+                      ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
+                      : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white'
+                  }`}
+                  title="Toggle Live Coding Speed (1x / 3x Turbo)"
+                >
+                  {liveCodingSpeed === 'turbo' ? '⚡ 3x Turbo' : '1x Speed'}
+                </button>
+
+                {/* Instant Finish Button */}
+                {liveCodingPhase === 'streaming' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      liveCodingSkipRef.current = true;
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-sm"
+                    title="Skip typing animation and jump immediately to rendered preview"
+                  >
+                    <Sparkles size={11} />
+                    <span>Instant Finish</span>
+                  </button>
+                )}
+              </div>
             </div>
-            <p className="text-xs text-zinc-400 max-w-sm">
-              Synthesizing version snapshot (v{(activeArtifact?.versions.length || 1) + 1}) so you can compare or revert anytime.
-            </p>
+
+            {/* 4-Stage Live Pipeline Progress Bar */}
+            {(() => {
+              const progressPct =
+                liveCodingPhase === 'planning'
+                  ? Math.min(32, Math.round((liveCodingBuffer.length / Math.max(400, liveCodingTotalLen)) * 35))
+                  : liveCodingPhase === 'compiling'
+                  ? 100
+                  : Math.min(
+                      98,
+                      Math.max(
+                        35,
+                        Math.round((liveCodingBuffer.length / Math.max(1, liveCodingTotalLen)) * 100),
+                      ),
+                    );
+              return (
+                <div className="px-3 sm:px-4 py-1.5 border-b border-zinc-800 bg-zinc-900/80 flex flex-col gap-1.5 shrink-0">
+                  <div className="flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-cyan-300 truncate flex items-center gap-1.5">
+                      <Terminal size={11} className="text-cyan-400 shrink-0" />
+                      <span>{liveCodingStatusText}</span>
+                    </span>
+                    <span className="text-cyan-400 font-bold shrink-0">{progressPct}%</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-400 transition-all duration-150"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Live Streaming Code IDE Window */}
+            <div
+              ref={liveCodeScrollRef}
+              className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 font-mono text-xs leading-relaxed bg-[#07090e] text-zinc-100 select-text"
+            >
+              {liveCodingBuffer.split('\n').map((line, idx, arr) => {
+                const isLastLine = idx === arr.length - 1;
+                const trimmed = line.trim();
+                const isComment =
+                  trimmed.startsWith('//') ||
+                  trimmed.startsWith('<!--') ||
+                  trimmed.startsWith('/*');
+                const isTag = trimmed.startsWith('<') || trimmed.endsWith('>');
+                const isKeyword =
+                  /\b(function|const|let|var|return|import|export|async|await|if|else|for|while|class)\b/.test(
+                    trimmed,
+                  );
+
+                return (
+                  <div
+                    key={idx}
+                    className={`flex items-start gap-3 px-2 py-0.5 rounded ${
+                      isLastLine ? 'bg-cyan-500/10 border-l-2 border-cyan-400' : ''
+                    }`}
+                  >
+                    <span className="w-8 text-right text-[10px] text-zinc-600 select-none shrink-0 pt-0.5">
+                      {idx + 1}
+                    </span>
+                    <span
+                      className={`whitespace-pre-wrap break-all flex-1 ${
+                        isComment
+                          ? 'text-emerald-400/80 italic'
+                          : isKeyword
+                          ? 'text-purple-300'
+                          : isTag
+                          ? 'text-cyan-200'
+                          : 'text-zinc-200'
+                      }`}
+                    >
+                      {line || ' '}
+                      {isLastLine && (
+                        <span className="inline-block w-2 h-3.5 ml-1 align-middle bg-cyan-400 animate-pulse" />
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
