@@ -535,6 +535,36 @@ export function MultiChatConsole({
         dialogueMode,
         targetPersonaIds: combinedTargetIds.length > 0 ? combinedTargetIds : undefined,
         enableSkills: skillsEnabled,
+        onDocChunksRetrieved: (chunks) => {
+          setMessages((prev) => {
+            const next = prev.map((msg) =>
+              msg.id === messageId
+                ? {
+                    ...msg,
+                    docChunks: chunks,
+                    docLensEnabled: chunks.length > 0,
+                  }
+                : msg,
+            );
+            storage.saveMultiChatMessages(next);
+            return next;
+          });
+        },
+        onWebSourcesRetrieved: (sources) => {
+          setMessages((prev) => {
+            const next = prev.map((msg) =>
+              msg.id === messageId
+                ? {
+                    ...msg,
+                    webSources: sources,
+                    webLensEnabled: sources.length > 0,
+                  }
+                : msg,
+            );
+            storage.saveMultiChatMessages(next);
+            return next;
+          });
+        },
         onPersonaUpdate: (updatedResp) => {
           setMessages((prev) => {
             const next = prev.map((msg) => {
@@ -2158,6 +2188,16 @@ export function MultiChatConsole({
                             </div>
                           )}
 
+                          {/* Web Lens Active Search Indicator (while fetching live sources) */}
+                          {msg.webLensEnabled &&
+                            (!msg.webSources || msg.webSources.length === 0) &&
+                            msg.responses.some((r) => r.status === 'running' || r.status === 'pending') && (
+                              <div className="px-3 sm:px-4 py-2 bg-cyan-950/25 border-b border-cyan-500/20 flex items-center gap-2 text-[11px] text-cyan-300 font-medium">
+                                <Loader2 size={12} className="text-cyan-400 animate-spin shrink-0" />
+                                <span className="truncate">Web Lens: Searching live web sources...</span>
+                              </div>
+                            )}
+
                           {/* Web Lens Sources Section (if active for this turn) */}
                           {msg.webSources && msg.webSources.length > 0 && (
                             <div className="px-3 sm:px-4 py-2 bg-cyan-950/25 border-b border-cyan-500/20 flex flex-col gap-1.5">
@@ -2682,6 +2722,50 @@ export function MultiChatConsole({
                               </button>
                             </div>
                           </div>
+
+                          {/* Grid View Web Lens Banner */}
+                          {msg.webSources && msg.webSources.length > 0 && (
+                            <div className="px-3 sm:px-4 py-2 rounded-2xl bg-cyan-950/25 border border-cyan-500/25 flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 text-[11px] text-cyan-300 font-medium truncate">
+                                  <Globe size={12} className="text-cyan-400 shrink-0" />
+                                  <span className="truncate">Web Lens: {msg.webSources.length} live sources</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedWebMsgId(expandedWebMsgId === msg.id ? null : msg.id)
+                                  }
+                                  className="text-[10px] font-mono text-cyan-400 hover:text-cyan-200 underline shrink-0"
+                                >
+                                  {expandedWebMsgId === msg.id ? 'Hide' : 'View'}
+                                </button>
+                              </div>
+                              {expandedWebMsgId === msg.id && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+                                  {msg.webSources.map((src, sIdx) => (
+                                    <a
+                                      key={sIdx}
+                                      href={src.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-2 rounded-lg bg-black/40 hover:bg-black/60 border border-cyan-500/20 text-xs transition-colors block no-underline"
+                                    >
+                                      <div className="flex items-center justify-between text-[11px] font-mono text-cyan-300 mb-0.5">
+                                        <span className="font-bold truncate">{src.title}</span>
+                                        <span className="text-[10px] text-slate-400 shrink-0 ml-2">
+                                          {src.domain}
+                                        </span>
+                                      </div>
+                                      <p className="text-slate-400 text-[11px] line-clamp-2 m-0">
+                                        {src.snippet}
+                                      </p>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3 w-full">
                             {msg.responses.map((resp) => {

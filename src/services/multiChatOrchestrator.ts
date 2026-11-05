@@ -927,6 +927,142 @@ export function parseMultiChatMentions(rawQuery: string): {
 }
 
 /**
+ * Cleans a conversational user prompt into a focused search query for Multi-Chat Web Lens
+ */
+function buildCleanWebSearchQuery(rawQuery: string): string {
+  const cleaned = rawQuery
+    .replace(/(?:^|\s)@(?:nova|orbit|cosmos)\b/gi, ' ')
+    .replace(
+      /^(?:hey|hi|hello|please|plz|can you|could you|would you|tell me about|search for|look up|find out|what is|what are|who is|who are)\s+/i,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (cleaned || rawQuery.trim()).slice(0, 260);
+}
+
+/**
+ * Fetches verified live web sources for Multi-Chat Web Lens with multi-stage fallbacks
+ * (Primary Web Search -> News Search / RSS -> Wikipedia Search)
+ */
+export async function fetchMultiChatWebSources(rawQuery: string): Promise<MultiChatWebSource[]> {
+  const searchQuery = buildCleanWebSearchQuery(rawQuery);
+  if (!searchQuery) return [];
+
+  const isNewsOriented = /\b(?:news|latest|today|breaking|headlines|update|updates|current|recent|2025|2026)\b/i.test(
+    rawQuery,
+  );
+
+  const rawItems: Array<{
+    title?: string;
+    url?: string;
+    domain?: string;
+    description?: string;
+    snippet?: string;
+  }> = [];
+
+  // Stage 1: Primary Web Search ('ALL')
+  try {
+    const searchRes = await api.search(searchQuery, 'ALL', 1, 8);
+    const list = Array.isArray(searchRes)
+      ? searchRes
+      : Array.isArray((searchRes as unknown as { results?: unknown[] })?.results)
+      ? ((searchRes as unknown as { results: typeof rawItems }).results)
+      : Array.isArray((searchRes as unknown as { data?: unknown[] })?.data)
+      ? ((searchRes as unknown as { data: typeof rawItems }).data)
+      : [];
+    if (list.length > 0) {
+      rawItems.push(...list);
+    }
+  } catch (err) {
+    console.warn('[MultiChat Web Lens] Primary ALL search error:', err);
+  }
+
+  // Stage 2: If news-oriented or primary returned < 2 results, supplement with NEWS search / RSS
+  if (isNewsOriented || rawItems.length < 2) {
+    try {
+      const newsRes = await api.search(searchQuery, 'NEWS', 1, 5, {
+        newsMode: 'topic',
+      });
+      const newsList = Array.isArray(newsRes) ? newsRes : [];
+      if (newsList.length > 0) {
+        rawItems.push(...newsList);
+      } else {
+        const rssList = await api.newsRss(searchQuery);
+        if (Array.isArray(rssList) && rssList.length > 0) {
+          rawItems.push(...rssList.slice(0, 5));
+        }
+      }
+    } catch {
+      try {
+        const rssList = await api.newsRss(searchQuery);
+        if (Array.isArray(rssList) && rssList.length > 0) {
+          rawItems.push(...rssList.slice(0, 5));
+        }
+      } catch {
+        // ignore news fallback error
+      }
+    }
+  }
+
+  // Stage 3: Wikipedia Fallback if still empty
+  if (rawItems.length === 0) {
+    try {
+      const wikiRes = await api.searchWikipedia(searchQuery, 4);
+      if (Array.isArray(wikiRes) && wikiRes.length > 0) {
+        for (const w of wikiRes) {
+          rawItems.push({
+            title: w.title,
+            url: `https://en.wikipedia.org/wiki/${encodeURIComponent(w.title.replace(/ /g, '_'))}`,
+            domain: 'wikipedia.org',
+            description: (w.snippet || '').replace(/<[^>]*>?/gm, '').trim(),
+          });
+        }
+      }
+    } catch {
+      // ignore wikipedia fallback error
+    }
+  }
+
+  // Deduplicate and normalize up to 6 sources
+  const seenUrls = new Set<string>();
+  const finalSources: MultiChatWebSource[] = [];
+
+  for (const item of rawItems) {
+    const url = (item.url || '').trim();
+    const title = (item.title || '').trim();
+    if (!url || !title || seenUrls.has(url)) continue;
+    seenUrls.add(url);
+
+    let domain = (item.domain || '').trim();
+    if (!domain) {
+      try {
+        domain = new URL(url).hostname.replace(/^www\./, '');
+      } catch {
+        domain = 'web';
+      }
+    }
+
+    const snippet = (item.description || item.snippet || title)
+      .replace(/<[^>]*>?/gm, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 320);
+
+    finalSources.push({
+      title,
+      url,
+      domain,
+      snippet,
+    });
+
+    if (finalSources.length >= 6) break;
+  }
+
+  return finalSources;
+}
+
+/**
  * Builds Persona-Specific Live Web Lens directive
  */
 export function buildPersonaWebLensDirective(
@@ -934,6 +1070,7 @@ export function buildPersonaWebLensDirective(
   sources: MultiChatWebSource[],
 ): string {
   if (!sources || sources.length === 0) return '';
+  const todayStr = new Date().toISOString().split('T')[0];
   const sourcesBlock = sources
     .map(
       (s, i) =>
@@ -943,18 +1080,18 @@ export function buildPersonaWebLensDirective(
 
   let guidance = '';
   if (personaId === 'nova') {
-    guidance = `[LIVE WEB LENS — NOVA (RESEARCHER)]:
-- Ground your factual analysis in the verified real-time web sources above.
-- Cite key facts or domain names naturally (e.g. [Source: ${sources[0]?.domain || 'Web'}]) and avoid hallucinating unverified metrics.`;
+    guidance = `[LIVE WEB LENS — NOVA (RESEARCHER) | Current Date: ${todayStr}]:
+- Ground your factual analysis directly in the verified real-time web sources above.
+- Cite key facts or domain names naturally (e.g. [Source: ${sources[0]?.domain || 'Web'}]) and prioritize these live search findings over outdated training cutoffs.`;
   } else if (personaId === 'orbit') {
-    guidance = `[LIVE WEB LENS — ORBIT (BUDDY)]:
-- Use the real-world facts from the live web sources above to keep your examples, analogies, and practical takeaways current and accurate!`;
+    guidance = `[LIVE WEB LENS — ORBIT (BUDDY) | Current Date: ${todayStr}]:
+- Use the real-world facts and latest developments from the live web sources above to keep your examples, analogies, and practical takeaways current and accurate!`;
   } else {
-    guidance = `[LIVE WEB LENS — COSMOS (MENTOR)]:
+    guidance = `[LIVE WEB LENS — COSMOS (MENTOR) | Current Date: ${todayStr}]:
 - Reflect on the broader meaning, trajectory, and long-term implications of the verified real-time developments above.`;
   }
 
-  return `\n\n=== VERIFIED LIVE WEB SEARCH GROUNDING ===\n${sourcesBlock}\n==========================================\n${guidance}`;
+  return `\n\n=== VERIFIED LIVE WEB SEARCH GROUNDING (${todayStr}) ===\n${sourcesBlock}\n========================================================\n${guidance}`;
 }
 
 /**
@@ -1182,6 +1319,15 @@ export async function executeSinglePersona(
 
       userContent += `\n\n=== CONTEXT FROM OTHER PERSONAS THIS TURN ===\n${priorContext}\n============================================${ackNote}`;
     }
+  }
+
+  // If Live Web Search sources are present, reinforce them in the user turn so all models prioritize the live data
+  if (options?.webSources && options.webSources.length > 0) {
+    const compactWebSummary = options.webSources
+      .slice(0, 5)
+      .map((s, idx) => `${idx + 1}. [${s.domain}] ${s.title} — ${s.snippet}`)
+      .join('\n');
+    userContent += `\n\n=== LIVE WEB SEARCH RESULTS (USE THESE CURRENT FACTS TO ANSWER) ===\n${compactWebSummary}\n===================================================================`;
   }
 
   // Reinforce length requirement directly in the user prompt as well
@@ -1512,6 +1658,8 @@ export async function executeMultiChatTurn({
   conversationHistory,
   config,
   onPersonaUpdate,
+  onWebSourcesRetrieved,
+  onDocChunksRetrieved,
   permanentMemories,
   responseLanguage,
   enableDocLens = false,
@@ -1525,6 +1673,8 @@ export async function executeMultiChatTurn({
   conversationHistory: MultiChatMessage[];
   config: MultiChatSystemConfig;
   onPersonaUpdate?: (response: MultiChatPersonaResponse) => void;
+  onWebSourcesRetrieved?: (sources: MultiChatWebSource[]) => void;
+  onDocChunksRetrieved?: (chunks: DocumentRetrievalResult[]) => void;
   permanentMemories?: string[];
   responseLanguage?: string;
   enableDocLens?: boolean;
@@ -1567,6 +1717,9 @@ export async function executeMultiChatTurn({
   if (enableDocLens) {
     try {
       retrievedChunks = await searchDocumentLibrary(cleanQuery, { mode: 'all', topK: 4 });
+      if (retrievedChunks.length > 0) {
+        onDocChunksRetrieved?.(retrievedChunks);
+      }
     } catch {
       retrievedChunks = [];
     }
@@ -1576,14 +1729,8 @@ export async function executeMultiChatTurn({
   let retrievedWebSources: MultiChatWebSource[] = [];
   if (enableWebLens) {
     try {
-      const searchRes = await api.search(cleanQuery, 'web', 1);
-      const rawResults = searchRes?.results || [];
-      retrievedWebSources = rawResults.slice(0, 4).map((r) => ({
-        title: r.title || 'Web Result',
-        url: r.url || '',
-        domain: r.domain || '',
-        snippet: r.description || '',
-      }));
+      retrievedWebSources = await fetchMultiChatWebSources(cleanQuery);
+      onWebSourcesRetrieved?.(retrievedWebSources);
     } catch {
       retrievedWebSources = [];
     }

@@ -86,7 +86,14 @@ function checkTestRateLimit(ip: string): boolean {
 export const searchSchema = z.object({
   query: z.string().trim().max(300).default(''),
   page: z.number().int().positive().optional(),
-  category: z.enum(['ALL', 'NEWS', 'IMAGES', 'VIDEOS', 'SHOPPING', 'WIKIPEDIA']).optional(),
+  category: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      const upper = val.trim().toUpperCase();
+      if (upper === 'WEB' || upper === 'GENERAL' || upper === '') return 'ALL';
+      return upper;
+    }
+    return val;
+  }, z.enum(['ALL', 'NEWS', 'IMAGES', 'VIDEOS', 'SHOPPING', 'WIKIPEDIA']).optional()),
   newsCategory: z.string().optional(),
   newsMode: z.enum(['headlines', 'topic']).optional(),
   region: z.string().optional(),
