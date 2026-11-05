@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   Loader2,
   Download,
-  Share2,
   Sliders,
   Layers,
   Columns,
@@ -32,6 +31,24 @@ import {
   Globe,
   Star,
   AtSign,
+  Trophy,
+  Swords,
+  Drama,
+  RotateCcw,
+  PenLine,
+  Headphones,
+  Network,
+  Zap,
+  FlaskConical,
+  Activity,
+  GraduationCap,
+  Table2,
+  UserPlus,
+  BarChart3,
+  Wand2,
+  Paperclip,
+  RefreshCw,
+  FileText,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -40,12 +57,41 @@ import { FormattedText } from '@/components/jarvis/FormattedText';
 import { MultiChatCategorySelector } from '@/components/multichat/MultiChatCategorySelector';
 import { MultiChatSessionBar } from '@/components/multichat/MultiChatSessionBar';
 import { MultiChatConsensusCard } from '@/components/multichat/MultiChatConsensusCard';
+import { MultiChatVisualMapPanel } from '@/components/multichat/MultiChatVisualMapPanel';
+import {
+  MultiChatMergedAnswerPanel,
+  MultiChatStressTestPanel,
+  MultiChatAlignmentRadarPanel,
+  MultiChatStudyDeckPanel,
+  MultiChatDecisionMatrixPanel,
+  MultiChatGuestSpecialistPanel,
+  MultiChatChartTelemetryPanel,
+  MultiChatPromptSplitterDrawer,
+} from '@/components/multichat/MultiChatAdvancedLabPanels';
 import {
   executeMultiChatTurn,
   executePersonaBranch,
   getPersonaCleanText,
   generateMultiChatConsensus,
   parseMultiChatMentions,
+  MULTICHAT_SCENARIO_CASTS,
+  getScenarioCastById,
+  executeMultiChatRebuttalRound,
+  buildDefaultMultiChatFollowUps,
+  generateAIMultiChatFollowUps,
+  generateMultiChatPodcastScript,
+  generateMultiChatVisualMap,
+  generateMultiChatMergedAnswer,
+  executeMultiChatStressTest,
+  generateMultiChatAlignmentRadar,
+  generateMultiChatStudyDeck,
+  generateMultiChatDecisionMatrix,
+  executeGuestSpecialistCall,
+  executePersonaStanceFlip,
+  buildInstantPromptSplit,
+  generateSmartPromptSplit,
+  formatSplitPlanIntoPrompt,
+  generateMultiChatChartTelemetry,
 } from '@/services/multiChatOrchestrator';
 import type {
   MultiChatMessage,
@@ -56,6 +102,10 @@ import type {
   MultiChatDialogueMode,
   MultiChatSession,
   MultiChatTheme,
+  MultiChatScenarioId,
+  MultiChatGuestSpecialistId,
+  MultiChatAttachedFile,
+  MultiChatPromptSplitPlan,
   Skill,
 } from '@/types';
 
@@ -140,6 +190,7 @@ export function MultiChatConsole({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
   const [copiedQueryId, setCopiedQueryId] = useState<string | null>(null);
+  const [copiedTranscript, setCopiedTranscript] = useState(false);
   const [playingAudioKey, setPlayingAudioKey] = useState<string | null>(null);
   const [edgeTtsLoadingId, setEdgeTtsLoadingId] = useState<string | null>(null);
   const [downloadingAudioId, setDownloadingAudioId] = useState<string | null>(null);
@@ -235,6 +286,68 @@ export function MultiChatConsole({
   // @PERSONA DIRECT TARGETING & CONSENSUS STATES
   const [directTargetIds, setDirectTargetIds] = useState<MultiChatPersonaId[]>([]);
   const [consensusLoadingMsgId, setConsensusLoadingMsgId] = useState<string | null>(null);
+
+  // NEW 5 FEATURES STATES:
+  // 1) Custom Roleplay / Scenario Casting State
+  const [selectedScenario, setSelectedScenario] = useState<MultiChatScenarioId>(() => {
+    try {
+      const saved = localStorage.getItem('nexus_multichat_scenario');
+      if (
+        saved &&
+        ['standard', 'startup_pitch', 'code_review', 'war_room', 'courtroom'].includes(saved)
+      ) {
+        return saved as MultiChatScenarioId;
+      }
+    } catch {
+      // ignore
+    }
+    return 'standard';
+  });
+  const [showScenarioStrip, setShowScenarioStrip] = useState(false);
+
+  // 2) Cross-Examination Rebuttal Round State
+  const [rebuttalLoadingMsgId, setRebuttalLoadingMsgId] = useState<string | null>(null);
+
+  // 3) Interactive Podcast / Roundtable Script State
+  const [podcastScriptLoadingMsgId, setPodcastScriptLoadingMsgId] = useState<string | null>(null);
+  const [expandedPodcastScriptMsgId, setExpandedPodcastScriptMsgId] = useState<string | null>(null);
+  const [copiedScriptMsgId, setCopiedScriptMsgId] = useState<string | null>(null);
+
+  // 4) Smart Trio Follow-Up Chips Refresh State
+  const [followUpLoadingMsgId, setFollowUpLoadingMsgId] = useState<string | null>(null);
+
+  // 6) Visual Mind-Map & Flowchart Canvas State
+  const [visualMapLoadingMsgId, setVisualMapLoadingMsgId] = useState<string | null>(null);
+  const [expandedVisualMapMsgId, setExpandedVisualMapMsgId] = useState<string | null>(null);
+
+  // 7) 5 NEW SYNTHESIS LAB FEATURES STATES
+  const [mergedLoadingMsgId, setMergedLoadingMsgId] = useState<string | null>(null);
+  const [expandedMergedMsgId, setExpandedMergedMsgId] = useState<string | null>(null);
+
+  const [stressTestLoadingMsgId, setStressTestLoadingMsgId] = useState<string | null>(null);
+  const [expandedStressTestMsgId, setExpandedStressTestMsgId] = useState<string | null>(null);
+
+  const [alignmentLoadingMsgId, setAlignmentLoadingMsgId] = useState<string | null>(null);
+  const [expandedAlignmentMsgId, setExpandedAlignmentMsgId] = useState<string | null>(null);
+
+  const [studyDeckLoadingMsgId, setStudyDeckLoadingMsgId] = useState<string | null>(null);
+  const [expandedStudyDeckMsgId, setExpandedStudyDeckMsgId] = useState<string | null>(null);
+
+  const [decisionMatrixLoadingMsgId, setDecisionMatrixLoadingMsgId] = useState<string | null>(null);
+  const [expandedDecisionMatrixMsgId, setExpandedDecisionMatrixMsgId] = useState<string | null>(null);
+
+  // 5) Live Persona Voting Leaderboard Tally
+  const personaVoteCounts = useMemo(() => {
+    const counts: Record<MultiChatPersonaId, number> = { nova: 0, orbit: 0, cosmos: 0 };
+    for (const m of messages) {
+      if (m.votedBestPersonaId && counts[m.votedBestPersonaId] !== undefined) {
+        counts[m.votedBestPersonaId] += 1;
+      }
+    }
+    return counts;
+  }, [messages]);
+
+  const totalVotesCast = personaVoteCounts.nova + personaVoteCounts.orbit + personaVoteCounts.cosmos;
 
   // FEATURE 3: PODCAST MODE STATES
   const [isPodcastActive, setIsPodcastActive] = useState(false);
@@ -376,6 +489,551 @@ export function MultiChatConsole({
     );
   };
 
+  // HANDLER: Select Roleplay Scenario Cast
+  const handleSelectScenario = (scenarioId: MultiChatScenarioId) => {
+    setSelectedScenario(scenarioId);
+    try {
+      localStorage.setItem('nexus_multichat_scenario', scenarioId);
+    } catch {
+      // ignore
+    }
+  };
+
+  // HANDLER: Vote Best Persona Answer on a Turn
+  const handleVoteBestPersona = (msgId: string, personaId: MultiChatPersonaId) => {
+    setMessages((prev) => {
+      const next = prev.map((m) => {
+        if (m.id !== msgId) return m;
+        const nextVote = m.votedBestPersonaId === personaId ? undefined : personaId;
+        return { ...m, votedBestPersonaId: nextVote };
+      });
+      storage.saveMultiChatMessages(next);
+      setSessions(storage.getMultiChatSessions());
+      return next;
+    });
+  };
+
+  // HANDLER: Run +1 Cross-Examination / Rebuttal Round
+  const handleRunRebuttalRound = async (msg: MultiChatMessage) => {
+    if (rebuttalLoadingMsgId || isGenerating) return;
+    setRebuttalLoadingMsgId(msg.id);
+
+    const completedPersonas = msg.responses.filter(
+      (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+    );
+    if (completedPersonas.length < 2) {
+      setRebuttalLoadingMsgId(null);
+      return;
+    }
+
+    // Initialize running placeholders
+    const initialRebuttals = completedPersonas.map((r, idx) => ({
+      personaId: r.personaId,
+      name: r.name,
+      icon: r.icon,
+      accentColor: r.accentColor,
+      targetSummary:
+        r.personaId === 'nova'
+          ? 'Auditing ORBIT & COSMOS'
+          : r.personaId === 'orbit'
+          ? 'Challenging NOVA & COSMOS'
+          : 'Synthesizing NOVA & ORBIT',
+      text: '',
+      status: (idx === 0 ? 'running' : 'pending') as 'running' | 'pending' | 'completed' | 'failed',
+      timestamp: Date.now(),
+    }));
+
+    setMessages((prev) => {
+      const next = prev.map((m) => (m.id === msg.id ? { ...m, rebuttals: initialRebuttals } : m));
+      storage.saveMultiChatMessages(next);
+      return next;
+    });
+
+    try {
+      await executeMultiChatRebuttalRound(msg, config, (updatedRebuttals) => {
+        const list = (Array.isArray(updatedRebuttals) ? updatedRebuttals : [updatedRebuttals])
+          .flat()
+          .filter((item) => item && typeof item === 'object' && Boolean(item.personaId))
+          .map((item) => ({
+            ...item,
+            targetSummary:
+              item.targetSummary ||
+              (item.targetNames && item.targetNames.length > 0
+                ? `Rebutting ${item.targetNames.join(' & ')}`
+                : item.personaId === 'nova'
+                ? 'Auditing ORBIT & COSMOS'
+                : item.personaId === 'orbit'
+                ? 'Challenging NOVA & COSMOS'
+                : 'Synthesizing NOVA & ORBIT'),
+          }));
+        setMessages((prev) => {
+          const next = prev.map((m) => (m.id === msg.id ? { ...m, rebuttals: list } : m));
+          storage.saveMultiChatMessages(next);
+          setSessions(storage.getMultiChatSessions());
+          return next;
+        });
+      });
+    } finally {
+      setRebuttalLoadingMsgId(null);
+    }
+  };
+
+  // HANDLER: Generate Interactive Podcast / Roundtable Dialogue Script
+  const handleGeneratePodcastScript = async (msg: MultiChatMessage) => {
+    if (msg.podcastScript && msg.podcastScript.length > 0) {
+      setExpandedPodcastScriptMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    if (podcastScriptLoadingMsgId) return;
+    setPodcastScriptLoadingMsgId(msg.id);
+    setExpandedPodcastScriptMsgId(msg.id);
+    try {
+      const script = await generateMultiChatPodcastScript(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, podcastScript: script } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setPodcastScriptLoadingMsgId(null);
+    }
+  };
+
+  // HANDLER: Play Generated Roundtable Podcast Script via Edge TTS
+  const handlePlayPodcastScript = async (msg: MultiChatMessage) => {
+    const scriptKey = `script_${msg.id}`;
+    if (playingAudioKey === scriptKey) {
+      stopAudio();
+      return;
+    }
+    if (!msg.podcastScript || msg.podcastScript.length === 0) return;
+
+    stopAudio();
+    setEdgeTtsLoadingId(scriptKey);
+    try {
+      const audioBlobs: Blob[] = [];
+      for (const line of msg.podcastScript) {
+        const cleanLine = cleanMarkdownForSpeech(line.text);
+        if (!cleanLine) continue;
+        const voice = getPersonaVoice(line.speakerId);
+        const response = await fetch('/api/edge-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `${line.speakerName}: ${cleanLine}`.slice(0, 2000),
+            voice,
+          }),
+        });
+        if (response.ok) {
+          audioBlobs.push(await response.blob());
+        }
+      }
+      if (audioBlobs.length === 0) throw new Error('No script audio synthesized');
+      const stitchedBlob = new Blob(audioBlobs, { type: 'audio/mpeg' });
+      const url = URL.createObjectURL(stitchedBlob);
+      const audio = new Audio(url);
+      edgeTtsAudioRef.current = audio;
+      audio.onplay = () => {
+        setPlayingAudioKey(scriptKey);
+        setEdgeTtsLoadingId(null);
+      };
+      audio.onended = () => {
+        setPlayingAudioKey(null);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setPlayingAudioKey(null);
+        edgeTtsAudioRef.current = null;
+        URL.revokeObjectURL(url);
+      };
+      await audio.play();
+    } catch (err) {
+      console.error('[MultiChat] Roundtable script audio error:', err);
+      setPlayingAudioKey(null);
+      setEdgeTtsLoadingId(null);
+    }
+  };
+
+  // HANDLER: Refresh Smart Trio Follow-Up Chips with AI
+  const handleRefreshFollowUps = async (msg: MultiChatMessage) => {
+    if (followUpLoadingMsgId) return;
+    setFollowUpLoadingMsgId(msg.id);
+    try {
+      const freshChips = await generateAIMultiChatFollowUps(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m.id === msg.id ? { ...m, followUpChips: freshChips } : m,
+        );
+        storage.saveMultiChatMessages(next);
+        return next;
+      });
+    } finally {
+      setFollowUpLoadingMsgId(null);
+    }
+  };
+
+  // HANDLER: Generate or Toggle Visual Mind-Map & Flowchart Canvas
+  const handleToggleVisualMap = async (msg: MultiChatMessage) => {
+    if (msg.visualMap && msg.visualMap.nodes.length > 0) {
+      setExpandedVisualMapMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    if (visualMapLoadingMsgId) return;
+    setVisualMapLoadingMsgId(msg.id);
+    setExpandedVisualMapMsgId(msg.id);
+    try {
+      const mapData = await generateMultiChatVisualMap(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m.id === msg.id ? { ...m, visualMap: mapData } : m,
+        );
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setVisualMapLoadingMsgId(null);
+    }
+  };
+
+  // HANDLER: Force Regenerate Visual Mind-Map
+  const handleRegenerateVisualMap = async (msg: MultiChatMessage) => {
+    if (visualMapLoadingMsgId) return;
+    setVisualMapLoadingMsgId(msg.id);
+    setExpandedVisualMapMsgId(msg.id);
+    try {
+      const mapData = await generateMultiChatVisualMap(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m.id === msg.id ? { ...m, visualMap: mapData } : m,
+        );
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setVisualMapLoadingMsgId(null);
+    }
+  };
+
+  // HANDLERS FOR 5 NEW SYNTHESIS LAB FEATURES:
+  // 1) "Frankenstein" Best-of-3 Master Answer Merger
+  const handleToggleMergedAnswer = async (msg: MultiChatMessage, forceRegen = false) => {
+    if (!forceRegen && msg.mergedAnswer && msg.mergedAnswer.sections.length > 0) {
+      setExpandedMergedMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    if (mergedLoadingMsgId) return;
+    setMergedLoadingMsgId(msg.id);
+    setExpandedMergedMsgId(msg.id);
+    try {
+      const merged = await generateMultiChatMergedAnswer(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, mergedAnswer: merged } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setMergedLoadingMsgId(null);
+    }
+  };
+
+  // 2) "What-If" Constraint & Stress-Test Injector
+  const handleToggleStressTest = async (msg: MultiChatMessage) => {
+    if (msg.stressTest && msg.stressTest.pivots.length > 0) {
+      setExpandedStressTestMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    await handleRunStressConstraint(msg, '💸 Budget cut by 80%');
+  };
+
+  const handleRunStressConstraint = async (msg: MultiChatMessage, constraint: string) => {
+    if (stressTestLoadingMsgId) return;
+    setStressTestLoadingMsgId(msg.id);
+    setExpandedStressTestMsgId(msg.id);
+    try {
+      const result = await executeMultiChatStressTest(msg, constraint, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, stressTest: result } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setStressTestLoadingMsgId(null);
+    }
+  };
+
+  // 3) Live Tri-Mind Alignment & Fact-Check Radar
+  const handleToggleAlignmentRadar = async (msg: MultiChatMessage, forceRegen = false) => {
+    if (!forceRegen && msg.alignmentRadar) {
+      setExpandedAlignmentMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    if (alignmentLoadingMsgId) return;
+    setAlignmentLoadingMsgId(msg.id);
+    setExpandedAlignmentMsgId(msg.id);
+    try {
+      const radar = await generateMultiChatAlignmentRadar(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, alignmentRadar: radar } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setAlignmentLoadingMsgId(null);
+    }
+  };
+
+  // 4) Interactive Study Deck & Quiz Generator
+  const handleToggleStudyDeck = async (msg: MultiChatMessage, forceRegen = false) => {
+    if (!forceRegen && msg.studyDeck && msg.studyDeck.flashcards.length > 0) {
+      setExpandedStudyDeckMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    if (studyDeckLoadingMsgId) return;
+    setStudyDeckLoadingMsgId(msg.id);
+    setExpandedStudyDeckMsgId(msg.id);
+    try {
+      const deck = await generateMultiChatStudyDeck(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, studyDeck: deck } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setStudyDeckLoadingMsgId(null);
+    }
+  };
+
+  // 5) Side-by-Side Weighted Decision Matrix Table
+  const handleToggleDecisionMatrix = async (msg: MultiChatMessage, forceRegen = false) => {
+    if (!forceRegen && msg.decisionMatrix && msg.decisionMatrix.options.length > 0) {
+      setExpandedDecisionMatrixMsgId((prev) => (prev === msg.id ? null : msg.id));
+      return;
+    }
+    if (decisionMatrixLoadingMsgId) return;
+    setDecisionMatrixLoadingMsgId(msg.id);
+    setExpandedDecisionMatrixMsgId(msg.id);
+    try {
+      const matrix = await generateMultiChatDecisionMatrix(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, decisionMatrix: matrix } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setDecisionMatrixLoadingMsgId(null);
+    }
+  };
+
+  // ============================================================================
+  // NEXT-WAVE 5 MULTI CHAT FEATURES STATE & HANDLERS
+  // ============================================================================
+  // 1. 4th Guest Specialist On-Demand
+  const [expandedGuestMsgId, setExpandedGuestMsgId] = useState<string | null>(null);
+  const [guestLoadingKey, setGuestLoadingKey] = useState<{
+    msgId: string;
+    specialistId: MultiChatGuestSpecialistId;
+  } | null>(null);
+
+  const handleToggleGuestPanel = (msg: MultiChatMessage) => {
+    setExpandedGuestMsgId((prev) => (prev === msg.id ? null : msg.id));
+  };
+
+  const handleSummonGuestSpecialist = async (
+    msg: MultiChatMessage,
+    specialistId: MultiChatGuestSpecialistId,
+  ) => {
+    if (guestLoadingKey) return;
+    setExpandedGuestMsgId(msg.id);
+    setGuestLoadingKey({ msgId: msg.id, specialistId });
+    try {
+      const guestResp = await executeGuestSpecialistCall(msg, specialistId, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => {
+          if (m.id !== msg.id) return m;
+          const existing = Array.isArray(m.guestResponses) ? m.guestResponses : [];
+          const filtered = existing.filter((g) => g.specialistId !== specialistId);
+          return {
+            ...m,
+            guestResponses: [...filtered, guestResp],
+          };
+        });
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setGuestLoadingKey(null);
+    }
+  };
+
+  // 2. 180° Stance Reversal / Play Devil's Advocate
+  const [flipLoadingKey, setFlipLoadingKey] = useState<string | null>(null);
+
+  const handleFlipPersonaStance = async (
+    msg: MultiChatMessage,
+    resp: MultiChatPersonaResponse,
+  ) => {
+    const key = `${msg.id}_${resp.personaId}`;
+    if (flipLoadingKey) return;
+    setFlipLoadingKey(key);
+    try {
+      const flipped = await executePersonaStanceFlip(msg, resp, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => {
+          if (m.id !== msg.id) return m;
+          return {
+            ...m,
+            responses: m.responses.map((r) =>
+              r.personaId === resp.personaId ? { ...r, stanceFlip: flipped } : r,
+            ),
+          };
+        });
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setFlipLoadingKey(null);
+    }
+  };
+
+  const handleDismissStanceFlip = (msgId: string, personaId: MultiChatPersonaId) => {
+    setMessages((prev) => {
+      const next = prev.map((m) => {
+        if (m.id !== msgId) return m;
+        return {
+          ...m,
+          responses: m.responses.map((r) =>
+            r.personaId === personaId ? { ...r, stanceFlip: undefined } : r,
+          ),
+        };
+      });
+      storage.saveMultiChatMessages(next);
+      return next;
+    });
+  };
+
+  // 3. Multi-File / Code / CSV Dropzone for the Trio
+  const [attachedFiles, setAttachedFiles] = useState<MultiChatAttachedFile[]>([]);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFilesSelected = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const filesArray = Array.from(fileList).slice(0, 5);
+    const loaded: MultiChatAttachedFile[] = [];
+
+    for (let i = 0; i < filesArray.length; i++) {
+      const file = filesArray[i];
+      try {
+        const rawText = await file.text();
+        const trimmedContent =
+          rawText.length > 18000
+            ? `${rawText.slice(0, 18000)}\n\n... [Truncated ${rawText.length - 18000} characters for multi-agent context]`
+            : rawText;
+        const ext = file.name.includes('.')
+          ? file.name.split('.').pop()?.toLowerCase() || 'txt'
+          : 'txt';
+        loaded.push({
+          id: `att_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name,
+          sizeBytes: file.size,
+          extension: ext,
+          content: trimmedContent,
+        });
+      } catch {
+        // Ignore unreadable binary file
+      }
+    }
+
+    if (loaded.length > 0) {
+      setAttachedFiles((prev) => [...prev, ...loaded].slice(0, 5));
+    }
+  };
+
+  const handleRemoveAttachedFile = (fileId: string) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== fileId));
+  };
+
+  // 4. Smart Prompt Splitter & Pre-Flight Tuner
+  const [showPromptSplitter, setShowPromptSplitter] = useState(false);
+  const [splitPlan, setSplitPlan] = useState<MultiChatPromptSplitPlan | null>(null);
+  const [isRefiningSplit, setIsRefiningSplit] = useState(false);
+
+  const handleTogglePromptSplitter = async () => {
+    if (showPromptSplitter) {
+      setShowPromptSplitter(false);
+      return;
+    }
+    const seedPrompt =
+      inputText.trim() ||
+      (messages.length > 0
+        ? messages[messages.length - 1].query
+        : 'Design and launch a scalable AI SaaS platform with strong unit economics');
+    const instant = buildInstantPromptSplit(seedPrompt);
+    setSplitPlan(instant);
+    setShowPromptSplitter(true);
+  };
+
+  const handleAIRefineSplit = async () => {
+    if (isRefiningSplit) return;
+    const raw =
+      inputText.trim() ||
+      splitPlan?.originalPrompt ||
+      'Design and launch a scalable AI SaaS platform';
+    setIsRefiningSplit(true);
+    try {
+      const refined = await generateSmartPromptSplit(raw, config);
+      setSplitPlan(refined);
+    } finally {
+      setIsRefiningSplit(false);
+    }
+  };
+
+  const handleBroadcastSplitPlan = (plan: MultiChatPromptSplitPlan) => {
+    const formatted = formatSplitPlanIntoPrompt(plan);
+    setShowPromptSplitter(false);
+    handleSend(formatted);
+  };
+
+  // 5. Auto-Chart & Visual Telemetry Builder
+  const [chartLoadingMsgId, setChartLoadingMsgId] = useState<string | null>(null);
+  const [expandedChartMsgId, setExpandedChartMsgId] = useState<string | null>(null);
+
+  const handleToggleChartTelemetry = async (msg: MultiChatMessage, forceRegen = false) => {
+    if (!forceRegen && expandedChartMsgId === msg.id && msg.chartTelemetry) {
+      setExpandedChartMsgId(null);
+      return;
+    }
+    if (!forceRegen && msg.chartTelemetry) {
+      setExpandedChartMsgId(msg.id);
+      return;
+    }
+    if (chartLoadingMsgId) return;
+    setChartLoadingMsgId(msg.id);
+    setExpandedChartMsgId(msg.id);
+    try {
+      const chartData = await generateMultiChatChartTelemetry(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, chartTelemetry: chartData } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setChartLoadingMsgId(null);
+    }
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatTopRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -463,7 +1121,14 @@ export function MultiChatConsole({
   const enabledPersonas = Object.values(config.personas).filter((p) => p.enabled);
 
   const handleSend = async (queryText?: string) => {
-    const textToSend = (queryText || inputText).trim();
+    const rawText = (queryText ?? inputText).trim();
+    const turnAttachments =
+      !queryText && attachedFiles.length > 0 ? [...attachedFiles] : undefined;
+    const textToSend =
+      rawText ||
+      (turnAttachments && turnAttachments.length > 0
+        ? `Analyze the attached file(s) (${turnAttachments.map((f) => f.name).join(', ')}) from your specialized perspective.`
+        : '');
     if (!textToSend || isGenerating) return;
 
     const { mentionedIds } = parseMultiChatMentions(textToSend);
@@ -479,13 +1144,16 @@ export function MultiChatConsole({
     }
 
     if (activeTurnPersonas.length === 0) {
-      alert('All personas are currently disabled. Please enable at least one persona in Agent Configurations.');
       onNavigateToSettings();
       return;
     }
 
     setInputText('');
+    if (!queryText) {
+      setAttachedFiles([]);
+    }
     setShowQuickPrompts(false);
+    setShowPromptSplitter(false);
     setIsGenerating(true);
 
     const messageId = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -496,12 +1164,17 @@ export function MultiChatConsole({
       return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
     });
 
+    const activeScenarioDef = getScenarioCastById(selectedScenario);
+
     const initialResponses: MultiChatPersonaResponse[] = sortedEnabledPersonas.map((p, idx) => ({
       personaId: p.id,
       name: p.name,
       icon: p.icon,
       accentColor: p.accentColor,
-      toneBadge: p.toneBadge,
+      toneBadge:
+        selectedScenario !== 'standard' && activeScenarioDef.roles[p.id]
+          ? activeScenarioDef.roles[p.id].badge
+          : p.toneBadge,
       text: '',
       status: dialogueMode === 'parallel' || idx === 0 ? 'running' : 'pending',
     }));
@@ -514,7 +1187,9 @@ export function MultiChatConsole({
       docLensEnabled: docLensEnabled,
       webLensEnabled: webLensEnabled,
       dialogueMode,
+      scenarioId: selectedScenario,
       targetPersonaIds: combinedTargetIds.length > 0 ? combinedTargetIds : undefined,
+      attachments: turnAttachments,
     };
 
     const updatedMessages = [...messages, newMessage];
@@ -528,6 +1203,7 @@ export function MultiChatConsole({
         conversationHistory: messages,
         config,
         category: selectedCategory,
+        scenarioId: selectedScenario,
         permanentMemories: storage.getMultiChatMemories(),
         responseLanguage: config.responseLanguage ?? storage.getMultiChatResponseLanguage(),
         enableDocLens: docLensEnabled,
@@ -535,6 +1211,7 @@ export function MultiChatConsole({
         dialogueMode,
         targetPersonaIds: combinedTargetIds.length > 0 ? combinedTargetIds : undefined,
         enableSkills: skillsEnabled,
+        attachments: turnAttachments,
         onDocChunksRetrieved: (chunks) => {
           setMessages((prev) => {
             const next = prev.map((msg) =>
@@ -581,27 +1258,35 @@ export function MultiChatConsole({
         },
       });
 
-      if (
-        (turnResult?.docChunks && turnResult.docChunks.length > 0) ||
-        (turnResult?.webSources && turnResult.webSources.length > 0)
-      ) {
-        setMessages((prev) => {
-          const next = prev.map((msg) =>
-            msg.id === messageId
-              ? {
-                  ...msg,
-                  docChunks: turnResult.docChunks || msg.docChunks,
-                  docLensEnabled: Boolean(turnResult.docChunks && turnResult.docChunks.length > 0),
-                  webSources: turnResult.webSources || msg.webSources,
-                  webLensEnabled: Boolean(turnResult.webSources && turnResult.webSources.length > 0),
-                }
-              : msg,
-          );
-          storage.saveMultiChatMessages(next);
-          setSessions(storage.getMultiChatSessions());
-          return next;
+      setMessages((prev) => {
+        const next = prev.map((msg) => {
+          if (msg.id !== messageId) return msg;
+          const updatedMsg: MultiChatMessage = {
+            ...msg,
+            docChunks:
+              turnResult?.docChunks && turnResult.docChunks.length > 0
+                ? turnResult.docChunks
+                : msg.docChunks,
+            docLensEnabled: Boolean(
+              (turnResult?.docChunks && turnResult.docChunks.length > 0) ||
+                (msg.docChunks && msg.docChunks.length > 0),
+            ),
+            webSources:
+              turnResult?.webSources && turnResult.webSources.length > 0
+                ? turnResult.webSources
+                : msg.webSources,
+            webLensEnabled: Boolean(
+              (turnResult?.webSources && turnResult.webSources.length > 0) ||
+                (msg.webSources && msg.webSources.length > 0),
+            ),
+          };
+          updatedMsg.followUpChips = buildDefaultMultiChatFollowUps(updatedMsg);
+          return updatedMsg;
         });
-      }
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
 
       // Auto-cleanup: ONLY AFTER all persona responses are fully received and saved,
       // check if total message count > 20, and automatically delete the oldest message(s)
@@ -907,48 +1592,294 @@ export function MultiChatConsole({
     return globalVoice || 'en-US-AriaNeural';
   };
 
+  // Helper: Build complete copy text for a single Persona card across all active modes
+  // Includes: Round 1 Answer + 180° Stance Reversal (Re-Flip 180°) + Round 2 Debate/Cross-Exam Rebuttal + 1-on-1 Branches
+  const buildSinglePersonaFullCopyText = (
+    msg: MultiChatMessage,
+    resp: MultiChatPersonaResponse,
+  ): string => {
+    const sections: string[] = [];
+    const primaryAnswer = getPersonaCleanText(resp);
+    const modeLabel =
+      msg.dialogueMode === 'debate'
+        ? 'DEBATE MODE'
+        : msg.dialogueMode === 'parallel'
+        ? 'PARALLEL MODE'
+        : 'HARMONY MODE';
+    const scenarioRole =
+      msg.scenarioId && msg.scenarioId !== 'standard'
+        ? SCENARIO_PRESETS.find((s) => s.id === msg.scenarioId)?.roles[resp.personaId]
+        : undefined;
+
+    const flipText = (resp.stanceFlip?.text || resp.stanceFlip?.flippedText || '').trim();
+    const personaRebuttals = (Array.isArray(msg.rebuttals) ? msg.rebuttals.flat() : []).filter(
+      (reb) =>
+        reb &&
+        typeof reb === 'object' &&
+        reb.personaId === resp.personaId &&
+        reb.status === 'completed' &&
+        Boolean(reb.text?.trim()),
+    );
+    const hasExtraModes =
+      Boolean(flipText) ||
+      personaRebuttals.length > 0 ||
+      Boolean(resp.branches && resp.branches.length > 0);
+
+    // If only the base response exists, copy clean text with persona header when in Debate/Scenario mode
+    if (!hasExtraModes && (!msg.dialogueMode || msg.dialogueMode === 'harmony') && !scenarioRole) {
+      return primaryAnswer;
+    }
+
+    const headerMeta = [resp.toneBadge, modeLabel, scenarioRole ? `Role: ${scenarioRole}` : null]
+      .filter(Boolean)
+      .join(' • ');
+    sections.push(`=== ${resp.icon} ${resp.name.toUpperCase()} (${headerMeta}) ===\n${primaryAnswer}`);
+
+    if (flipText) {
+      const flipRole = resp.stanceFlip?.flippedRoleLabel
+        ? ` [${resp.stanceFlip.flippedRoleLabel}]`
+        : '';
+      sections.push(
+        `--- 🔄 180° STANCE REVERSAL (RE-FLIP 180° • ${resp.name.toUpperCase()} DEVIL'S ADVOCATE)${flipRole} ---\n${flipText}`,
+      );
+    }
+
+    if (personaRebuttals.length > 0) {
+      personaRebuttals.forEach((reb) => {
+        const targetLabel =
+          reb.targetSummary ||
+          (reb.targetNames && reb.targetNames.length > 0
+            ? `Rebutting ${reb.targetNames.join(' & ')}`
+            : 'Cross-Examination Rebuttal');
+        sections.push(
+          `--- ⚔️ ROUND 2 DEBATE / CROSS-EXAMINATION (${resp.name.toUpperCase()} • ${targetLabel}) ---\n${reb.text.trim()}`,
+        );
+      });
+    }
+
+    if (resp.branches && resp.branches.length > 0) {
+      const branchLines = resp.branches
+        .map((b, bIdx) => {
+          const branchText = b.response ? getPersonaCleanText(b.response) : b.text || '';
+          const cleanBranchText =
+            branchText ||
+            (b.response?.status === 'failed'
+              ? `*[Error: ${b.response?.error || 'Failed to generate'}]*`
+              : '');
+          return `  ↳ 1-on-1 Branch with ${resp.name} (${bIdx + 1})\n  YOU → ${resp.name}: ${b.query}\n  ${resp.name}: ${cleanBranchText}`;
+        })
+        .join('\n\n');
+      sections.push(branchLines);
+    }
+
+    return sections.join('\n\n');
+  };
+
+  // Helper: Build complete copy text for an entire turn across ALL modes & Synthesis Lab panels
+  const buildTurnFullCopyText = (msg: MultiChatMessage): string => {
+    const sections: string[] = [];
+    const modeLabel =
+      msg.dialogueMode === 'debate'
+        ? '⚔️ DEBATE MODE'
+        : msg.dialogueMode === 'parallel'
+        ? '⚡ PARALLEL MODE'
+        : '🤝 HARMONY MODE';
+    const scenarioObj =
+      msg.scenarioId && msg.scenarioId !== 'standard'
+        ? SCENARIO_PRESETS.find((s) => s.id === msg.scenarioId)
+        : undefined;
+
+    // 1. Inquiry & Active Mode Header
+    const headerLines: string[] = [
+      `=== USER INQUIRY [${modeLabel}${scenarioObj ? ` • 🎭 ${scenarioObj.label.toUpperCase()}` : ''}] ===`,
+      msg.query,
+    ];
+    if (msg.attachedFiles && msg.attachedFiles.length > 0) {
+      headerLines.push(
+        `📎 Attached Files: ${msg.attachedFiles.map((f) => f.name).join(', ')}`,
+      );
+    }
+    if (msg.docChunks && msg.docChunks.length > 0) {
+      headerLines.push(
+        `📖 Doc Lens: ${msg.docChunks.length} excerpts retrieved from Document Library`,
+      );
+    }
+    if (msg.webResults && msg.webResults.length > 0) {
+      headerLines.push(`🌐 Web Lens: ${msg.webResults.length} live web sources cited`);
+    }
+    sections.push(headerLines.join('\n'));
+
+    // 2. All Persona Responses + 180° Stance Reversal (Re-Flip 180°) + 1-on-1 Branches
+    const completedResponses = msg.responses.filter(
+      (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
+    );
+    for (const r of completedResponses) {
+      const answer = getPersonaCleanText(r);
+      const roleNote = scenarioObj?.roles?.[r.personaId]
+        ? ` • Role: ${scenarioObj.roles[r.personaId]}`
+        : '';
+      let block = `=== ${r.icon} ${r.name.toUpperCase()} [${r.toneBadge || 'Persona'}${roleNote}] ===\n${answer}`;
+
+      const flipText = (r.stanceFlip?.text || r.stanceFlip?.flippedText || '').trim();
+      if (flipText) {
+        const flipRole = r.stanceFlip?.flippedRoleLabel
+          ? ` (${r.stanceFlip.flippedRoleLabel})`
+          : '';
+        block += `\n\n  🔄 [180° STANCE REVERSAL / RE-FLIP 180° • ${r.name.toUpperCase()} DEVIL'S ADVOCATE${flipRole}]\n  ${flipText.replace(/\n/g, '\n  ')}`;
+      }
+
+      if (r.branches && r.branches.length > 0) {
+        const branchBlocks = r.branches
+          .map((b, bIdx) => {
+            const branchText = b.response ? getPersonaCleanText(b.response) : b.text || '';
+            const cleanBranchText =
+              branchText ||
+              (b.response?.status === 'failed'
+                ? `*[Error: ${b.response?.error || 'Failed to generate'}]*`
+                : '');
+            return `  ↳ 1-on-1 Branch with ${r.name} (${bIdx + 1})\n  YOU → ${r.name}: ${b.query}\n  ${r.name}: ${cleanBranchText}`;
+          })
+          .join('\n\n');
+        block += `\n\n${branchBlocks}`;
+      }
+
+      sections.push(block);
+    }
+
+    // 3. Round 2: Cross-Examination & Debate Rebuttals
+    const completedRebuttals = (Array.isArray(msg.rebuttals) ? msg.rebuttals.flat() : []).filter(
+      (reb) =>
+        reb &&
+        typeof reb === 'object' &&
+        Boolean(reb.personaId) &&
+        reb.status === 'completed' &&
+        Boolean(reb.text?.trim()),
+    );
+    if (completedRebuttals.length > 0) {
+      const rebLines = completedRebuttals.map((reb) => {
+        const summaryLabel =
+          reb.targetSummary ||
+          (reb.targetNames && reb.targetNames.length > 0
+            ? `Rebutting ${reb.targetNames.join(' & ')}`
+            : 'Cross-Examining');
+        return `• ${reb.icon} ${reb.name.toUpperCase()} (${summaryLabel}):\n${reb.text.trim()}`;
+      });
+      sections.push(
+        `=== ⚔️ ROUND 2: CROSS-EXAMINATION & DEBATE REBUTTALS ===\n${rebLines.join('\n\n')}`,
+      );
+    }
+
+    // 4. 4th Guest Specialist Critiques
+    const completedGuests = (msg.guestResponses || []).filter(
+      (g) => g && g.status === 'completed' && Boolean(g.text?.trim()),
+    );
+    if (completedGuests.length > 0) {
+      const guestLines = completedGuests.map(
+        (g) => `• ${g.icon} ${g.name.toUpperCase()} [${g.roleBadge}]:\n${g.text.trim()}`,
+      );
+      sections.push(
+        `=== 🧠 4TH GUEST SPECIALIST CRITIQUES ===\n${guestLines.join('\n\n')}`,
+      );
+    }
+
+    // 5. Tri-Mind Consensus Verdict
+    if (msg.consensus && msg.consensus.verdict) {
+      const consLines: string[] = [
+        `=== ⚖️ TRI-MIND CONSENSUS & EXECUTIVE VERDICT ===`,
+        `Verdict: ${msg.consensus.verdict}`,
+      ];
+      if (msg.consensus.agreements && msg.consensus.agreements.length > 0) {
+        consLines.push(
+          `\nKey Agreements:\n${msg.consensus.agreements.map((a) => `  ✓ ${a}`).join('\n')}`,
+        );
+      }
+      if (msg.consensus.divergences && msg.consensus.divergences.length > 0) {
+        consLines.push(
+          `\nKey Divergences:\n${msg.consensus.divergences.map((d) => `  ⚡ ${d}`).join('\n')}`,
+        );
+      }
+      if (msg.consensus.actionChecklist && msg.consensus.actionChecklist.length > 0) {
+        consLines.push(
+          `\nAction Checklist:\n${msg.consensus.actionChecklist.map((c) => `  [ ] ${c}`).join('\n')}`,
+        );
+      }
+      sections.push(consLines.join('\n'));
+    }
+
+    // 6. Merged Master Answer
+    if (msg.mergedAnswer && msg.mergedAnswer.masterMarkdown) {
+      sections.push(
+        `=== 🧬 MERGED MASTER ANSWER (${msg.mergedAnswer.headline || 'Unified Synthesis'}) ===\n${msg.mergedAnswer.masterMarkdown}`,
+      );
+    }
+
+    // 7. Red-Team What-If Stress-Test
+    if (msg.stressTest && msg.stressTest.failureModes && msg.stressTest.failureModes.length > 0) {
+      const stLines: string[] = [
+        `=== 🛡️ RED-TEAM WHAT-IF STRESS-TEST (Resilience Score: ${msg.stressTest.resilienceScore}/100) ===`,
+        `Blind Spot Summary: ${msg.stressTest.blindSpotSummary}`,
+        ...msg.stressTest.failureModes.map(
+          (fm) =>
+            `• [${fm.severity.toUpperCase()}] ${fm.scenario} (Flagged by ${fm.flaggedBy})\n  Mitigation: ${fm.mitigation}`,
+        ),
+      ];
+      sections.push(stLines.join('\n'));
+    }
+
+    // 8. Alignment Radar
+    if (msg.alignmentRadar && typeof msg.alignmentRadar.overallAgreement === 'number') {
+      sections.push(
+        `=== 🎯 PERSONA ALIGNMENT RADAR (${msg.alignmentRadar.overallAgreement}% Overall Agreement) ===\nShared Ground: ${msg.alignmentRadar.sharedGround}\nCore Tension: ${msg.alignmentRadar.coreTension}`,
+      );
+    }
+
+    // 9. Decision Matrix
+    if (msg.decisionMatrix && msg.decisionMatrix.options && msg.decisionMatrix.options.length > 0) {
+      const dmLines: string[] = [
+        `=== 📊 WEIGHTED DECISION MATRIX: ${msg.decisionMatrix.title} ===`,
+        `Recommended Winner: ${msg.decisionMatrix.recommendedWinner} — ${msg.decisionMatrix.winnerRationale}`,
+        ...msg.decisionMatrix.options.map(
+          (opt) => `• ${opt.name}: Weighted Total ${opt.totalWeightedScore}/100`,
+        ),
+      ];
+      sections.push(dmLines.join('\n'));
+    }
+
+    // 10. Visual Chart Telemetry
+    if (msg.chartTelemetry && msg.chartTelemetry.metrics && msg.chartTelemetry.metrics.length > 0) {
+      const chartLines: string[] = [
+        `=== 📈 VISUAL CHART TELEMETRY: ${msg.chartTelemetry.title} (${msg.chartTelemetry.unit}) ===`,
+        `Takeaway: ${msg.chartTelemetry.summaryTakeaway}`,
+        ...msg.chartTelemetry.metrics.map(
+          (m) => `• ${m.label}: NOVA=${m.novaScore}, ORBIT=${m.orbitScore}, COSMOS=${m.cosmosScore}`,
+        ),
+      ];
+      sections.push(chartLines.join('\n'));
+    }
+
+    // 11. Podcast Roundtable Script
+    if (msg.podcastScript && msg.podcastScript.length > 0) {
+      const scriptLines = msg.podcastScript.map(
+        (turn) => `${turn.speaker} (${turn.stageDirection}): "${turn.dialogue}"`,
+      );
+      sections.push(
+        `=== 🎙️ ROUNDTABLE PODCAST SCRIPT ===\n${scriptLines.join('\n')}`,
+      );
+    }
+
+    return sections.join('\n\n');
+  };
+
   // 1. UNIVERSAL COPY BUTTON:
-  // Copies all persona responses together as one formatted text block:
-  // === NOVA ===
-  // [nova's answer]
-  //
-  //   ↳ 1-on-1 Branch with NOVA (1)
-  //   YOU → NOVA: [user's follow-up]
-  //   NOVA: [persona's reply]
-  //
-  // === ORBIT ===
-  // [orbit's answer]
-  //
-  // === COSMOS ===
-  // [cosmos's answer]
+  // Copies all persona responses AND all active mode outputs (Debate Mode, Re-Flip 180°,
+  // Round 2 Rebuttals, 1-on-1 Branches, 4th Guest Experts, Consensus, and Synthesis Lab panels)
   const handleCopyCombined = async (msg: MultiChatMessage) => {
     const completedResponses = msg.responses.filter(
-      (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0
+      (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
     );
     if (completedResponses.length === 0) return;
 
-    const formattedBlock = completedResponses
-      .map((r) => {
-        const answer = getPersonaCleanText(r);
-        let block = `=== ${r.name.toUpperCase()} ===\n${answer}`;
-
-        if (r.branches && r.branches.length > 0) {
-          const branchBlocks = r.branches
-            .map((b, bIdx) => {
-              const branchText = b.response ? getPersonaCleanText(b.response) : b.text || '';
-              const cleanBranchText =
-                branchText ||
-                (b.response?.status === 'failed' ? `*[Error: ${b.response?.error || 'Failed to generate'}]*` : '');
-              return `  ↳ 1-on-1 Branch with ${r.name} (${bIdx + 1})\n  YOU → ${r.name}: ${b.query}\n  ${r.name}: ${cleanBranchText}`;
-            })
-            .join('\n\n');
-          block += `\n\n${branchBlocks}`;
-        }
-
-        return block;
-      })
-      .join('\n\n');
-
+    const formattedBlock = buildTurnFullCopyText(msg);
     const success = await copyToClipboard(formattedBlock);
     if (success) {
       setCopiedCombinedId(msg.id);
@@ -1245,56 +2176,24 @@ export function MultiChatConsole({
     if (messages.length === 0) return;
 
     const transcriptLines: string[] = [
-      '# NEXUS // MULTI CHAT TRANSCRIPT',
+      '# NEXUS // MULTI CHAT COMPLETE TRANSCRIPT (ALL MODES)',
       `Exported on: ${new Date().toLocaleString()}`,
       '',
     ];
 
     for (const msg of messages) {
-      transcriptLines.push(`### 👤 USER INQUIRY (${new Date(msg.timestamp).toLocaleTimeString()})`);
-      transcriptLines.push(msg.query);
+      transcriptLines.push(`## 🕒 TURN (${new Date(msg.timestamp).toLocaleTimeString()})`);
+      transcriptLines.push(buildTurnFullCopyText(msg));
       transcriptLines.push('');
-
-      // WHAT'S MISSING #1: Document Lens indicator
-      if (msg.docChunks && msg.docChunks.length > 0) {
-        transcriptLines.push(`📖 Doc Lens: ${msg.docChunks.length} excerpts retrieved from Document Library`);
-        transcriptLines.push('');
-      }
-
-      for (const resp of msg.responses) {
-        transcriptLines.push(`#### ${resp.icon} ${resp.name} [${resp.toneBadge || 'Persona'}]`);
-        const text = getPersonaCleanText(resp);
-        if (resp.status === 'completed') {
-          transcriptLines.push(text);
-        } else if (resp.status === 'failed') {
-          transcriptLines.push(`*[Error: ${resp.error || 'Failed to generate'}]*`);
-        } else {
-          transcriptLines.push('*[Processing...]*');
-        }
-        transcriptLines.push('');
-
-        // WHAT'S MISSING #2: 1-on-1 Persona Branch threads
-        if (resp.branches && resp.branches.length > 0) {
-          resp.branches.forEach((b, bIdx) => {
-            transcriptLines.push(`    ↳ 1-on-1 Branch with ${resp.name} (${bIdx + 1})`);
-            transcriptLines.push(`    YOU → ${resp.name}: ${b.query}`);
-            const branchText = b.response ? getPersonaCleanText(b.response) : b.text || '';
-            const cleanBranchText =
-              branchText ||
-              (b.response?.status === 'failed' ? `*[Error: ${b.response?.error || 'Failed to generate'}]*` : '');
-            transcriptLines.push(`    ${resp.name}: ${cleanBranchText}`);
-            transcriptLines.push('');
-          });
-        }
-      }
-      transcriptLines.push('---');
+      transcriptLines.push('------------------------------------------------------------');
       transcriptLines.push('');
     }
 
     const fullContent = transcriptLines.join('\n');
     const success = await copyToClipboard(fullContent);
     if (success) {
-      alert('Complete Multi Chat transcript copied to clipboard!');
+      setCopiedTranscript(true);
+      setTimeout(() => setCopiedTranscript(false), 2500);
     }
   };
 
@@ -1351,27 +2250,66 @@ export function MultiChatConsole({
             <span className="text-[10px] font-mono font-bold tracking-wide">MESH</span>
           </div>
 
-          {/* Persona quick chips */}
+          {/* Persona quick chips + Live Best Answer Trophy Leaderboard */}
           <div className="flex items-center gap-1 shrink-0">
-            {Object.values(config.personas).map((persona) => (
-              <div
-                key={persona.id}
-                className="inline-flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-medium transition-all shrink-0"
-                style={{
-                  background: persona.enabled ? `${persona.accentColor}15` : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${persona.enabled ? persona.accentColor + '40' : 'rgba(255,255,255,0.08)'}`,
-                  color: persona.enabled ? persona.accentColor : '#64748b',
-                  opacity: persona.enabled ? 1 : 0.45,
-                }}
-                title={`${persona.name} (${persona.toneBadge})`}
-              >
-                <span className="text-xs">{persona.icon}</span>
-                <span className="font-bold text-[10px] sm:text-[11px]">{persona.name}</span>
-                <span className="text-[9.5px] font-mono opacity-70 hidden lg:inline">
-                  {persona.toneBadge}
-                </span>
-              </div>
-            ))}
+            {Object.values(config.personas).map((persona, pIdx) => {
+              const voteCount = personaVoteCounts[persona.id] || 0;
+              const maxVotes = Math.max(
+                personaVoteCounts.nova,
+                personaVoteCounts.orbit,
+                personaVoteCounts.cosmos,
+              );
+              const isLeader = totalVotesCast > 0 && voteCount === maxVotes && voteCount > 0;
+              const activeScenarioCast = getScenarioCastById(selectedScenario);
+              const displayBadge =
+                selectedScenario !== 'standard' && activeScenarioCast.roles[persona.id]
+                  ? activeScenarioCast.roles[persona.id].badge
+                  : persona.toneBadge;
+
+              return (
+                <div
+                  key={`header_persona_${persona.id || pIdx}_${pIdx}`}
+                  className="inline-flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-medium transition-all shrink-0"
+                  style={{
+                    background: persona.enabled
+                      ? isLeader
+                        ? `${persona.accentColor}25`
+                        : `${persona.accentColor}15`
+                      : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${
+                      persona.enabled
+                        ? isLeader
+                          ? '#fbbf24'
+                          : persona.accentColor + '40'
+                        : 'rgba(255,255,255,0.08)'
+                    }`,
+                    color: persona.enabled ? persona.accentColor : '#64748b',
+                    opacity: persona.enabled ? 1 : 0.45,
+                  }}
+                  title={`${persona.name} (${displayBadge}) — ${voteCount} Best Answer vote${
+                    voteCount === 1 ? '' : 's'
+                  }`}
+                >
+                  <span className="text-xs">{persona.icon}</span>
+                  <span className="font-bold text-[10px] sm:text-[11px]">{persona.name}</span>
+                  <span className="text-[9.5px] font-mono opacity-75 hidden lg:inline">
+                    {displayBadge}
+                  </span>
+                  {voteCount > 0 && (
+                    <span
+                      className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono font-bold ${
+                        isLeader
+                          ? 'bg-amber-400/25 text-amber-200 border border-amber-400/50'
+                          : 'bg-white/10 text-slate-200'
+                      }`}
+                    >
+                      <Trophy size={9} className="text-amber-400" />
+                      {voteCount}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -1466,16 +2404,26 @@ export function MultiChatConsole({
             </button>
           </div>
 
-          {/* Export & Clear */}
+          {/* Global Copy All / Export & Clear */}
           {messages.length > 0 && (
             <button
               type="button"
               onClick={handleExportTranscript}
-              className="p-1.5 sm:px-2 sm:py-1 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-[11px] font-medium flex items-center gap-1"
-              title="Export complete conversation transcript"
+              className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border transition-all text-[11px] font-medium flex items-center gap-1 cursor-pointer ${
+                copiedTranscript
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300 hover:text-white'
+              }`}
+              title="Copy complete conversation transcript across all modes (Debate, Re-Flip 180°, Rebuttals, Guests, Consensus)"
             >
-              <Share2 size={12} />
-              <span className="hidden md:inline">Export</span>
+              {copiedTranscript ? (
+                <Check size={12} className="text-emerald-400" />
+              ) : (
+                <Copy size={12} />
+              )}
+              <span className="hidden md:inline">
+                {copiedTranscript ? 'Copied All!' : 'Copy All'}
+              </span>
             </button>
           )}
 
@@ -1769,7 +2717,7 @@ export function MultiChatConsole({
                 const isTargeted = directTargetIds.includes(p.id);
                 return (
                   <button
-                    key={p.id}
+                    key={`welcome_persona_${p.id || idx}_${idx}`}
                     type="button"
                     onClick={() => {
                       handleToggleDirectPersona(p.id);
@@ -1846,11 +2794,11 @@ export function MultiChatConsole({
         ) : (
           messages
             .filter((m) => (!showPinnedOnly ? true : Boolean(m.pinned)))
-            .map((msg) => {
+            .map((msg, msgIdx) => {
               const activeTab = selectedPersonaTab[msg.id] || 'all';
 
               return (
-                <div key={msg.id} className="flex flex-col gap-2.5 sm:gap-3.5">
+                <div key={`${msg.id || 'msg'}_${msgIdx}`} className="flex flex-col gap-2.5 sm:gap-3.5">
                   {/* User Inquiry Chat Bubble (Theme-styled like AssistantPage) */}
                   <div className="flex items-start justify-end gap-2 sm:gap-3 pl-4 sm:pl-10">
                     <div className="flex flex-col items-end max-w-full sm:max-w-2xl min-w-0">
@@ -1879,6 +2827,28 @@ export function MultiChatConsole({
                         <p className="text-[13.5px] sm:text-[15px] leading-relaxed font-normal whitespace-pre-wrap break-words">
                           {msg.query}
                         </p>
+
+                        {/* Attached Files Badges on User Inquiry */}
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <div className="mt-2.5 pt-2 border-t border-white/15 flex items-center gap-1.5 flex-wrap">
+                            {msg.attachments.map((att, attIdx) => {
+                              const bytes = att.sizeBytes ?? att.size ?? 0;
+                              return (
+                                <span
+                                  key={`${msg.id}_att_${att.id || attIdx}_${attIdx}`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-black/35 border border-white/15 text-[10.5px] font-mono text-cyan-200"
+                                  title={`${att.name} (${(bytes / 1024).toFixed(1)} KB)`}
+                                >
+                                  <FileText size={10} className="text-cyan-400 shrink-0" />
+                                  <span className="truncate max-w-[160px]">{att.name}</span>
+                                  <span className="text-[9px] text-slate-400">
+                                    {(bytes / 1024).toFixed(1)}KB
+                                  </span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
 
                         {/* Quick copy user prompt */}
                         <button
@@ -1952,9 +2922,9 @@ export function MultiChatConsole({
                           >
                             All ({msg.responses.length})
                           </button>
-                          {msg.responses.map((resp) => (
+                          {msg.responses.map((resp, rIdx) => (
                             <button
-                              key={resp.personaId}
+                              key={`${msg.id}_tab_${resp.personaId || rIdx}_${rIdx}`}
                               type="button"
                               onClick={() =>
                                 setSelectedPersonaTab((prev) => ({ ...prev, [msg.id]: resp.personaId }))
@@ -1997,8 +2967,8 @@ export function MultiChatConsole({
                                 : 'bg-zinc-900/95 border-white/[0.08]'
                             }`}
                           >
-                            {/* Left: Combined Label */}
-                            <div className="flex items-center gap-2 min-w-0">
+                            {/* Left: Combined Label + Active Scenario Badge */}
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
                               <div
                                 className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-mono text-[10px] sm:text-xs font-bold border ${
                                   isClassic
@@ -2015,6 +2985,12 @@ export function MultiChatConsole({
                                 />
                                 <span>TRIO SYNTHESIS</span>
                               </div>
+                              {msg.scenarioId && msg.scenarioId !== 'standard' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-500/15 border border-purple-400/35 text-purple-200 text-[10px] font-mono font-bold">
+                                  <span>{getScenarioCastById(msg.scenarioId).icon}</span>
+                                  <span>{getScenarioCastById(msg.scenarioId).name}</span>
+                                </span>
+                              )}
                               <span className="text-[10px] font-mono text-slate-400 hidden md:inline">
                                 NOVA • ORBIT • COSMOS
                               </span>
@@ -2022,6 +2998,106 @@ export function MultiChatConsole({
 
                             {/* Right: Universal Action Buttons (Compact on mobile) */}
                             <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap ml-auto">
+                              {/* Feature 1: +1 Rebuttal / Cross-Examination Round Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleRunRebuttalRound(msg)}
+                                disabled={
+                                  isGenerating ||
+                                  rebuttalLoadingMsgId === msg.id ||
+                                  msg.responses.filter(
+                                    (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
+                                  ).length < 2
+                                }
+                                className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all border ${
+                                  msg.rebuttals && msg.rebuttals.length > 0
+                                    ? 'bg-rose-500/20 text-rose-200 border-rose-400/50'
+                                    : rebuttalLoadingMsgId === msg.id
+                                    ? 'bg-rose-950/40 text-rose-300 border-rose-500/30 cursor-wait'
+                                    : 'bg-white/[0.04] hover:bg-rose-500/15 text-slate-200 hover:text-rose-200 border-white/10 hover:border-rose-400/40'
+                                }`}
+                                title="Trigger Round 2 Cross-Examination: NOVA, ORBIT & COSMOS directly critique and rebut each other's answers"
+                              >
+                                {rebuttalLoadingMsgId === msg.id ? (
+                                  <>
+                                    <Loader2 size={12} className="animate-spin text-rose-400" />
+                                    <span className="text-[10px] font-mono hidden sm:inline">Rebutting...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Swords size={12} className="text-rose-400" />
+                                    <span className="hidden sm:inline">
+                                      {msg.rebuttals && msg.rebuttals.length > 0 ? 'Re-Run Rebuttal' : '+1 Rebuttal'}
+                                    </span>
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Feature 5: Interactive Podcast / Roundtable Dialogue Script Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleGeneratePodcastScript(msg)}
+                                disabled={
+                                  isGenerating ||
+                                  podcastScriptLoadingMsgId === msg.id ||
+                                  msg.responses.filter(
+                                    (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
+                                  ).length < 2
+                                }
+                                className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all border ${
+                                  expandedPodcastScriptMsgId === msg.id
+                                    ? 'bg-purple-500/25 text-purple-200 border-purple-400/50'
+                                    : podcastScriptLoadingMsgId === msg.id
+                                    ? 'bg-purple-950/40 text-purple-300 border-purple-500/30 cursor-wait'
+                                    : 'bg-white/[0.04] hover:bg-purple-500/15 text-slate-200 hover:text-purple-200 border-white/10 hover:border-purple-400/40'
+                                }`}
+                                title="Generate an interactive back-and-forth Roundtable Podcast Script from this turn"
+                              >
+                                {podcastScriptLoadingMsgId === msg.id ? (
+                                  <>
+                                    <Loader2 size={12} className="animate-spin text-purple-400" />
+                                    <span className="text-[10px] font-mono hidden sm:inline">Scripting...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Headphones size={12} className="text-purple-400" />
+                                    <span className="hidden sm:inline">Podcast Script</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Feature 6: Interactive Visual Mind-Map & Flowchart Canvas Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleVisualMap(msg)}
+                                disabled={
+                                  isGenerating ||
+                                  visualMapLoadingMsgId === msg.id ||
+                                  msg.responses.filter(
+                                    (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
+                                  ).length === 0
+                                }
+                                className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all border ${
+                                  expandedVisualMapMsgId === msg.id
+                                    ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                                    : visualMapLoadingMsgId === msg.id
+                                    ? 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 cursor-wait'
+                                    : 'bg-white/[0.04] hover:bg-cyan-500/15 text-slate-200 hover:text-cyan-200 border-white/10 hover:border-cyan-400/40'
+                                }`}
+                                title="Synthesize an interactive SVG Mind-Map & Decision Flowchart from NOVA, ORBIT & COSMOS"
+                              >
+                                {visualMapLoadingMsgId === msg.id ? (
+                                  <>
+                                    <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                    <span className="text-[10px] font-mono hidden sm:inline">Mapping...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Network size={12} className="text-cyan-400" />
+                                    <span className="hidden sm:inline">Visual Map</span>
+                                  </>
+                                )}
+                              </button>
                               {/* Universal Listen to All Button */}
                               <button
                                 type="button"
@@ -2101,18 +3177,18 @@ export function MultiChatConsole({
                                     (r) => r.status === 'completed' && (r.text || (r as { reasoning?: string }).reasoning)
                                   ).length === 0
                                 }
-                                className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/10 transition-all"
-                                title="Copy all 3 persona responses"
+                                className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/10 transition-all cursor-pointer"
+                                title="Copy all mode answers for this turn (Personas, Debate Mode, Re-Flip 180°, Round 2 Rebuttals, Guests & Consensus)"
                               >
                                 {copiedCombinedId === msg.id ? (
                                   <>
                                     <Check size={12} className="text-emerald-400" />
-                                    <span className="text-[10px] font-mono text-emerald-300 hidden sm:inline">Copied</span>
+                                    <span className="text-[10px] font-mono text-emerald-300 hidden sm:inline">Copied All</span>
                                   </>
                                 ) : (
                                   <>
                                     <Copy size={12} className="text-slate-300" />
-                                    <span className="hidden sm:inline">Copy</span>
+                                    <span className="hidden sm:inline">Copy All</span>
                                   </>
                                 )}
                               </button>
@@ -2244,7 +3320,7 @@ export function MultiChatConsole({
 
                           {msg.responses
                             .filter((resp) => activeTab === 'all' || activeTab === resp.personaId)
-                            .map((resp) => {
+                            .map((resp, rIdx) => {
                               const personaKey = `${msg.id}_${resp.personaId}`;
                               const isPlayingThis = playingAudioKey === personaKey;
                               const isCopied = copiedId === personaKey;
@@ -2254,12 +3330,12 @@ export function MultiChatConsole({
 
                               return (
                                 <div
-                                  key={resp.personaId}
+                                  key={`${msg.id}_resp_${resp.personaId || rIdx}_${rIdx}`}
                                   className="flex flex-col transition-colors hover:bg-white/[0.01]"
                                 >
                                   {/* Persona Chat Header Bar */}
                                   <div
-                                    className="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-white/5 gap-1.5"
+                                    className="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-white/5 gap-1.5 flex-wrap"
                                     style={{ background: `${resp.accentColor}08` }}
                                   >
                                     {/* Left: Avatar + Identity */}
@@ -2308,13 +3384,90 @@ export function MultiChatConsole({
                                             {resp.modelName.split('/').pop()}
                                           </span>
                                         )}
+
+                                        {msg.votedBestPersonaId === resp.personaId && (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/20 border border-amber-400/50 text-amber-200 text-[9.5px] font-mono font-bold shadow-sm">
+                                            <Trophy size={10} className="text-amber-400" />
+                                            <span>BEST ANSWER</span>
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
 
-                                    {/* Right: Audio TTS, Branch Reply & Copy Controls */}
+                                    {/* Right: Vote Best, Audio TTS, Branch Reply & Copy Controls */}
                                     <div className="flex items-center gap-1 shrink-0">
                                       {resp.status === 'completed' && displayText && (
                                         <>
+                                          {/* Feature 2: Vote Best Persona Answer Button */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleVoteBestPersona(msg.id, resp.personaId)}
+                                            className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all border ${
+                                              msg.votedBestPersonaId === resp.personaId
+                                                ? 'bg-amber-500/25 text-amber-200 border-amber-400/60 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
+                                                : 'bg-black/30 text-slate-400 hover:text-amber-200 border-white/10 hover:border-amber-400/40'
+                                            }`}
+                                            title={
+                                              msg.votedBestPersonaId === resp.personaId
+                                                ? `Voted ${resp.name} as Best Answer (click to remove)`
+                                                : `Vote ${resp.name} as Best Answer for this turn`
+                                            }
+                                          >
+                                            <Trophy
+                                              size={12}
+                                              className={
+                                                msg.votedBestPersonaId === resp.personaId
+                                                  ? 'text-amber-400 fill-amber-400'
+                                                  : 'text-amber-400/80'
+                                              }
+                                            />
+                                            <span className="text-[10.5px] font-mono hidden sm:inline">
+                                              {msg.votedBestPersonaId === resp.personaId ? 'Winner' : 'Vote'}
+                                            </span>
+                                          </button>
+
+                                          {/* Expand Winner's Angle Quick Action */}
+                                          {msg.votedBestPersonaId === resp.personaId && (
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleSend(
+                                                  `@${resp.personaId} Expand deeply on your winning analysis for "${msg.query.slice(0, 75)}" with a concrete step-by-step execution blueprint.`,
+                                                )
+                                              }
+                                              disabled={isGenerating}
+                                              className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-[10.5px] font-mono font-bold flex items-center gap-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-400/40 transition-all"
+                                              title={`Ask @${resp.name} to expand on this winning answer`}
+                                            >
+                                              <Sparkles size={11} className="text-amber-300" />
+                                              <span className="hidden md:inline">Expand Winner</span>
+                                            </button>
+                                          )}
+
+                                          {/* Feature 2 (New): 180° Stance Reversal / Play Devil's Advocate Button */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleFlipPersonaStance(msg, resp)}
+                                            disabled={isGenerating || flipLoadingKey === personaKey}
+                                            className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all border cursor-pointer ${
+                                              resp.stanceFlip
+                                                ? 'bg-fuchsia-500/25 text-fuchsia-200 border-fuchsia-400/60 shadow-[0_0_12px_rgba(217,70,239,0.25)]'
+                                                : flipLoadingKey === personaKey
+                                                ? 'bg-fuchsia-950/40 text-fuchsia-300 border-fuchsia-500/30 cursor-wait'
+                                                : 'bg-black/30 text-slate-300 hover:text-fuchsia-200 border-white/10 hover:border-fuchsia-400/40'
+                                            }`}
+                                            title={`Force ${resp.name} to argue the exact 180° opposite of its own answer (Devil's Advocate)`}
+                                          >
+                                            {flipLoadingKey === personaKey ? (
+                                              <Loader2 size={12} className="animate-spin text-fuchsia-400" />
+                                            ) : (
+                                              <RefreshCw size={12} className="text-fuchsia-400" />
+                                            )}
+                                            <span className="text-[10px] sm:text-[10.5px] font-mono">
+                                              {resp.stanceFlip ? 'Re-Flip 180°' : 'Flip 180°'}
+                                            </span>
+                                          </button>
+
                                           {/* 1-on-1 Reply Button */}
                                           <button
                                             type="button"
@@ -2389,12 +3542,17 @@ export function MultiChatConsole({
                                             <span className="text-[10.5px] font-mono hidden md:inline">MP3</span>
                                           </button>
 
-                                          {/* Individual Copy Button */}
+                                          {/* Individual Copy Button (copies Round 1 + Re-Flip 180° + Round 2 Rebuttal + 1-on-1 Branches for this Persona) */}
                                           <button
                                             type="button"
-                                            onClick={() => handleCopyText(displayText, personaKey)}
-                                            className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 bg-black/30 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-all"
-                                            title="Copy response"
+                                            onClick={() =>
+                                              handleCopyText(
+                                                buildSinglePersonaFullCopyText(msg, resp),
+                                                personaKey,
+                                              )
+                                            }
+                                            className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 bg-black/30 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 transition-all cursor-pointer"
+                                            title="Copy persona response (includes Re-Flip 180°, Debate Rebuttal & 1-on-1 Branches if active)"
                                           >
                                             {isCopied ? (
                                               <Check size={12} className="text-emerald-400" />
@@ -2480,6 +3638,95 @@ export function MultiChatConsole({
                                       </div>
                                     )}
 
+                                    {/* Loading State for 180° Stance Reversal */}
+                                    {flipLoadingKey === personaKey && !resp.stanceFlip && (
+                                      <div className="mt-2 rounded-2xl bg-fuchsia-950/25 border border-fuchsia-500/35 p-3 flex items-center gap-2.5 text-fuchsia-200 text-xs font-mono">
+                                        <Loader2 size={14} className="animate-spin text-fuchsia-400 shrink-0" />
+                                        <span>
+                                          {resp.name} is synthesizing a 180° Devil&apos;s Advocate stance reversal...
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {/* FEATURE 2 (NEW): 180° STANCE REVERSAL / DEVIL'S ADVOCATE CALLOUT */}
+                                    {resp.stanceFlip && (() => {
+                                      const stanceFlipContent = (
+                                        resp.stanceFlip.text ||
+                                        resp.stanceFlip.flippedText ||
+                                        `Playing 180° Devil's Advocate against my initial stance on "${msg.query.slice(0, 50)}": over-optimizing for my primary angle without balancing counter-risks can introduce blind spots and execution fragility.`
+                                      ).trim();
+                                      return (
+                                        <div className="mt-2 rounded-2xl bg-gradient-to-br from-fuchsia-950/45 via-slate-950/95 to-slate-950 border border-fuchsia-500/45 p-3 sm:p-4 flex flex-col gap-2.5 shadow-lg w-full min-w-0">
+                                          <div className="flex items-center justify-between gap-2 flex-wrap border-b border-fuchsia-500/25 pb-2">
+                                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                              <span className="px-2 py-0.5 rounded-full bg-fuchsia-500/25 border border-fuchsia-400/50 text-fuchsia-200 text-[10px] font-mono font-bold flex items-center gap-1">
+                                                <RefreshCw
+                                                  size={10}
+                                                  className={`text-fuchsia-300 ${
+                                                    flipLoadingKey === personaKey ? 'animate-spin' : ''
+                                                  }`}
+                                                />
+                                                <span>
+                                                  180° STANCE REVERSAL • {resp.name} DEVIL&apos;S ADVOCATE
+                                                </span>
+                                              </span>
+                                              {resp.stanceFlip.flippedRoleLabel && (
+                                                <span className="text-[10px] font-mono text-fuchsia-300/90 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-fuchsia-400/25">
+                                                  {resp.stanceFlip.flippedRoleLabel}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleToggleAudio(
+                                                    stanceFlipContent,
+                                                    `flip_${personaKey}`,
+                                                    resp.personaId,
+                                                  )
+                                                }
+                                                className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-200 text-[10px] font-mono flex items-center gap-1 border border-white/10 cursor-pointer"
+                                              >
+                                                <Volume2 size={10} className="text-fuchsia-300" />
+                                                <span>Listen</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleCopyText(
+                                                    stanceFlipContent,
+                                                    `flip_copy_${personaKey}`,
+                                                  )
+                                                }
+                                                className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-200 text-[10px] font-mono flex items-center gap-1 border border-white/10 cursor-pointer"
+                                              >
+                                                {copiedId === `flip_copy_${personaKey}` ? (
+                                                  <Check size={10} className="text-emerald-400" />
+                                                ) : (
+                                                  <Copy size={10} />
+                                                )}
+                                                <span>Copy</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleDismissStanceFlip(msg.id, resp.personaId)
+                                                }
+                                                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
+                                                title="Dismiss 180° Stance Reversal"
+                                              >
+                                                <X size={12} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div className="prose prose-invert max-w-none text-slate-100 text-[13px] sm:text-[14px] leading-relaxed break-words w-full">
+                                            <FormattedText content={stanceFlipContent} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+
                                     {/* FEATURE 1: 1-ON-1 PERSONA NESTED BRANCH THREAD */}
                                     {branches.length > 0 && (
                                       <div
@@ -2494,7 +3741,7 @@ export function MultiChatConsole({
                                           <span>1-on-1 Branch with {resp.name} ({branches.length})</span>
                                         </div>
 
-                                        {branches.map((b) => {
+                                        {branches.map((b, bIdx) => {
                                           const branchText =
                                             b.response?.text ||
                                             b.text ||
@@ -2504,7 +3751,7 @@ export function MultiChatConsole({
                                           const isBranchFailed = b.response?.status === 'failed';
                                           return (
                                             <div
-                                              key={b.id}
+                                              key={`${msg.id}_${resp.personaId}_branch_${b.id || bIdx}_${bIdx}`}
                                               className="flex flex-col gap-1.5 rounded-xl bg-black/40 border border-white/10 p-3 shadow-md"
                                             >
                                               <div className="flex items-center justify-between text-xs text-slate-300">
@@ -2647,6 +3894,537 @@ export function MultiChatConsole({
                               );
                             })}
 
+                          {/* FEATURE 1: ROUND 2 CROSS-EXAMINATION & REBUTTAL SECTION */}
+                          {msg.rebuttals && msg.rebuttals.length > 0 && (
+                            <div className="p-3 sm:p-4 bg-gradient-to-b from-rose-950/20 via-slate-950/90 to-slate-950 border-t border-rose-500/30 flex flex-col gap-3">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/40 text-rose-200 text-[10px] sm:text-xs font-mono font-bold flex items-center gap-1.5">
+                                    <Swords size={12} className="text-rose-400" />
+                                    ROUND 2: CROSS-EXAMINATION & REBUTTAL
+                                  </span>
+                                  <span className="text-[11px] text-slate-400 hidden sm:inline">
+                                    Personas directly auditing & challenging each other&apos;s Round 1 answers
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const allRebText = (
+                                      Array.isArray(msg.rebuttals) ? msg.rebuttals.flat() : []
+                                    )
+                                      .filter(
+                                        (r) =>
+                                          r &&
+                                          typeof r === 'object' &&
+                                          r.status === 'completed' &&
+                                          Boolean(r.text?.trim()),
+                                      )
+                                      .map(
+                                        (r) =>
+                                          `=== ${r.icon} ${r.name.toUpperCase()} (${r.targetSummary || 'Cross-Examination Rebuttal'}) ===\n${r.text.trim()}`,
+                                      )
+                                      .join('\n\n');
+                                    if (allRebText) {
+                                      handleCopyText(allRebText, `reb_all_${msg.id}`);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/35 text-rose-200 text-[10.5px] font-mono font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                                  title="Copy all Round 2 Cross-Examination Rebuttals"
+                                >
+                                  {copiedId === `reb_all_${msg.id}` ? (
+                                    <Check size={11} className="text-emerald-400" />
+                                  ) : (
+                                    <Copy size={11} />
+                                  )}
+                                  <span>
+                                    {copiedId === `reb_all_${msg.id}`
+                                      ? 'Copied Rebuttals'
+                                      : 'Copy Rebuttals'}
+                                  </span>
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                {(Array.isArray(msg.rebuttals) ? msg.rebuttals.flat() : [])
+                                  .filter((reb) => reb && typeof reb === 'object' && Boolean(reb.personaId))
+                                  .map((reb, rebIdx) => {
+                                    const rebAudioKey = `reb_${msg.id}_${reb.personaId}_${rebIdx}`;
+                                    const rebCopyKey = `reb_copy_${msg.id}_${reb.personaId}_${rebIdx}`;
+                                    const summaryLabel =
+                                      reb.targetSummary ||
+                                      (reb.targetNames && reb.targetNames.length > 0
+                                        ? `Rebutting ${reb.targetNames.join(' & ')}`
+                                        : 'Cross-Examining');
+                                    return (
+                                      <div
+                                        key={`${msg.id}_reb_${reb.personaId || rebIdx}_${rebIdx}`}
+                                        className="p-3 rounded-2xl bg-black/50 border flex flex-col gap-2"
+                                        style={{ borderColor: `${reb.accentColor || '#f43f5e'}40` }}
+                                      >
+                                        <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-white/10">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className="text-sm">{reb.icon}</span>
+                                            <span
+                                              className="font-bold text-xs truncate"
+                                              style={{ color: reb.accentColor }}
+                                            >
+                                              {reb.name}
+                                            </span>
+                                            <span className="text-[9.5px] font-mono text-rose-300/90 px-1.5 py-0.2 rounded bg-rose-500/15 border border-rose-500/30 truncate">
+                                              {summaryLabel}
+                                            </span>
+                                          </div>
+
+                                        {reb.status === 'completed' && reb.text && (
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleToggleAudio(reb.text, rebAudioKey, reb.personaId)
+                                              }
+                                              className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300"
+                                              title="Listen to rebuttal"
+                                            >
+                                              {playingAudioKey === rebAudioKey ? (
+                                                <VolumeX size={11} className="text-cyan-400 animate-pulse" />
+                                              ) : (
+                                                <Volume2 size={11} />
+                                              )}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCopyText(reb.text, rebCopyKey)}
+                                              className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300"
+                                              title="Copy rebuttal"
+                                            >
+                                              {copiedId === rebCopyKey ? (
+                                                <Check size={11} className="text-emerald-400" />
+                                              ) : (
+                                                <Copy size={11} />
+                                              )}
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {reb.status === 'running' && (
+                                        <div
+                                          className="py-4 flex items-center gap-2 text-xs font-mono"
+                                          style={{ color: reb.accentColor }}
+                                        >
+                                          <Loader2 size={14} className="animate-spin" />
+                                          <span>{reb.name} cross-examining...</span>
+                                        </div>
+                                      )}
+                                      {reb.status === 'pending' && (
+                                        <div className="py-4 flex items-center gap-1.5 text-[11px] font-mono text-slate-500">
+                                          <Clock size={12} className="animate-pulse" />
+                                          <span>Awaiting rebuttal turn...</span>
+                                        </div>
+                                      )}
+                                      {reb.status === 'failed' && (
+                                        <div className="text-xs text-rose-400 font-mono">
+                                          {reb.error || 'Rebuttal failed'}
+                                        </div>
+                                      )}
+                                      {reb.status === 'completed' && reb.text && (
+                                        <div className="prose prose-invert prose-xs max-w-none text-slate-200 text-xs leading-relaxed">
+                                          <FormattedText content={reb.text} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* FEATURE 5: INTERACTIVE PODCAST / ROUNDTABLE SCRIPT PANEL */}
+                          {expandedPodcastScriptMsgId === msg.id && (
+                            <div className="p-3 sm:p-4 bg-gradient-to-b from-purple-950/25 via-slate-950/95 to-slate-950 border-t border-purple-500/30 flex flex-col gap-3">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/40 text-purple-200 text-[10px] sm:text-xs font-mono font-bold flex items-center gap-1.5">
+                                    <Headphones size={12} className="text-purple-300" />
+                                    ROUNDTABLE PODCAST SCRIPT
+                                  </span>
+                                  <span className="text-[11px] text-slate-400 hidden sm:inline">
+                                    Natural back-and-forth studio dialogue between NOVA, ORBIT & COSMOS
+                                  </span>
+                                </div>
+
+                                {msg.podcastScript && msg.podcastScript.length > 0 && (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePlayPodcastScript(msg)}
+                                      className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                                        playingAudioKey === `script_${msg.id}`
+                                          ? 'bg-purple-500/30 text-purple-100 border-purple-400'
+                                          : 'bg-purple-500/15 hover:bg-purple-500/25 text-purple-200 border-purple-400/40'
+                                      }`}
+                                    >
+                                      {edgeTtsLoadingId === `script_${msg.id}` ? (
+                                        <>
+                                          <Loader2 size={12} className="animate-spin" />
+                                          <span>Synthesizing Voices...</span>
+                                        </>
+                                      ) : playingAudioKey === `script_${msg.id}` ? (
+                                        <>
+                                          <VolumeX size={12} className="animate-pulse" />
+                                          <span>Stop Roundtable</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Play size={12} className="fill-purple-300" />
+                                          <span>Play Roundtable Audio</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const formattedScript = (msg.podcastScript || [])
+                                          .map((l) => `${l.icon} ${l.speakerName} (${l.cue}): ${l.text}`)
+                                          .join('\n\n');
+                                        const ok = await copyToClipboard(formattedScript);
+                                        if (ok) {
+                                          setCopiedScriptMsgId(msg.id);
+                                          setTimeout(() => setCopiedScriptMsgId(null), 2000);
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-200 flex items-center gap-1"
+                                    >
+                                      {copiedScriptMsgId === msg.id ? (
+                                        <>
+                                          <Check size={12} className="text-emerald-400" />
+                                          <span>Copied</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy size={12} />
+                                          <span>Copy Script</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedPodcastScriptMsgId(null)}
+                                      className="p-1 rounded-lg text-slate-400 hover:text-white"
+                                      title="Close script"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {podcastScriptLoadingMsgId === msg.id ? (
+                                <div className="py-6 flex items-center justify-center gap-2 text-purple-300 font-mono text-xs">
+                                  <Loader2 size={16} className="animate-spin" />
+                                  <span>Writing 6-turn roundtable banter script...</span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  {(msg.podcastScript || []).map((line, lIdx) => (
+                                    <div
+                                      key={`${msg.id}_pod_${line.id || lIdx}_${lIdx}`}
+                                      className="p-2.5 sm:p-3 rounded-xl bg-black/45 border border-white/10 flex items-start gap-2.5"
+                                    >
+                                      <div
+                                        className="w-7 h-7 rounded-lg grid place-items-center text-sm shrink-0 mt-0.5"
+                                        style={{
+                                          background: `${line.accentColor}20`,
+                                          border: `1px solid ${line.accentColor}45`,
+                                        }}
+                                      >
+                                        {line.icon}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                          <span
+                                            className="font-bold text-xs"
+                                            style={{ color: line.accentColor }}
+                                          >
+                                            {line.speakerName}
+                                          </span>
+                                          {(line.cue || line.roleLabel) && (
+                                            <span className="text-[10px] font-mono italic text-slate-400">
+                                              ({line.cue || line.roleLabel})
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-xs sm:text-[13px] text-slate-200 leading-relaxed m-0">
+                                          {line.text}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* FEATURE 6: INTERACTIVE VISUAL MIND-MAP & FLOWCHART CANVAS */}
+                          {expandedVisualMapMsgId === msg.id && (
+                            <MultiChatVisualMapPanel
+                              message={msg}
+                              isLoading={visualMapLoadingMsgId === msg.id}
+                              isGeneratingTurn={isGenerating}
+                              onRegenerate={handleRegenerateVisualMap}
+                              onSendFollowUp={(prompt) => handleSend(prompt)}
+                              onPrefillInput={(prompt) => {
+                                setInputText(prompt);
+                                inputRef.current?.focus();
+                              }}
+                              onClose={() => setExpandedVisualMapMsgId(null)}
+                            />
+                          )}
+
+                          {/* TRI-MIND SYNTHESIS LAB BAR (5 NEW INTERACTIVE TOOLS) */}
+                          {msg.responses.filter(
+                            (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
+                          ).length >= 1 && (
+                            <div className="px-3 sm:px-4 py-2 bg-slate-950/80 border-t border-white/[0.07] flex items-center justify-between gap-2 flex-wrap">
+                              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Sparkles size={11} className="text-emerald-400" />
+                                Tri-Mind Synthesis Lab:
+                              </span>
+
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {/* 1. Merge Best Parts */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleMergedAnswer(msg)}
+                                  disabled={isGenerating || mergedLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedMergedMsgId === msg.id
+                                      ? 'bg-emerald-500/25 text-emerald-200 border-emerald-400/60'
+                                      : 'bg-white/[0.04] hover:bg-emerald-500/15 text-slate-200 hover:text-emerald-200 border-white/10'
+                                  }`}
+                                  title="Weave NOVA's facts, ORBIT's analogies & COSMOS's wisdom into one Master Document"
+                                >
+                                  {mergedLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-emerald-400" />
+                                  ) : (
+                                    <Zap size={11} className="text-emerald-400" />
+                                  )}
+                                  <span>Merge Best</span>
+                                </button>
+
+                                {/* 2. What-If Stress-Test */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleStressTest(msg)}
+                                  disabled={isGenerating || stressTestLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedStressTestMsgId === msg.id
+                                      ? 'bg-amber-500/25 text-amber-200 border-amber-400/60'
+                                      : 'bg-white/[0.04] hover:bg-amber-500/15 text-slate-200 hover:text-amber-200 border-white/10'
+                                  }`}
+                                  title='Inject a "What-If" constraint (e.g. Budget cut 80%, Ship in 48h) to stress-test all 3 minds'
+                                >
+                                  {stressTestLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-amber-400" />
+                                  ) : (
+                                    <FlaskConical size={11} className="text-amber-400" />
+                                  )}
+                                  <span>Stress-Test</span>
+                                </button>
+
+                                {/* 3. Alignment & Fact-Check Radar */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAlignmentRadar(msg)}
+                                  disabled={isGenerating || alignmentLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedAlignmentMsgId === msg.id
+                                      ? 'bg-sky-500/25 text-sky-200 border-sky-400/60'
+                                      : 'bg-white/[0.04] hover:bg-sky-500/15 text-slate-200 hover:text-sky-200 border-white/10'
+                                  }`}
+                                  title="View Consensus Score (0-100%), Risk vs. Upside Telemetry & #1 Clash Point"
+                                >
+                                  {alignmentLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-sky-400" />
+                                  ) : (
+                                    <Activity size={11} className="text-sky-400" />
+                                  )}
+                                  <span>Alignment</span>
+                                  {msg.alignmentRadar && (
+                                    <span className="px-1 rounded bg-sky-500/25 text-[9.5px] font-mono text-sky-200">
+                                      {msg.alignmentRadar.consensusScore}%
+                                    </span>
+                                  )}
+                                </button>
+
+                                {/* 4. Interactive Study Deck & Mini-Quiz */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleStudyDeck(msg)}
+                                  disabled={isGenerating || studyDeckLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedStudyDeckMsgId === msg.id
+                                      ? 'bg-indigo-500/25 text-indigo-200 border-indigo-400/60'
+                                      : 'bg-white/[0.04] hover:bg-indigo-500/15 text-slate-200 hover:text-indigo-200 border-white/10'
+                                  }`}
+                                  title="Generate Flip Flashcards & a 3-Question Active Recall Mini-Quiz"
+                                >
+                                  {studyDeckLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-indigo-400" />
+                                  ) : (
+                                    <GraduationCap size={11} className="text-indigo-400" />
+                                  )}
+                                  <span>Study Deck</span>
+                                </button>
+
+                                {/* 5. Weighted Decision Matrix Table */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleDecisionMatrix(msg)}
+                                  disabled={isGenerating || decisionMatrixLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedDecisionMatrixMsgId === msg.id
+                                      ? 'bg-teal-500/25 text-teal-200 border-teal-400/60'
+                                      : 'bg-white/[0.04] hover:bg-teal-500/15 text-slate-200 hover:text-teal-200 border-white/10'
+                                  }`}
+                                  title="Generate a Side-by-Side Weighted Decision Matrix Table scored by NOVA, ORBIT & COSMOS"
+                                >
+                                  {decisionMatrixLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-teal-400" />
+                                  ) : (
+                                    <Table2 size={11} className="text-teal-400" />
+                                  )}
+                                  <span>Decision Matrix</span>
+                                </button>
+
+                                {/* 6. Summon 4th Guest Specialist (+ Guest Expert) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleGuestPanel(msg)}
+                                  disabled={isGenerating}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedGuestMsgId === msg.id ||
+                                    (msg.guestResponses && msg.guestResponses.length > 0)
+                                      ? 'bg-emerald-500/25 text-emerald-200 border-emerald-400/60'
+                                      : 'bg-white/[0.04] hover:bg-emerald-500/15 text-slate-200 hover:text-emerald-200 border-white/10'
+                                  }`}
+                                  title="Summon a 4th Guest Specialist (LEDGER CFO, CIPHER Security Red-Team, PIXEL UX Critic, or LEX Legal Counsel)"
+                                >
+                                  {guestLoadingKey?.msgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-emerald-400" />
+                                  ) : (
+                                    <UserPlus size={11} className="text-emerald-400" />
+                                  )}
+                                  <span>+ Guest Expert</span>
+                                  {msg.guestResponses && msg.guestResponses.length > 0 && (
+                                    <span className="px-1 rounded bg-emerald-500/30 text-[9.5px] font-mono text-emerald-100">
+                                      {msg.guestResponses.length}
+                                    </span>
+                                  )}
+                                </button>
+
+                                {/* 7. Auto-Chart & Visual Telemetry Builder (Visual Chart) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleChartTelemetry(msg)}
+                                  disabled={isGenerating || chartLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedChartMsgId === msg.id
+                                      ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60'
+                                      : 'bg-white/[0.04] hover:bg-cyan-500/15 text-slate-200 hover:text-cyan-200 border-white/10'
+                                  }`}
+                                  title="Extract quantitative benchmarks & render interactive SVG Bar, Radar & Breakdown Charts across NOVA, ORBIT & COSMOS"
+                                >
+                                  {chartLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-cyan-400" />
+                                  ) : (
+                                    <BarChart3 size={11} className="text-cyan-400" />
+                                  )}
+                                  <span>Visual Chart</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* RENDER EXPANDED SYNTHESIS LAB PANELS */}
+                          {expandedGuestMsgId === msg.id && (
+                            <MultiChatGuestSpecialistPanel
+                              message={msg}
+                              loadingSpecialistId={
+                                guestLoadingKey?.msgId === msg.id
+                                  ? guestLoadingKey.specialistId
+                                  : null
+                              }
+                              isGeneratingTurn={isGenerating}
+                              onSummonSpecialist={handleSummonGuestSpecialist}
+                              onSendFollowUp={(prompt) => handleSend(prompt)}
+                              onClose={() => setExpandedGuestMsgId(null)}
+                            />
+                          )}
+
+                          {expandedChartMsgId === msg.id && (
+                            <MultiChatChartTelemetryPanel
+                              message={msg}
+                              isLoading={chartLoadingMsgId === msg.id}
+                              onRegenerate={(m) => handleToggleChartTelemetry(m, true)}
+                              onClose={() => setExpandedChartMsgId(null)}
+                            />
+                          )}
+
+                          {expandedMergedMsgId === msg.id && (
+                            <MultiChatMergedAnswerPanel
+                              message={msg}
+                              isLoading={mergedLoadingMsgId === msg.id}
+                              onRegenerate={(m) => handleToggleMergedAnswer(m, true)}
+                              onClose={() => setExpandedMergedMsgId(null)}
+                            />
+                          )}
+
+                          {expandedStressTestMsgId === msg.id && (
+                            <MultiChatStressTestPanel
+                              message={msg}
+                              isLoading={stressTestLoadingMsgId === msg.id}
+                              isGeneratingTurn={isGenerating}
+                              onRunConstraint={handleRunStressConstraint}
+                              onSendFollowUp={(prompt) => handleSend(prompt)}
+                              onClose={() => setExpandedStressTestMsgId(null)}
+                            />
+                          )}
+
+                          {expandedAlignmentMsgId === msg.id && (
+                            <MultiChatAlignmentRadarPanel
+                              message={msg}
+                              isLoading={alignmentLoadingMsgId === msg.id}
+                              isGeneratingTurn={isGenerating}
+                              onRegenerate={(m) => handleToggleAlignmentRadar(m, true)}
+                              onSendFollowUp={(prompt) => handleSend(prompt)}
+                              onClose={() => setExpandedAlignmentMsgId(null)}
+                            />
+                          )}
+
+                          {expandedStudyDeckMsgId === msg.id && (
+                            <MultiChatStudyDeckPanel
+                              message={msg}
+                              isLoading={studyDeckLoadingMsgId === msg.id}
+                              onRegenerate={(m) => handleToggleStudyDeck(m, true)}
+                              onClose={() => setExpandedStudyDeckMsgId(null)}
+                            />
+                          )}
+
+                          {expandedDecisionMatrixMsgId === msg.id && (
+                            <MultiChatDecisionMatrixPanel
+                              message={msg}
+                              isLoading={decisionMatrixLoadingMsgId === msg.id}
+                              isGeneratingTurn={isGenerating}
+                              onRegenerate={(m) => handleToggleDecisionMatrix(m, true)}
+                              onSendFollowUp={(prompt) => handleSend(prompt)}
+                              onClose={() => setExpandedDecisionMatrixMsgId(null)}
+                            />
+                          )}
+
                           {/* Consensus Action Card (Verdict, Agreements, Checklist, Save & .MD) */}
                           <MultiChatConsensusCard
                             message={msg}
@@ -2655,6 +4433,83 @@ export function MultiChatConsole({
                             onToggleChecklistItem={handleToggleChecklistItem}
                             theme={activeTheme}
                           />
+
+                          {/* FEATURE 4: SMART TRIO FOLLOW-UP CHIPS BAR */}
+                          {msg.responses.some((r) => r.status === 'completed') && (
+                            <div className="px-3 sm:px-4 py-2.5 bg-black/40 border-t border-white/[0.07] flex flex-col gap-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Sparkles size={11} className="text-cyan-400" />
+                                  Smart Trio Follow-Up Angles
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRefreshFollowUps(msg)}
+                                  disabled={followUpLoadingMsgId === msg.id || isGenerating}
+                                  className="text-[10px] font-mono text-cyan-300 hover:text-cyan-200 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/25 transition-all disabled:opacity-50"
+                                  title="Synthesize fresh context-aware follow-up questions using AI"
+                                >
+                                  <RotateCcw
+                                    size={10}
+                                    className={followUpLoadingMsgId === msg.id ? 'animate-spin' : ''}
+                                  />
+                                  <span>{followUpLoadingMsgId === msg.id ? 'Refreshing...' : 'AI Refresh'}</span>
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {(msg.followUpChips && msg.followUpChips.length > 0
+                                  ? msg.followUpChips
+                                  : buildDefaultMultiChatFollowUps(msg)
+                                ).map((chip, chipIdx) => (
+                                  <div
+                                    key={`${msg.id}_chip_${chip.id || chipIdx}_${chipIdx}`}
+                                    className="inline-flex items-center rounded-xl overflow-hidden border transition-all bg-white/[0.03] hover:bg-white/[0.07]"
+                                    style={{ borderColor: `${chip.accentColor || '#38bdf8'}40` }}
+                                  >
+                                    <button
+                                      type="button"
+                                      disabled={isGenerating}
+                                      onClick={() => handleSend(chip.prompt)}
+                                      className="px-2.5 py-1 text-left flex items-center gap-1.5 text-[11px] text-slate-200 hover:text-white transition-colors cursor-pointer"
+                                      title={`Send immediately: "${chip.prompt}"`}
+                                    >
+                                      <span>
+                                        {chip.icon ||
+                                          (chip.targetPersonaId === 'nova'
+                                            ? '🔬'
+                                            : chip.targetPersonaId === 'orbit'
+                                            ? '💡'
+                                            : '🌌')}
+                                      </span>
+                                      <span
+                                        className="font-mono font-bold text-[10px]"
+                                        style={{ color: chip.accentColor }}
+                                      >
+                                        {!chip.targetPersonaId || chip.targetPersonaId === 'all'
+                                          ? 'ALL 3'
+                                          : `@${chip.targetPersonaId.toUpperCase()}`}
+                                      </span>
+                                      <span className="truncate max-w-[210px] sm:max-w-[280px]">
+                                        {chip.label}
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setInputText(chip.prompt);
+                                        inputRef.current?.focus();
+                                      }}
+                                      className="px-1.5 py-1 border-l border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                                      title="Edit follow-up prompt in input box before sending"
+                                    >
+                                      <PenLine size={10} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -2687,6 +4542,31 @@ export function MultiChatConsole({
                             <div className="flex items-center gap-1.5 flex-wrap ml-auto">
                               <button
                                 type="button"
+                                onClick={() => handleToggleVisualMap(msg)}
+                                disabled={
+                                  isGenerating ||
+                                  visualMapLoadingMsgId === msg.id ||
+                                  msg.responses.filter(
+                                    (r) => r.status === 'completed' && getPersonaCleanText(r).length > 0,
+                                  ).length === 0
+                                }
+                                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all border ${
+                                  expandedVisualMapMsgId === msg.id
+                                    ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60'
+                                    : 'bg-white/[0.04] hover:bg-cyan-500/15 text-slate-200 hover:text-cyan-200 border-white/10'
+                                }`}
+                                title="Synthesize an interactive SVG Mind-Map & Decision Flowchart"
+                              >
+                                {visualMapLoadingMsgId === msg.id ? (
+                                  <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                ) : (
+                                  <Network size={12} className="text-cyan-400" />
+                                )}
+                                <span className="hidden sm:inline">Visual Map</span>
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={() => handleListenToAll(msg)}
                                 disabled={
                                   isGenerating ||
@@ -2703,14 +4583,17 @@ export function MultiChatConsole({
                               <button
                                 type="button"
                                 onClick={() => handleCopyCombined(msg)}
-                                className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/10 transition-all"
+                                className="px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 border border-white/10 transition-all cursor-pointer"
+                                title="Copy all mode answers for this turn (Personas, Debate Mode, Re-Flip 180°, Round 2 Rebuttals, Guests & Consensus)"
                               >
                                 {copiedCombinedId === msg.id ? (
                                   <Check size={12} className="text-emerald-400" />
                                 ) : (
                                   <Copy size={12} className="text-slate-300" />
                                 )}
-                                <span className="hidden sm:inline">Copy</span>
+                                <span className="hidden sm:inline">
+                                  {copiedCombinedId === msg.id ? 'Copied All' : 'Copy All'}
+                                </span>
                               </button>
 
                               <button
@@ -2768,7 +4651,7 @@ export function MultiChatConsole({
                           )}
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 sm:gap-3 w-full">
-                            {msg.responses.map((resp) => {
+                            {msg.responses.map((resp, rIdx) => {
                               const personaKey = `${msg.id}_${resp.personaId}`;
                               const isPlayingThis = playingAudioKey === personaKey;
                               const isCopied = copiedId === personaKey;
@@ -2776,7 +4659,7 @@ export function MultiChatConsole({
 
                               return (
                                 <div
-                                  key={resp.personaId}
+                                  key={`${msg.id}_grid_${resp.personaId || rIdx}_${rIdx}`}
                                   className={`flex flex-col rounded-2xl border overflow-hidden shadow-lg ${
                                     isFullDark
                                       ? 'bg-[#09090b]'
@@ -2806,6 +4689,25 @@ export function MultiChatConsole({
                                     <div className="flex items-center gap-1">
                                       {resp.status === 'completed' && displayText && (
                                         <>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleFlipPersonaStance(msg, resp)}
+                                            disabled={isGenerating || flipLoadingKey === personaKey}
+                                            className={`px-1.5 py-1 rounded text-[10px] font-mono font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                                              resp.stanceFlip
+                                                ? 'bg-fuchsia-500/30 text-fuchsia-200 border border-fuchsia-400/50'
+                                                : 'bg-black/40 text-slate-300 hover:text-fuchsia-200'
+                                            }`}
+                                            title={`180° Stance Reversal (${resp.name} Devil's Advocate)`}
+                                          >
+                                            {flipLoadingKey === personaKey ? (
+                                              <Loader2 size={11} className="animate-spin text-fuchsia-400" />
+                                            ) : (
+                                              <RefreshCw size={11} className="text-fuchsia-400" />
+                                            )}
+                                            <span>180°</span>
+                                          </button>
+
                                           <button
                                             type="button"
                                             onClick={() =>
@@ -2843,8 +4745,14 @@ export function MultiChatConsole({
 
                                           <button
                                             type="button"
-                                            onClick={() => handleCopyText(displayText, personaKey)}
-                                            className="p-1.5 rounded bg-black/40 text-slate-400 hover:text-white"
+                                            onClick={() =>
+                                              handleCopyText(
+                                                buildSinglePersonaFullCopyText(msg, resp),
+                                                personaKey,
+                                              )
+                                            }
+                                            className="p-1.5 rounded bg-black/40 text-slate-400 hover:text-white cursor-pointer"
+                                            title="Copy persona response (includes Re-Flip 180°, Debate Rebuttal & Branches)"
                                           >
                                             {isCopied ? (
                                               <Check size={12} className="text-emerald-400" />
@@ -2887,12 +4795,61 @@ export function MultiChatConsole({
                                       </div>
                                     )}
 
+                                    {resp.stanceFlip && (() => {
+                                      const gridFlipContent = (
+                                        resp.stanceFlip.text ||
+                                        resp.stanceFlip.flippedText ||
+                                        ''
+                                      ).trim();
+                                      if (!gridFlipContent) return null;
+                                      return (
+                                        <div className="mt-2 rounded-xl bg-fuchsia-950/40 border border-fuchsia-500/45 p-2.5 flex flex-col gap-1.5">
+                                          <div className="flex items-center justify-between gap-1 border-b border-fuchsia-500/20 pb-1">
+                                            <span className="text-[10px] font-mono font-bold text-fuchsia-200 flex items-center gap-1">
+                                              <RefreshCw size={9} className="text-fuchsia-300" />
+                                              180° STANCE REVERSAL
+                                            </span>
+                                            <div className="flex items-center gap-1">
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  handleCopyText(
+                                                    gridFlipContent,
+                                                    `grid_flip_copy_${personaKey}`,
+                                                  )
+                                                }
+                                                className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-200 text-[9.5px] font-mono flex items-center gap-1 border border-white/10 cursor-pointer"
+                                                title="Copy 180° Stance Reversal"
+                                              >
+                                                {copiedId === `grid_flip_copy_${personaKey}` ? (
+                                                  <Check size={9} className="text-emerald-400" />
+                                                ) : (
+                                                  <Copy size={9} />
+                                                )}
+                                                <span>Copy</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDismissStanceFlip(msg.id, resp.personaId)}
+                                                className="text-slate-400 hover:text-white cursor-pointer"
+                                              >
+                                                <X size={11} />
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <div className="prose prose-invert prose-xs max-w-none text-slate-100 text-xs leading-relaxed break-words">
+                                            <FormattedText content={gridFlipContent} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+
                                     {resp.branches && resp.branches.length > 0 && (
                                       <div
                                         className="mt-2 flex flex-col gap-2 pl-2 border-l-2 border-dashed"
                                         style={{ borderColor: `${resp.accentColor}40` }}
                                       >
-                                        {resp.branches.map((b) => {
+                                        {resp.branches.map((b, bIdx) => {
                                           const branchText =
                                             b.response?.text ||
                                             b.text ||
@@ -2902,7 +4859,7 @@ export function MultiChatConsole({
                                           const isBranchFailed = b.response?.status === 'failed';
                                           return (
                                             <div
-                                              key={b.id}
+                                              key={`${msg.id}_gridbranch_${resp.personaId}_${b.id || bIdx}_${bIdx}`}
                                               className="p-2 rounded-xl bg-black/50 border border-white/10 flex flex-col gap-1 text-[11px]"
                                             >
                                               <div className="flex items-center justify-between text-cyan-300 font-mono text-[10px]">
@@ -2975,6 +4932,23 @@ export function MultiChatConsole({
                               );
                             })}
                           </div>
+
+                          {expandedVisualMapMsgId === msg.id && (
+                            <div className="rounded-2xl overflow-hidden border border-cyan-500/30">
+                              <MultiChatVisualMapPanel
+                                message={msg}
+                                isLoading={visualMapLoadingMsgId === msg.id}
+                                isGeneratingTurn={isGenerating}
+                                onRegenerate={handleRegenerateVisualMap}
+                                onSendFollowUp={(prompt) => handleSend(prompt)}
+                                onPrefillInput={(prompt) => {
+                                  setInputText(prompt);
+                                  inputRef.current?.focus();
+                                }}
+                                onClose={() => setExpandedVisualMapMsgId(null)}
+                              />
+                            </div>
+                          )}
 
                           <div className="rounded-2xl overflow-hidden border border-white/10">
                             <MultiChatConsensusCard
@@ -3076,16 +5050,118 @@ export function MultiChatConsole({
           />
         )}
 
+        {/* FEATURE 3: COLLAPSIBLE ROLEPLAY / SCENARIO CASTING BAR */}
+        {showScenarioStrip && (
+          <div
+            className={`p-3 rounded-2xl border shadow-xl animate-in fade-in slide-in-from-bottom-2 duration-200 ${
+              isFullDark
+                ? 'bg-[#09090b] border-white/15'
+                : isClassic
+                ? 'bg-slate-950/95 backdrop-blur-2xl border-purple-500/35'
+                : 'bg-zinc-900/95 backdrop-blur-2xl border-purple-500/30'
+            }`}
+          >
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Drama size={14} className="text-purple-400" />
+                <span className="text-xs font-mono font-bold text-purple-200">
+                  ROLEPLAY & SCENARIO CASTING (DYNAMIC PERSONA ROLES)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScenarioStrip(false)}
+                className="p-1 rounded-md text-slate-400 hover:text-white"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-1.5">
+              {MULTICHAT_SCENARIO_CASTS.map((sc, scIdx) => {
+                const isSelected = selectedScenario === sc.id;
+                return (
+                  <button
+                    key={`scenario_${sc.id || scIdx}_${scIdx}`}
+                    type="button"
+                    onClick={() => handleSelectScenario(sc.id)}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col gap-1 cursor-pointer ${
+                      isSelected
+                        ? 'bg-purple-500/20 border-purple-400/60 shadow-[0_0_15px_rgba(168,85,247,0.25)]'
+                        : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-white flex items-center gap-1 truncate">
+                        <span>{sc.icon}</span>
+                        <span className="truncate">{sc.name}</span>
+                      </span>
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 line-clamp-1 m-0">{sc.tagline}</p>
+                    <div className="flex flex-col gap-0.5 mt-1 pt-1 border-t border-white/5 text-[9.5px] font-mono">
+                      <span className="text-sky-300 truncate">🔬 {sc.roles.nova.badge}</span>
+                      <span className="text-amber-300 truncate">💡 {sc.roles.orbit.badge}</span>
+                      <span className="text-purple-300 truncate">🌌 {sc.roles.cosmos.badge}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* FEATURE 4 (NEW): SMART PROMPT SPLITTER & PRE-FLIGHT TUNER DRAWER */}
+        {showPromptSplitter && (
+          <MultiChatPromptSplitterDrawer
+            rawPrompt={inputText}
+            splitPlan={splitPlan}
+            isLoading={isRefiningSplit}
+            onUpdatePlan={(updated) => setSplitPlan(updated)}
+            onAIRefine={handleAIRefineSplit}
+            onBroadcastSplit={handleBroadcastSplitPlan}
+            onClose={() => setShowPromptSplitter(false)}
+          />
+        )}
+
+        {/* Hidden File Input for Multi-File / Code / CSV Dropzone */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.py,.html,.css,.sql,.yaml,.yml,.xml,.log,.sh,.env.example"
+          className="hidden"
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            e.target.value = '';
+          }}
+        />
+
         {/* POWERFUL ANIMATED GLOWING BORDER INPUT BOX (Minimal / Classic / Full Dark) */}
         <div
           data-generating={isGenerating ? 'true' : 'false'}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!isDraggingFiles) setIsDraggingFiles(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDraggingFiles(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDraggingFiles(false);
+            handleFilesSelected(e.dataTransfer.files);
+          }}
           className={`mc-glow-input-wrap ${
             isFullDark
               ? 'theme-fulldark-glow'
               : isMinimal
               ? 'theme-minimal-glow'
               : ''
-          }`}
+          } ${isDraggingFiles ? 'ring-2 ring-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.45)]' : ''}`}
         >
           <form
             onSubmit={(e) => {
@@ -3120,11 +5196,11 @@ export function MultiChatConsole({
                 <span className="text-[10px] font-mono text-zinc-400 flex items-center gap-0.5 mr-0.5">
                   <AtSign size={10} className={isClassic ? 'text-cyan-400' : 'text-indigo-400'} />
                 </span>
-                {enabledPersonas.map((p) => {
+                {enabledPersonas.map((p, pIdx) => {
                   const isDirectlyTargeted = directTargetIds.includes(p.id);
                   return (
                     <button
-                      key={p.id}
+                      key={`direct_target_${p.id || pIdx}_${pIdx}`}
                       type="button"
                       onClick={() => handleToggleDirectPersona(p.id)}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold transition-all shrink-0 cursor-pointer hover:scale-105"
@@ -3157,8 +5233,21 @@ export function MultiChatConsole({
                 )}
               </div>
 
-              {/* Quick Modifiers + Prompts Trigger */}
+              {/* Quick Modifiers + Smart Prompt Splitter + Prompts Trigger */}
               <div className="flex items-center gap-1 shrink-0 ml-auto">
+                <button
+                  type="button"
+                  onClick={handleTogglePromptSplitter}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 transition-all border shrink-0 cursor-pointer ${
+                    showPromptSplitter
+                      ? 'bg-violet-500/25 text-violet-200 border-violet-400/60 shadow-[0_0_12px_rgba(139,92,246,0.3)]'
+                      : 'bg-white/[0.04] hover:bg-violet-500/15 text-zinc-300 hover:text-violet-200 border-white/[0.08] hover:border-violet-400/40'
+                  }`}
+                  title="Smart Prompt Splitter: Deconstruct your prompt into 3 specialized sub-missions for @NOVA, @ORBIT & @COSMOS before sending"
+                >
+                  <Wand2 size={10} className="text-violet-400" />
+                  <span>Split Prompt</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Deep Analysis]:')}
@@ -3200,12 +5289,42 @@ export function MultiChatConsole({
               </div>
             </div>
 
+            {/* Attached Files Strip inside Input Dock */}
+            {attachedFiles.length > 0 && (
+              <div className="relative z-10 flex items-center gap-1.5 flex-wrap pb-2 mb-1.5 border-b border-white/[0.06]">
+                <span className="text-[10px] font-mono text-cyan-300 font-bold flex items-center gap-1">
+                  <Paperclip size={10} />
+                  Attached ({attachedFiles.length}/5):
+                </span>
+                {attachedFiles.map((file, fIdx) => (
+                  <div
+                    key={`dock_att_${file.id || fIdx}_${fIdx}`}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-400/40 text-[10.5px] font-mono text-cyan-100"
+                  >
+                    <FileText size={10} className="text-cyan-400 shrink-0" />
+                    <span className="truncate max-w-[150px]">{file.name}</span>
+                    <span className="text-[9px] text-cyan-300/70">
+                      {(file.sizeBytes / 1024).toFixed(1)}KB
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachedFile(file.id)}
+                      className="text-cyan-300 hover:text-rose-300 ml-0.5 cursor-pointer"
+                      title="Remove attached file"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Row 2: Animated Tri-Orb Graphic + Auto-Resizing Textarea */}
             <div className="relative z-10 flex items-center gap-2.5 w-full">
               {/* Interactive Animated Tri-Orb Neural Indicator */}
               <div
                 className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl shrink-0 grid place-items-center border transition-all ${
-                  isGenerating || inputText.trim().length > 0
+                  isGenerating || inputText.trim().length > 0 || attachedFiles.length > 0
                     ? 'bg-cyan-500/15 border-cyan-400/50 shadow-[0_0_14px_rgba(6,182,212,0.35)]'
                     : 'bg-white/[0.03] border-white/10'
                 }`}
@@ -3245,9 +5364,11 @@ export function MultiChatConsole({
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={
-                    directTargetIds.length > 0
+                    isDraggingFiles
+                      ? 'Drop code, CSV, JSON, or markdown files here for NOVA, ORBIT & COSMOS...'
+                      : directTargetIds.length > 0
                       ? `Message ${directTargetIds.map((id) => '@' + id.toUpperCase()).join(', ')}...`
-                      : 'Ask NOVA, ORBIT & COSMOS anything... (type @nova, @orbit, or @cosmos)'
+                      : 'Ask NOVA, ORBIT & COSMOS anything, or drop files to inspect...'
                   }
                   disabled={isGenerating}
                   className="w-full bg-transparent border-0 text-white placeholder-zinc-500 text-sm sm:text-[15px] focus:outline-none resize-none leading-relaxed min-h-[38px] max-h-[150px] py-1 pr-7 font-sans"
@@ -3265,10 +5386,30 @@ export function MultiChatConsole({
               </div>
             </div>
 
-            {/* Row 3: Bottom Controls Bar (Doc Lens, Web Lens, Mode, Domain, Glowing Send Reactor Button) */}
+            {/* Row 3: Bottom Controls Bar (Attach File, Doc Lens, Web Lens, Mode, Domain, Glowing Send Reactor Button) */}
             <div className="relative z-10 flex items-center justify-between gap-1.5 pt-1.5 mt-1 border-t border-white/[0.07]">
               {/* Left Quick Tools */}
               <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar min-w-0">
+                {/* Feature 3 (New): Multi-File / Code / CSV Attach Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 cursor-pointer ${
+                    attachedFiles.length > 0
+                      ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title="Attach or drag-and-drop Code, CSV, JSON, Markdown, SQL or Text files for all 3 personas to inspect"
+                >
+                  <Paperclip size={12} className={attachedFiles.length > 0 ? 'text-cyan-400' : 'text-zinc-400'} />
+                  <span>Attach</span>
+                  {attachedFiles.length > 0 && (
+                    <span className="px-1 rounded bg-cyan-500/30 text-[9.5px] font-mono text-cyan-100">
+                      {attachedFiles.length}
+                    </span>
+                  )}
+                </button>
+
                 {/* Doc Lens Toggle */}
                 <button
                   type="button"
@@ -3343,6 +5484,25 @@ export function MultiChatConsole({
                   <span className="capitalize hidden xs:inline">{selectedCategory}</span>
                 </button>
 
+                {/* Feature 3: Roleplay Scenario Casting Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowScenarioStrip((prev) => !prev)}
+                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 ${
+                    showScenarioStrip || selectedScenario !== 'standard'
+                      ? 'bg-purple-500/20 text-purple-200 border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
+                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title="Cast NOVA, ORBIT & COSMOS into specialized roleplay scenarios (Startup Pitch Tank, Code Review, War Room, Socratic Trial)"
+                >
+                  <Drama size={12} className="text-purple-400" />
+                  <span className="hidden xs:inline">
+                    {selectedScenario === 'standard'
+                      ? 'Role Cast'
+                      : getScenarioCastById(selectedScenario).name}
+                  </span>
+                </button>
+
                 {charCount > 0 && (
                   <span className="text-[10px] font-mono text-cyan-300/80 px-1.5 hidden sm:inline shrink-0">
                     {charCount}c · {wordCount}w
@@ -3353,9 +5513,9 @@ export function MultiChatConsole({
               {/* Right: High-Energy Glowing Send Reactor Button */}
               <button
                 type="submit"
-                disabled={isGenerating || !inputText.trim()}
+                disabled={isGenerating || (!inputText.trim() && attachedFiles.length === 0)}
                 className={`relative h-8 sm:h-9 px-3 sm:px-4 rounded-full flex items-center justify-center gap-1.5 font-extrabold text-xs tracking-wide transition-all shrink-0 ${
-                  isGenerating || !inputText.trim()
+                  isGenerating || (!inputText.trim() && attachedFiles.length === 0)
                     ? isFullDark
                       ? 'bg-[#222226] text-zinc-600 cursor-not-allowed'
                       : 'bg-white/5 text-zinc-600 cursor-not-allowed'

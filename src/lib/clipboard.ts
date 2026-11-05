@@ -581,21 +581,11 @@ export async function copyToClipboard(text: string, html?: string): Promise<bool
     return true;
   }
 
-  // 3. Fallback for plain text ONLY if rich text copying was not requested or failed completely
-  if (
-    typeof navigator !== 'undefined' &&
-    navigator.clipboard &&
-    typeof navigator.clipboard.writeText === 'function'
-  ) {
-    try {
-      await navigator.clipboard.writeText(content);
-      return true;
-    } catch (err) {
-      console.warn('[Clipboard] navigator.clipboard.writeText failed, trying textarea fallback:', err);
-    }
-  }
-
-  // 4. Synchronous plain text textarea fallback
+  // 3. Plain text copy (when rich HTML is not requested or failed):
+  // Execute synchronous textarea + execCommand('copy') FIRST while the browser's
+  // transient user-gesture token is still active (critical for iframes & mobile browsers
+  // where async navigator.clipboard.writeText may reject and expire the user gesture).
+  let plainCopied = false;
   if (typeof document !== 'undefined') {
     try {
       const textarea = document.createElement('textarea');
@@ -618,14 +608,29 @@ export async function copyToClipboard(text: string, html?: string): Promise<bool
       textarea.select();
       textarea.setSelectionRange(0, textarea.value.length);
 
-      const successful = document.execCommand('copy');
+      plainCopied = document.execCommand('copy');
       document.body.removeChild(textarea);
-      return successful;
     } catch (fallbackErr) {
-      console.error('[Clipboard] All copy attempts failed:', fallbackErr);
-      return false;
+      console.warn('[Clipboard] Synchronous textarea copy failed:', fallbackErr);
     }
   }
 
-  return false;
+  // 4. Also invoke Async Clipboard API writeText if available
+  if (
+    typeof navigator !== 'undefined' &&
+    navigator.clipboard &&
+    typeof navigator.clipboard.writeText === 'function'
+  ) {
+    try {
+      await navigator.clipboard.writeText(content);
+      return true;
+    } catch (err) {
+      if (!plainCopied) {
+        console.warn('[Clipboard] navigator.clipboard.writeText failed:', err);
+      }
+    }
+  }
+
+  return plainCopied;
 }
+

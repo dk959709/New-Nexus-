@@ -21,6 +21,29 @@ import type {
   MultiChatWebSource,
   MultiChatConsensusData,
   MultiChatPersonaId,
+  MultiChatScenarioId,
+  MultiChatRebuttalItem,
+  MultiChatPodcastDialogueLine,
+  MultiChatFollowUpChip,
+  MultiChatVisualMapNode,
+  MultiChatVisualMapData,
+  MultiChatMergedSection,
+  MultiChatMergedAnswerData,
+  MultiChatStressTestPivot,
+  MultiChatStressTestResult,
+  MultiChatAlignmentRadarData,
+  MultiChatFlashcardItem,
+  MultiChatQuizQuestionItem,
+  MultiChatStudyDeckData,
+  MultiChatDecisionOptionRow,
+  MultiChatDecisionMatrixData,
+  MultiChatStanceFlip,
+  MultiChatGuestSpecialistId,
+  MultiChatGuestSpecialistResponse,
+  MultiChatAttachedFile,
+  MultiChatPromptSplitPlan,
+  MultiChatChartMetricRow,
+  MultiChatChartTelemetryData,
 } from '@/types';
 
 /**
@@ -432,8 +455,8 @@ export function sanitizePersonaOutput(text: string, personaName: string): string
   cleaned = cleanPersonaPrefix(cleaned, personaName);
   cleaned = unwrapOuterQuotes(cleaned);
 
-  // 10. Check if usable in-character text remains
-  const alphaChars = cleaned.replace(/[^a-zA-Z0-9]/g, '');
+  // 10. Check if usable in-character text remains (supports all Unicode scripts/languages)
+  const alphaChars = cleaned.replace(/[^\p{L}\p{N}]/gu, '');
   if (alphaChars.length < 2) {
     return '';
   }
@@ -509,7 +532,7 @@ export function extractFinalAnswerFromReasoning(
     }
 
     const cleaned = cleanPersonaPrefix(quoteText, personaName);
-    const alphaChars = cleaned.replace(/[^a-zA-Z0-9]/g, '');
+    const alphaChars = cleaned.replace(/[^\p{L}\p{N}]/gu, '');
     if (alphaChars.length >= 4) {
       return cleaned;
     }
@@ -547,9 +570,9 @@ export function extractFinalAnswerFromReasoning(
       continue;
     }
 
-    // Must be a coherent sentence/phrase
+    // Must be a coherent sentence/phrase (supports all Unicode scripts/languages)
     const words = seg.split(/\s+/).filter(Boolean);
-    const alphaChars = seg.replace(/[^a-zA-Z0-9]/g, '');
+    const alphaChars = seg.replace(/[^\p{L}\p{N}]/gu, '');
     if (words.length >= 1 && alphaChars.length >= 2) {
       cleanCandidates.unshift(seg);
       // Stop after collecting up to 6 clean contiguous sentences to accommodate adaptive length
@@ -632,16 +655,36 @@ export function extractCleanPersonaResponse(
   return getPersonaFallbackReply(personaName, userQuery);
 }
 
+export function isGenericFallbackReplyText(text?: string): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  return (
+    t === FALLBACK_REPLY ||
+    t === 'Acknowledged. Standing by for your next directive or topic.' ||
+    t === 'Understood. I am here whenever you wish to explore further.' ||
+    t === 'Understood. Standing by for your next query.'
+  );
+}
+
 /**
  * Gets the clean final text for display, speech, copy, and export in Multi Chat.
  */
 export function getPersonaCleanText(resp: MultiChatPersonaResponse): string {
-  if (resp.text && resp.text.trim()) {
+  if (resp.text && resp.text.trim() && !isGenericFallbackReplyText(resp.text)) {
     const cleaned = extractCleanPersonaResponse(
       { content: resp.text, reasoning: resp.reasoning },
       resp.name,
     );
-    if (cleaned && cleaned !== FALLBACK_REPLY) return cleaned;
+    if (cleaned && !isGenericFallbackReplyText(cleaned)) return cleaned;
+  }
+  if (resp.reasoning && resp.reasoning.trim()) {
+    const fromReasoning = extractCleanPersonaResponse(
+      { content: '', reasoning: resp.reasoning, text: '' },
+      resp.name,
+    );
+    if (fromReasoning && !isGenericFallbackReplyText(fromReasoning)) {
+      return fromReasoning;
+    }
   }
   return extractCleanPersonaResponse(
     { content: resp.content, reasoning: resp.reasoning, text: resp.text },
@@ -680,12 +723,12 @@ export function buildMultiChatHistoryMessages(
           r.text.trim(),
       );
       if (myReply && myReply.text) {
-        // Strip any residual label prefix in the history item
-        const cleanContent = sanitizePersonaOutput(myReply.text, myReply.name);
-        if (cleanContent) {
+        const recovered = getPersonaCleanText(myReply);
+        // Never feed generic fallback placeholder text into conversation history
+        if (recovered && !isGenericFallbackReplyText(recovered)) {
           historyMessages.push({
             role: 'assistant',
-            content: cleanContent,
+            content: recovered,
           });
         }
       }
@@ -726,7 +769,7 @@ export interface QueryLengthProfile {
 export function isAcknowledgmentOrReaction(query: string): boolean {
   const clean = query
     .toLowerCase()
-    .replace(/[^\w\s']/g, ' ')
+    .replace(/[^\p{L}\p{N}\s']/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -1152,6 +1195,186 @@ export function resolvePersonaSkillsText(
   return blocks.join('\n\n').slice(0, 30000);
 }
 
+export interface MultiChatScenarioCastConfig {
+  id: MultiChatScenarioId;
+  name: string;
+  label: string;
+  shortLabel: string;
+  icon: string;
+  tagline: string;
+  description: string;
+  roles: Record<
+    string,
+    {
+      badge: string;
+      directive: string;
+    }
+  >;
+}
+
+export const MULTICHAT_SCENARIO_CASTS: MultiChatScenarioCastConfig[] = [
+  {
+    id: 'standard',
+    name: 'Standard Trio',
+    label: 'Standard Cognitive Trio',
+    shortLabel: 'Standard Trio',
+    icon: '🧠',
+    tagline: 'NOVA (Researcher) · ORBIT (Buddy) · COSMOS (Mentor)',
+    description: 'NOVA (Researcher) · ORBIT (Buddy) · COSMOS (Mentor)',
+    roles: {
+      nova: { badge: 'Researcher', directive: '' },
+      orbit: { badge: 'Creative Buddy', directive: '' },
+      cosmos: { badge: 'Wise Mentor', directive: '' },
+    },
+  },
+  {
+    id: 'startup_pitch',
+    name: 'Pitch Tank',
+    label: 'Startup Pitch Tank',
+    shortLabel: 'Pitch Tank',
+    icon: '🚀',
+    tagline: 'VC Investor · Growth Hacker · Product Visionary',
+    description: 'VC Investor · Growth Hacker · Product Visionary',
+    roles: {
+      nova: {
+        badge: 'VC Partner',
+        directive:
+          'Act as a sharp Venture Capital Deal Partner evaluating unit economics, moat, TAM, defensibility, and execution risk with rigorous numbers.',
+      },
+      orbit: {
+        badge: 'Growth Hacker',
+        directive:
+          'Act as a scrappy, high-velocity Growth Hacker focused on viral loops, GTM traction, distribution hacks, and fast customer acquisition.',
+      },
+      cosmos: {
+        badge: 'Product Visionary',
+        directive:
+          'Act as a long-term Founder & Product Visionary focused on user delight, category creation, brand soul, and 10-year product trajectory.',
+      },
+    },
+  },
+  {
+    id: 'code_review',
+    name: 'Code Review',
+    label: 'Code & Architecture Review',
+    shortLabel: 'Code Review',
+    icon: '🛡️',
+    tagline: 'Security Auditor · Fast Shipper · Principal Architect',
+    description: 'Security Auditor · Fast Shipper · Principal Architect',
+    roles: {
+      nova: {
+        badge: 'Security & Perf Auditor',
+        directive:
+          'Act as a Staff Security & Performance Engineer auditing edge cases, complexity, memory/latency bottlenecks, and failure modes.',
+      },
+      orbit: {
+        badge: 'Pragmatic Shipper',
+        directive:
+          'Act as a fast-moving Pragmatic Full-Stack Builder focused on DX, shipping clean working code today, and avoiding over-engineering.',
+      },
+      cosmos: {
+        badge: 'Systems Architect',
+        directive:
+          'Act as a Principal Systems Architect evaluating maintainability, clean abstractions, domain boundaries, and long-term evolution.',
+      },
+    },
+  },
+  {
+    id: 'war_room',
+    name: 'War Room',
+    label: 'Executive Decision War Room',
+    shortLabel: 'War Room',
+    icon: '⚔️',
+    tagline: 'Risk Analyst · Tactical Operator · Grand Strategist',
+    description: 'Risk Analyst · Tactical Operator · Grand Strategist',
+    roles: {
+      nova: {
+        badge: 'Risk & Intel Analyst',
+        directive:
+          'Act as a Chief Risk & Intelligence Analyst mapping downside probabilities, blind spots, resource constraints, and hard facts.',
+      },
+      orbit: {
+        badge: 'Tactical Operator',
+        directive:
+          'Act as a decisive Field Operator focused on immediate 48-hour action steps, momentum, and asymmetric quick wins.',
+      },
+      cosmos: {
+        badge: 'Grand Strategist',
+        directive:
+          'Act as a Grand Strategist synthesizing second-order consequences, stakeholder alignment, and enduring equilibrium.',
+      },
+    },
+  },
+  {
+    id: 'socratic_trial',
+    name: 'Courtroom',
+    label: 'Socratic Courtroom Trial',
+    shortLabel: 'Courtroom',
+    icon: '⚖️',
+    tagline: 'Lead Skeptic · Defense Counsel · Presiding Judge',
+    description: 'Lead Skeptic · Defense Counsel · Presiding Judge',
+    roles: {
+      nova: {
+        badge: 'Lead Prosecutor',
+        directive:
+          'Act as the Lead Prosecutor / Rigorous Skeptic cross-examining weak premises, demanding hard proof, and exposing logical fallacies.',
+      },
+      orbit: {
+        badge: 'Defense Advocate',
+        directive:
+          'Act as the passionate Defense Counsel championing bold possibilities, human upside, and real-world counter-examples.',
+      },
+      cosmos: {
+        badge: 'Presiding Judge',
+        directive:
+          'Act as the Presiding High Judge weighing the prosecution and defense with impartial wisdom to issue a balanced ruling.',
+      },
+    },
+  },
+];
+
+export function getScenarioCastById(scenarioId?: MultiChatScenarioId): MultiChatScenarioCastConfig {
+  if (!scenarioId || scenarioId === 'default' || scenarioId === 'standard') {
+    return MULTICHAT_SCENARIO_CASTS[0];
+  }
+  if (scenarioId === 'courtroom') {
+    return (
+      MULTICHAT_SCENARIO_CASTS.find((s) => s.id === 'socratic_trial') ||
+      MULTICHAT_SCENARIO_CASTS[0]
+    );
+  }
+  return (
+    MULTICHAT_SCENARIO_CASTS.find((s) => s.id === scenarioId) || MULTICHAT_SCENARIO_CASTS[0]
+  );
+}
+
+export function buildPersonaAttachedFilesDirective(
+  personaId: string,
+  attachments?: MultiChatAttachedFile[],
+): string {
+  if (!attachments || attachments.length === 0) return '';
+  const filesBlock = attachments
+    .map(
+      (f, idx) =>
+        `[ATTACHED FILE ${idx + 1}: "${f.name}" (${f.extension.toUpperCase()}, ${f.size} bytes)]:\n\`\`\`${f.extension}\n${f.content.slice(0, 4500)}\n\`\`\``,
+    )
+    .join('\n\n');
+
+  let roleLens = '';
+  if (personaId === 'nova') {
+    roleLens =
+      'As NOVA, audit the attached file(s) for technical accuracy, bugs, schema/data anomalies, performance bottlenecks, and concrete metrics.';
+  } else if (personaId === 'orbit') {
+    roleLens =
+      'As ORBIT, highlight high-leverage improvements, creative feature ideas, UX/copy enhancements, or fast refactoring wins from the attached file(s)!';
+  } else {
+    roleLens =
+      'As COSMOS, evaluate the architectural coherence, maintainability, edge-case resilience, and strategic design of the attached file(s).';
+  }
+
+  return `\n\n=== USER ATTACHED ARTIFACTS / CODE / DATA FILES ===\n${filesBlock}\n===================================================\n[FILE INSPECTION DIRECTIVE]: ${roleLens}`;
+}
+
 /**
  * Executes a single persona call
  */
@@ -1167,16 +1390,25 @@ export async function executeSinglePersona(
   options?: {
     webSources?: MultiChatWebSource[];
     dialogueMode?: MultiChatDialogueMode;
+    scenarioId?: MultiChatScenarioId;
     enableSkills?: boolean;
+    attachments?: MultiChatAttachedFile[];
   },
 ): Promise<MultiChatPersonaResponse> {
   const startTime = Date.now();
+  const scenarioCast = getScenarioCastById(options?.scenarioId);
+  const castRole = scenarioCast.roles[persona.id];
+  const effectiveToneBadge =
+    options?.scenarioId && options.scenarioId !== 'default' && castRole?.badge
+      ? castRole.badge
+      : persona.toneBadge;
+
   const baseResponse: MultiChatPersonaResponse = {
     personaId: persona.id,
     name: persona.name,
     icon: persona.icon,
     accentColor: persona.accentColor,
-    toneBadge: persona.toneBadge,
+    toneBadge: effectiveToneBadge,
     text: '',
     status: 'running',
   };
@@ -1226,9 +1458,19 @@ export async function executeSinglePersona(
     systemContent += buildPersonaWebLensDirective(persona.id, options.webSources);
   }
 
+  // Inject Attached Files / Code / CSV artifacts if provided
+  if (options?.attachments && options.attachments.length > 0) {
+    systemContent += buildPersonaAttachedFilesDirective(persona.id, options.attachments);
+  }
+
   // Inject Dialogue Mode directive (Harmony / Debate / Parallel)
   if (options?.dialogueMode) {
     systemContent += buildPersonaDialogueModeDirective(persona.id, options.dialogueMode);
+  }
+
+  // Inject Scenario Casting role directive if active
+  if (options?.scenarioId && options.scenarioId !== 'default' && castRole?.directive) {
+    systemContent += `\n\n[SCENARIO ROLEPLAY CASTING — ${scenarioCast.label.toUpperCase()} | YOUR ROLE: ${castRole.badge.toUpperCase()}]:\n- ${castRole.directive}`;
   }
 
   // Inject chosen response language instruction
@@ -1330,14 +1572,15 @@ export async function executeSinglePersona(
     userContent += `\n\n=== LIVE WEB SEARCH RESULTS (USE THESE CURRENT FACTS TO ANSWER) ===\n${compactWebSummary}\n===================================================================`;
   }
 
-  // Reinforce length requirement directly in the user prompt as well
+  // Reinforce length & language requirement directly in the user prompt as well
+  const langNote = lang && lang.toLowerCase() !== 'english' ? ` in ${lang}` : '';
   if (lengthProfile.intent === 'detailed') {
-    userContent += `\n\n(Please write a rich, complete response of around 80-100 words in your voice. Do not summarize into a few words or fragments.)`;
+    userContent += `\n\n(Please write a rich, complete response of around 80-100 words${langNote} in your voice. Do not summarize into a few words or fragments, and do not output a generic standby message.)`;
   } else if (lengthProfile.intent === 'concise') {
     if (lengthProfile.category === 'acknowledgment') {
-      userContent += `\n\n(Acknowledge naturally and briefly in around 15-30 words. Do not invent a story or ask to rephrase.)`;
+      userContent += `\n\n(Acknowledge naturally and briefly in around 15-30 words${langNote}. Do not invent a story or ask to rephrase.)`;
     } else {
-      userContent += `\n\n(Keep reply concise, around 20-30 words.)`;
+      userContent += `\n\n(Keep reply concise, around 20-30 words${langNote}.)`;
     }
   }
 
@@ -1666,8 +1909,10 @@ export async function executeMultiChatTurn({
   category,
   enableWebLens = false,
   dialogueMode = 'harmony',
+  scenarioId = 'default',
   targetPersonaIds,
   enableSkills = true,
+  attachments,
 }: {
   query: string;
   conversationHistory: MultiChatMessage[];
@@ -1681,8 +1926,10 @@ export async function executeMultiChatTurn({
   category?: MultiChatCategoryId | string;
   enableWebLens?: boolean;
   dialogueMode?: MultiChatDialogueMode;
+  scenarioId?: MultiChatScenarioId;
   targetPersonaIds?: MultiChatPersonaId[];
   enableSkills?: boolean;
+  attachments?: MultiChatAttachedFile[];
 }): Promise<{
   responses: MultiChatPersonaResponse[];
   docChunks?: DocumentRetrievalResult[];
@@ -1691,6 +1938,7 @@ export async function executeMultiChatTurn({
   const activeMemories = permanentMemories ?? storage.getMultiChatMemories();
   const activeLanguage = responseLanguage ?? config.responseLanguage ?? storage.getMultiChatResponseLanguage();
   const personas = Object.values(config.personas);
+  const scenarioCast = getScenarioCastById(scenarioId);
 
   const { cleanQuery, mentionedIds } = parseMultiChatMentions(query);
   const effectiveTargetIds =
@@ -1744,6 +1992,11 @@ export async function executeMultiChatTurn({
     return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
   });
 
+  const badgeFor = (p: MultiChatPersonaConfig) =>
+    scenarioId && scenarioId !== 'default' && scenarioCast.roles[p.id]?.badge
+      ? scenarioCast.roles[p.id].badge
+      : p.toneBadge;
+
   // PARALLEL EXECUTION MODE
   if (dialogueMode === 'parallel' && enabledPersonas.length > 1) {
     enabledPersonas.forEach((p) => {
@@ -1752,7 +2005,7 @@ export async function executeMultiChatTurn({
         name: p.name,
         icon: p.icon,
         accentColor: p.accentColor,
-        toneBadge: p.toneBadge,
+        toneBadge: badgeFor(p),
         text: '',
         status: 'running',
       });
@@ -1772,7 +2025,9 @@ export async function executeMultiChatTurn({
           {
             webSources: retrievedWebSources,
             dialogueMode: 'parallel',
+            scenarioId,
             enableSkills,
+            attachments,
           },
         );
         onPersonaUpdate?.(res);
@@ -1794,7 +2049,7 @@ export async function executeMultiChatTurn({
       name: p.name,
       icon: p.icon,
       accentColor: p.accentColor,
-      toneBadge: p.toneBadge,
+      toneBadge: badgeFor(p),
       text: '',
       status: index === 0 ? 'running' : 'pending',
     });
@@ -1812,7 +2067,7 @@ export async function executeMultiChatTurn({
         name: persona.name,
         icon: persona.icon,
         accentColor: persona.accentColor,
-        toneBadge: persona.toneBadge,
+        toneBadge: badgeFor(persona),
         text: '',
         status: 'running',
       });
@@ -1830,7 +2085,9 @@ export async function executeMultiChatTurn({
       {
         webSources: retrievedWebSources,
         dialogueMode,
+        scenarioId,
         enableSkills,
+        attachments,
       },
     );
 
@@ -1973,3 +2230,2178 @@ Output raw JSON only. No markdown fences or extra text.`;
 
   return fallbackConsensus();
 }
+
+/**
+ * FEATURE 1: Executes a Cross-Examination / Rebuttal Round (+1 Round)
+ * Each completed persona reads what the other personas just argued and fires back a direct 40-65 word rebuttal.
+ */
+export async function executeMultiChatRebuttalRound(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+  onRebuttalUpdate?: (rebuttals: MultiChatRebuttalItem[]) => void,
+): Promise<MultiChatRebuttalItem[]> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+  if (completed.length < 2) {
+    return [];
+  }
+
+  const rawLang = config.responseLanguage ?? storage.getMultiChatResponseLanguage() ?? 'English';
+  const rebuttals: MultiChatRebuttalItem[] = completed.map((r) => ({
+    personaId: r.personaId,
+    name: r.name,
+    icon: r.icon,
+    accentColor: r.accentColor,
+    toneBadge: r.toneBadge,
+    targetNames: completed.filter((o) => o.personaId !== r.personaId).map((o) => o.name),
+    text: '',
+    status: 'running',
+    timestamp: Date.now(),
+  }));
+
+  onRebuttalUpdate?.([...rebuttals]);
+
+  for (let i = 0; i < completed.length; i++) {
+    const current = completed[i];
+    const others = completed.filter((o) => o.personaId !== current.personaId);
+    const personaCfg =
+      config.personas[current.personaId] ||
+      Object.values(config.personas).find((p) => p.id === current.personaId);
+
+    if (!personaCfg) continue;
+
+    const primary = resolvePersonaProviderConfig(personaCfg, false, 450);
+    const othersTranscript = others
+      .map((o) => `${o.name} (${o.toneBadge || 'Peer'}): "${getPersonaCleanText(o)}"`)
+      .join('\n\n');
+
+    let rebuttalRoleGuidance = '';
+    if (current.personaId === 'nova') {
+      rebuttalRoleGuidance =
+        'As NOVA, directly fact-check, stress-test, or point out analytical blind spots in what ORBIT and COSMOS claimed. Address them by name.';
+    } else if (current.personaId === 'orbit') {
+      rebuttalRoleGuidance =
+        'As ORBIT, push back on NOVA’s rigid constraints or COSMOS’s abstraction with a high-energy, real-world counter-punch! Address them by name.';
+    } else {
+      rebuttalRoleGuidance =
+        'As COSMOS, challenge both NOVA and ORBIT where their views are incomplete and deliver the deeper philosophical synthesis. Address them by name.';
+    }
+
+    const systemPrompt = `${personaCfg.systemPrompt}\n\n[CROSS-EXAMINATION REBUTTAL ROUND]:
+- You are in a live Cross-Examination Rebuttal Round responding directly to your fellow panelists (${others.map((o) => o.name).join(' & ')}).
+- ${rebuttalRoleGuidance}
+- Keep your rebuttal sharp, direct, and between 40 and 65 words in ${rawLang}.
+- Output ONLY your in-character rebuttal statement (no preambles or meta-notes).`;
+
+    const userPrompt = `Original User Topic: "${msg.query}"\n\nYour Initial Stance:\n"${getPersonaCleanText(current)}"\n\nOther Panelists' Statements:\n${othersTranscript}\n\nDeliver your direct cross-examination rebuttal to ${others.map((o) => o.name).join(' and ')} now:`;
+
+    try {
+      const res = await api.jarvisAgentCall({
+        agentId: `multichat_rebuttal_${current.personaId}`,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        providerConfig: primary.provider,
+        temperature: current.personaId === 'orbit' ? 0.7 : 0.4,
+        maxTokens: 450,
+        timeoutMs: 30000,
+      });
+
+      const cleanText = extractCleanPersonaResponse(
+        { content: res.content, reasoning: res.reasoning, text: res.text },
+        current.name,
+        msg.query,
+      );
+
+      rebuttals[i] = {
+        ...rebuttals[i],
+        text: cleanText,
+        status: 'completed',
+        timestamp: Date.now(),
+      };
+    } catch (err) {
+      rebuttals[i] = {
+        ...rebuttals[i],
+        text: `${others.map((o) => o.name).join(' & ')}, let's verify the core assumptions before jumping ahead.`,
+        status: 'completed',
+        error: err instanceof Error ? err.message : String(err),
+        timestamp: Date.now(),
+      };
+    }
+
+    onRebuttalUpdate?.([...rebuttals]);
+  }
+
+  return rebuttals;
+}
+
+/**
+ * FEATURE 4: Builds instant context-aware Smart Trio Follow-Up Chips (targeted to @nova, @orbit, and All 3)
+ */
+export function buildDefaultMultiChatFollowUps(msg: MultiChatMessage): MultiChatFollowUpChip[] {
+  const cleanTopic = msg.query
+    .replace(/(?:^|\s)@(?:nova|orbit|cosmos)\b/gi, '')
+    .replace(/\[[^\]]+\]:\s*/g, '')
+    .trim();
+  const shortTopic =
+    cleanTopic.length > 48 ? `${cleanTopic.slice(0, 45).trim()}...` : cleanTopic || 'this topic';
+
+  return [
+    {
+      id: `fu_nova_${msg.id}`,
+      label: `Stress-test the metrics & edge cases`,
+      prompt: `@nova Break down the concrete data, failure modes, and technical edge cases for: ${shortTopic}`,
+      targetPersonaId: 'nova',
+      badge: '@NOVA · Analytical',
+      icon: '🔬',
+      accentColor: '#38bdf8',
+    },
+    {
+      id: `fu_orbit_${msg.id}`,
+      label: `Give me a fast, unconventional action plan`,
+      prompt: `@orbit Give me a creative, high-leverage 3-step action plan I can execute right away for: ${shortTopic}`,
+      targetPersonaId: 'orbit',
+      badge: '@ORBIT · Actionable',
+      icon: '💡',
+      accentColor: '#f59e0b',
+    },
+    {
+      id: `fu_all_${msg.id}`,
+      label: `Debate the second-order trade-offs`,
+      prompt: `What are the biggest hidden trade-offs and second-order consequences we haven't considered yet regarding ${shortTopic}?`,
+      targetPersonaId: 'all',
+      badge: 'ALL 3 · Deep Dive',
+      icon: '🌌',
+      accentColor: '#c084fc',
+    },
+  ];
+}
+
+/**
+ * AI-powered refresh for Smart Trio Follow-Up Chips tailored to the exact turn transcript
+ */
+export async function generateAIMultiChatFollowUps(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatFollowUpChip[]> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+  if (completed.length === 0) {
+    return buildDefaultMultiChatFollowUps(msg);
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 450);
+  if (primary.error) {
+    return buildDefaultMultiChatFollowUps(msg);
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name}: ${getPersonaCleanText(r).slice(0, 260)}`)
+    .join('\n');
+
+  const systemPrompt = `Generate 3 sharp, curiosity-sparking follow-up prompts based on the user query and panel responses.
+Return ONLY valid JSON in this exact format:
+{
+  "nova": "A specific analytical or technical follow-up question for NOVA (max 12 words)",
+  "orbit": "A specific creative or practical execution follow-up question for ORBIT (max 12 words)",
+  "all": "A deeper strategic or debate question for all 3 personas (max 14 words)"
+}
+Raw JSON only, no markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_followups',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Query: "${msg.query}"\n\nResponses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.5,
+      maxTokens: 350,
+      timeoutMs: 20000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        nova?: string;
+        orbit?: string;
+        all?: string;
+      };
+      const novaQ = parsed.nova?.trim();
+      const orbitQ = parsed.orbit?.trim();
+      const allQ = parsed.all?.trim();
+      if (novaQ && orbitQ && allQ) {
+        const ts = Date.now();
+        return [
+          {
+            id: `fu_nova_ai_${msg.id}_${ts}`,
+            label: novaQ,
+            prompt: `@nova ${novaQ}`,
+            targetPersonaId: 'nova',
+            badge: '@NOVA · Analytical',
+            icon: '🔬',
+            accentColor: '#38bdf8',
+          },
+          {
+            id: `fu_orbit_ai_${msg.id}_${ts}`,
+            label: orbitQ,
+            prompt: `@orbit ${orbitQ}`,
+            targetPersonaId: 'orbit',
+            badge: '@ORBIT · Actionable',
+            icon: '💡',
+            accentColor: '#f59e0b',
+          },
+          {
+            id: `fu_all_ai_${msg.id}_${ts}`,
+            label: allQ,
+            prompt: allQ,
+            targetPersonaId: 'all',
+            badge: 'ALL 3 · Deep Dive',
+            icon: '🌌',
+            accentColor: '#c084fc',
+          },
+        ];
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildDefaultMultiChatFollowUps(msg);
+}
+
+/**
+ * FEATURE 5: Generates an interactive Roundtable Podcast Script from the completed turn
+ */
+export async function generateMultiChatPodcastScript(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatPodcastDialogueLine[]> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const fallbackScript = (): MultiChatPodcastDialogueLine[] => {
+    const lines: MultiChatPodcastDialogueLine[] = [];
+    completed.forEach((r, idx) => {
+      const clean = getPersonaCleanText(r);
+      const intro =
+        idx === 0
+          ? `Welcome back to the NEXUS Roundtable. Looking at "${msg.query.slice(0, 50)}", here is the core analytical picture: `
+          : idx === 1
+          ? `Jumping in on what ${completed[0]?.name || 'NOVA'} just laid out—here is how I see the real-world angle: `
+          : `Stepping back to connect both ${completed[0]?.name || 'NOVA'} and ${completed[1]?.name || 'ORBIT'}'s points: `;
+      lines.push({
+        id: `pod_${msg.id}_${idx}`,
+        speakerId: r.personaId,
+        speakerName: r.name,
+        icon: r.icon,
+        accentColor: r.accentColor,
+        roleLabel: r.toneBadge || 'Panelist',
+        text: `${intro}${clean}`,
+      });
+    });
+    return lines;
+  };
+
+  if (completed.length < 2) {
+    return fallbackScript();
+  }
+
+  const personaConfig =
+    config.personas.orbit || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 800);
+  if (primary.error) {
+    return fallbackScript();
+  }
+
+  const rawLang = config.responseLanguage ?? storage.getMultiChatResponseLanguage() ?? 'English';
+  const transcript = completed
+    .map((r) => `${r.name} (${r.toneBadge || 'Panelist'}):\n${getPersonaCleanText(r)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Roundtable Podcast Producer.
+Transform the user query and the 3 persona responses (NOVA, ORBIT, COSMOS) into a lively, natural 6-turn back-and-forth podcast conversation in ${rawLang} where they address each other by name, react to each other's points, and build a cohesive roundtable discussion.
+Output ONLY a valid JSON array of dialogue turns:
+[
+  { "speakerId": "nova", "text": "Natural spoken podcast turn by NOVA (25-40 words)" },
+  { "speakerId": "orbit", "text": "Natural spoken reply by ORBIT reacting to NOVA (25-40 words)" },
+  { "speakerId": "cosmos", "text": "Natural spoken perspective by COSMOS (25-40 words)" },
+  { "speakerId": "nova", "text": "Quick analytical follow-up by NOVA (20-35 words)" },
+  { "speakerId": "orbit", "text": "Practical takeaway by ORBIT (20-35 words)" },
+  { "speakerId": "cosmos", "text": "Closing synthesis by COSMOS (25-35 words)" }
+]
+Raw JSON array only. No markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_podcast_script',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Topic: "${msg.query}"\n\nPanel Responses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.6,
+      maxTokens: 800,
+      timeoutMs: 35000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as Array<{
+        speakerId?: string;
+        text?: string;
+      }>;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const personaMap: Record<string, MultiChatPersonaResponse | undefined> = {};
+        for (const r of completed) {
+          personaMap[r.personaId.toLowerCase()] = r;
+        }
+        const scriptLines: MultiChatPodcastDialogueLine[] = [];
+        parsed.forEach((item, idx) => {
+          const spkId = (item.speakerId || 'nova').toLowerCase();
+          const matched =
+            personaMap[spkId] ||
+            completed[idx % completed.length];
+          const text = (item.text || '').trim();
+          if (text && matched) {
+            scriptLines.push({
+              id: `pod_${msg.id}_${idx}_${Date.now()}`,
+              speakerId: matched.personaId,
+              speakerName: matched.name,
+              icon: matched.icon,
+              accentColor: matched.accentColor,
+              roleLabel: matched.toneBadge || 'Panelist',
+              text,
+            });
+          }
+        });
+        if (scriptLines.length >= 3) {
+          return scriptLines;
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return fallbackScript();
+}
+
+/**
+ * FEATURE 6: Generates an interactive Visual Mind-Map & Flowchart Canvas data structure
+ * from the completed Multi Chat turn responses.
+ */
+export async function generateMultiChatVisualMap(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatVisualMapData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const shortTopic =
+    msg.query.trim().length > 42 ? `${msg.query.trim().slice(0, 42)}…` : msg.query.trim();
+
+  const buildFallbackMap = (): MultiChatVisualMapData => {
+    const nodes: MultiChatVisualMapNode[] = [];
+    completed.forEach((r) => {
+      const clean = getPersonaCleanText(r).replace(/\s+/g, ' ').trim();
+      const sentences = clean
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 12);
+
+      const firstPoint = sentences[0] || clean.slice(0, 120) || `${r.name} Core Analysis`;
+      const secondPoint =
+        sentences[1] ||
+        sentences[sentences.length - 1] ||
+        `Key operational and strategic takeaway from ${r.name}.`;
+
+      const branchLabel =
+        r.personaId === 'nova'
+          ? 'Analytical & Technical'
+          : r.personaId === 'orbit'
+          ? 'Action & Execution'
+          : 'Strategic & Holistic';
+
+      nodes.push({
+        id: `vnode_${msg.id}_${r.personaId}_1`,
+        personaId: r.personaId,
+        personaName: r.name,
+        icon: r.icon,
+        accentColor: r.accentColor,
+        branchLabel,
+        title:
+          r.personaId === 'nova'
+            ? 'Core Evidence & Architecture'
+            : r.personaId === 'orbit'
+            ? 'High-Leverage Action Hook'
+            : 'First-Principles Perspective',
+        summary: firstPoint.slice(0, 150),
+        followUpPrompt: `@${r.personaId} Expand deeply on this node from your analysis of "${shortTopic}": ${firstPoint.slice(0, 90)}`,
+      });
+
+      nodes.push({
+        id: `vnode_${msg.id}_${r.personaId}_2`,
+        personaId: r.personaId,
+        personaName: r.name,
+        icon: r.icon,
+        accentColor: r.accentColor,
+        branchLabel,
+        title:
+          r.personaId === 'nova'
+            ? 'Edge Cases & Risk Boundaries'
+            : r.personaId === 'orbit'
+            ? 'Rapid Execution Playbook'
+            : 'Long-Term Second-Order Impact',
+        summary: secondPoint.slice(0, 150),
+        followUpPrompt: `@${r.personaId} Walk me through concrete steps and trade-offs for: ${secondPoint.slice(0, 90)}`,
+      });
+    });
+
+    return {
+      centerTitle: shortTopic || 'Tri-Mind Synthesis',
+      centerSubtitle: `${completed.length} Connected Perspectives`,
+      synthesisTakeaway:
+        msg.consensus?.verdict ||
+        'NOVA provides the analytical foundation, ORBIT translates it into rapid execution, and COSMOS aligns long-term strategic balance.',
+      nodes,
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length === 0) {
+    return buildFallbackMap();
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 800);
+  if (primary.error) {
+    return buildFallbackMap();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 450)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Visual Mind-Map Architect.
+Synthesize the user's query and the Multi-Chat persona responses (NOVA, ORBIT, COSMOS) into a structured 6-node Mind-Map JSON (2 distinct insight nodes per persona).
+Return ONLY valid JSON matching this exact structure:
+{
+  "centerTitle": "Short 3-6 word core topic title",
+  "centerSubtitle": "Short 4-8 word subtitle summarizing the domain",
+  "synthesisTakeaway": "One crisp 18-28 word overarching synthesis connecting all 3 minds",
+  "nodes": [
+    {
+      "personaId": "nova",
+      "title": "Short 3-5 word analytical node title",
+      "summary": "Crisp 14-24 word factual/technical insight from NOVA",
+      "followUpPrompt": "@nova Specific follow-up question to explore this node deeper"
+    },
+    {
+      "personaId": "nova",
+      "title": "Short 3-5 word risk/metric node title",
+      "summary": "Crisp 14-24 word edge-case or system boundary from NOVA",
+      "followUpPrompt": "@nova Specific follow-up question on this risk or metric"
+    },
+    {
+      "personaId": "orbit",
+      "title": "Short 3-5 word execution node title",
+      "summary": "Crisp 14-24 word practical action or analogy from ORBIT",
+      "followUpPrompt": "@orbit Specific follow-up question on executing this tactic"
+    },
+    {
+      "personaId": "orbit",
+      "title": "Short 3-5 word growth/momentum node title",
+      "summary": "Crisp 14-24 word creative shortcut or real-world play from ORBIT",
+      "followUpPrompt": "@orbit Specific follow-up question to build on this idea"
+    },
+    {
+      "personaId": "cosmos",
+      "title": "Short 3-5 word strategic node title",
+      "summary": "Crisp 14-24 word holistic or ethical principle from COSMOS",
+      "followUpPrompt": "@cosmos Specific follow-up question on long-term alignment"
+    },
+    {
+      "personaId": "cosmos",
+      "title": "Short 3-5 word synthesis node title",
+      "summary": "Crisp 14-24 word second-order consequence from COSMOS",
+      "followUpPrompt": "@cosmos Specific follow-up question on this deeper implication"
+    }
+  ]
+}
+Raw JSON only. No markdown code fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_visual_map',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `User Query: "${msg.query}"\n\nPersona Responses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.35,
+      maxTokens: 850,
+      timeoutMs: 30000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        centerTitle?: string;
+        centerSubtitle?: string;
+        synthesisTakeaway?: string;
+        nodes?: Array<{
+          personaId?: string;
+          title?: string;
+          summary?: string;
+          followUpPrompt?: string;
+        }>;
+      };
+
+      if (Array.isArray(parsed.nodes) && parsed.nodes.length >= 3) {
+        const personaMeta: Record<
+          MultiChatPersonaId,
+          { name: string; icon: string; color: string; branch: string }
+        > = {
+          nova: {
+            name: config.personas.nova?.name || 'NOVA',
+            icon: config.personas.nova?.icon || '🔬',
+            color: config.personas.nova?.accentColor || '#38bdf8',
+            branch: 'Analytical & Technical',
+          },
+          orbit: {
+            name: config.personas.orbit?.name || 'ORBIT',
+            icon: config.personas.orbit?.icon || '💡',
+            color: config.personas.orbit?.accentColor || '#f59e0b',
+            branch: 'Action & Execution',
+          },
+          cosmos: {
+            name: config.personas.cosmos?.name || 'COSMOS',
+            icon: config.personas.cosmos?.icon || '🌌',
+            color: config.personas.cosmos?.accentColor || '#c084fc',
+            branch: 'Strategic & Holistic',
+          },
+        };
+
+        const builtNodes: MultiChatVisualMapNode[] = parsed.nodes
+          .map((item, idx) => {
+            const rawPid = (item.personaId || '').toLowerCase();
+            const pid: MultiChatPersonaId =
+              rawPid === 'nova' || rawPid === 'orbit' || rawPid === 'cosmos'
+                ? rawPid
+                : (['nova', 'orbit', 'cosmos'][idx % 3] as MultiChatPersonaId);
+            const meta = personaMeta[pid];
+            const title = (item.title || `${meta.name} Insight`).trim();
+            const summary = (item.summary || '').trim();
+            const followUpPrompt = (
+              item.followUpPrompt || `@${pid} Dive deeper into "${title}" regarding ${shortTopic}`
+            ).trim();
+
+            return {
+              id: `vnode_${msg.id}_${pid}_${idx}`,
+              personaId: pid,
+              personaName: meta.name,
+              icon: meta.icon,
+              accentColor: meta.color,
+              branchLabel: meta.branch,
+              title,
+              summary,
+              followUpPrompt,
+            };
+          })
+          .filter((n) => n.summary.length > 0);
+
+        if (builtNodes.length >= 3) {
+          return {
+            centerTitle: (parsed.centerTitle || shortTopic || 'Tri-Mind Synthesis').trim(),
+            centerSubtitle: (
+              parsed.centerSubtitle || `${completed.length} Connected Perspectives`
+            ).trim(),
+            synthesisTakeaway: (
+              parsed.synthesisTakeaway ||
+              msg.consensus?.verdict ||
+              'Connected synthesis across NOVA, ORBIT, and COSMOS.'
+            ).trim(),
+            nodes: builtNodes,
+            generatedAt: Date.now(),
+          };
+        }
+      }
+    }
+  } catch {
+    // use fallback
+  }
+
+  return buildFallbackMap();
+}
+
+/**
+ * NEW IDEA 1: "Frankenstein" Best-of-3 Master Answer Merger
+ * Weaves the best analytical facts from NOVA, analogies/tactics from ORBIT,
+ * and strategic synthesis from COSMOS into one color-tagged Master Document.
+ */
+export async function generateMultiChatMergedAnswer(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatMergedAnswerData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const shortTopic =
+    msg.query.trim().length > 52 ? `${msg.query.trim().slice(0, 52)}…` : msg.query.trim();
+
+  const buildFallbackMerged = (): MultiChatMergedAnswerData => {
+    const sections: MultiChatMergedSection[] = completed.map((r, idx) => ({
+      id: `m_sec_${msg.id}_${r.personaId}_${idx}`,
+      personaId: r.personaId,
+      personaName: r.name,
+      icon: r.icon,
+      accentColor: r.accentColor,
+      roleContribution:
+        r.personaId === 'nova'
+          ? 'Core Analytical & Technical Foundation'
+          : r.personaId === 'orbit'
+          ? 'Practical Execution & Real-World Analogies'
+          : 'Holistic Strategy & Long-Term Equilibrium',
+      heading:
+        r.personaId === 'nova'
+          ? '1. Factual Architecture & Evidence'
+          : r.personaId === 'orbit'
+          ? '2. High-Leverage Action Playbook'
+          : '3. Strategic Alignment & Wisdom',
+      content: getPersonaCleanText(r),
+    }));
+
+    return {
+      title: `Master Synthesis: ${shortTopic}`,
+      executiveSummary:
+        'This unified master document weaves NOVA’s rigorous factual breakdown, ORBIT’s practical execution hooks, and COSMOS’s strategic depth into one cohesive blueprint.',
+      sections,
+      unifiedConclusion:
+        msg.consensus?.verdict ||
+        'By combining rigorous evidence, rapid experimentation, and calm long-term perspective, you can execute on this inquiry with maximum clarity.',
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length < 2) {
+    return buildFallbackMerged();
+  }
+
+  const personaConfig =
+    config.personas.cosmos || config.personas.nova || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 950);
+  if (primary.error) {
+    return buildFallbackMerged();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 500)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Master Document Synthesizer.
+Weave the best parts of NOVA (Analytical/Factual), ORBIT (Actionable/Engaging), and COSMOS (Strategic/Philosophical) into one seamless, publication-ready Master Answer.
+Return ONLY valid JSON matching this exact structure:
+{
+  "title": "Compelling 4-8 word Master Document title",
+  "executiveSummary": "2-sentence executive summary uniting all 3 perspectives",
+  "sections": [
+    {
+      "personaId": "nova",
+      "roleContribution": "Analytical Foundation & Hard Evidence",
+      "heading": "1. Core Mechanics & Factual Breakdown",
+      "content": "45-70 word synthesized paragraph extracting NOVA's sharpest technical facts and metrics"
+    },
+    {
+      "personaId": "orbit",
+      "roleContribution": "Practical Execution & Mental Model",
+      "heading": "2. Real-World Analogy & Action Playbook",
+      "content": "45-70 word synthesized paragraph extracting ORBIT's best analogy and immediate execution steps"
+    },
+    {
+      "personaId": "cosmos",
+      "roleContribution": "Strategic Horizon & Second-Order Wisdom",
+      "heading": "3. Long-Term Equilibrium & Trade-offs",
+      "content": "45-70 word synthesized paragraph extracting COSMOS's deepest strategic and ethical insight"
+    }
+  ],
+  "unifiedConclusion": "One powerful closing takeaway sentence uniting all 3 minds"
+}
+Raw JSON only. No markdown code fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_merge_master',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Query: "${msg.query}"\n\nResponses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.35,
+      maxTokens: 950,
+      timeoutMs: 32000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        title?: string;
+        executiveSummary?: string;
+        sections?: Array<{
+          personaId?: string;
+          roleContribution?: string;
+          heading?: string;
+          content?: string;
+        }>;
+        unifiedConclusion?: string;
+      };
+
+      if (Array.isArray(parsed.sections) && parsed.sections.length >= 2) {
+        const metaMap: Record<MultiChatPersonaId, { name: string; icon: string; color: string }> = {
+          nova: {
+            name: config.personas.nova?.name || 'NOVA',
+            icon: config.personas.nova?.icon || '🔬',
+            color: config.personas.nova?.accentColor || '#38bdf8',
+          },
+          orbit: {
+            name: config.personas.orbit?.name || 'ORBIT',
+            icon: config.personas.orbit?.icon || '💡',
+            color: config.personas.orbit?.accentColor || '#f59e0b',
+          },
+          cosmos: {
+            name: config.personas.cosmos?.name || 'COSMOS',
+            icon: config.personas.cosmos?.icon || '🌌',
+            color: config.personas.cosmos?.accentColor || '#c084fc',
+          },
+        };
+
+        const builtSections: MultiChatMergedSection[] = parsed.sections
+          .map((sec, idx) => {
+            const rawPid = (sec.personaId || '').toLowerCase();
+            const pid: MultiChatPersonaId =
+              rawPid === 'nova' || rawPid === 'orbit' || rawPid === 'cosmos'
+                ? rawPid
+                : (['nova', 'orbit', 'cosmos'][idx % 3] as MultiChatPersonaId);
+            const meta = metaMap[pid];
+            return {
+              id: `m_sec_${msg.id}_${pid}_${idx}`,
+              personaId: pid,
+              personaName: meta.name,
+              icon: meta.icon,
+              accentColor: meta.color,
+              roleContribution: (sec.roleContribution || `${meta.name} Contribution`).trim(),
+              heading: (sec.heading || `${idx + 1}. ${meta.name} Synthesis`).trim(),
+              content: (sec.content || '').trim(),
+            };
+          })
+          .filter((s) => s.content.length > 0);
+
+        if (builtSections.length >= 2) {
+          return {
+            title: (parsed.title || `Master Synthesis: ${shortTopic}`).trim(),
+            executiveSummary: (
+              parsed.executiveSummary ||
+              'Unified synthesis combining NOVA, ORBIT, and COSMOS.'
+            ).trim(),
+            sections: builtSections,
+            unifiedConclusion: (
+              parsed.unifiedConclusion ||
+              msg.consensus?.verdict ||
+              'Balanced execution across technical rigor, rapid iteration, and strategic alignment.'
+            ).trim(),
+            generatedAt: Date.now(),
+          };
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackMerged();
+}
+
+/**
+ * NEW IDEA 2: "What-If" Constraint & Assumption Stress-Test Injector
+ * Re-evaluates the turn under a sharp new constraint and returns a Before vs. After Pivot Matrix.
+ */
+export async function executeMultiChatStressTest(
+  msg: MultiChatMessage,
+  constraint: string,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatStressTestResult> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const cleanConstraint = constraint.trim() || 'Budget cut by 80% & must ship in 48 hours';
+
+  const buildFallbackStressTest = (): MultiChatStressTestResult => {
+    const pivots: MultiChatStressTestPivot[] = completed.map((r) => {
+      const firstSentence =
+        getPersonaCleanText(r)
+          .split(/(?<=[.!?])\s+/)[0]
+          ?.slice(0, 120) || 'Standard unconstrained baseline approach.';
+
+      const adapted =
+        r.personaId === 'nova'
+          ? `Under "${cleanConstraint}", strip out non-essential complexity, enforce strict core invariants, and rely only on proven baseline primitives.`
+          : r.personaId === 'orbit'
+          ? `Under "${cleanConstraint}", pivot to a scrappy 80/20 MVP hack—ship the highest-impact core loop immediately and iterate live.`
+          : `Under "${cleanConstraint}", protect the core human purpose and ethical guardrails while gracefully letting go of secondary scope.`;
+
+      const tradeoff =
+        r.personaId === 'nova'
+          ? 'Trades scalability headroom for immediate deterministic reliability.'
+          : r.personaId === 'orbit'
+          ? 'Trades polish and edge-case coverage for raw speed and momentum.'
+          : 'Trades breadth of vision for focused, sustainable simplicity.';
+
+      return {
+        personaId: r.personaId,
+        personaName: r.name,
+        icon: r.icon,
+        accentColor: r.accentColor,
+        originalStance: firstSentence,
+        adaptedStrategy: adapted,
+        keyTradeoff: tradeoff,
+      };
+    });
+
+    return {
+      constraint: cleanConstraint,
+      impactSummary: `Injecting constraint "${cleanConstraint}" forces all 3 minds to compress scope down to highest-leverage essentials.`,
+      pivots,
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length === 0) {
+    return buildFallbackStressTest();
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.orbit || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 850);
+  if (primary.error) {
+    return buildFallbackStressTest();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 420)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Constraint Stress-Test Simulator.
+Given the user's original query, the 3 personas' original answers, and a NEW "WHAT-IF" CONSTRAINT ("${cleanConstraint}"), show how NOVA, ORBIT, and COSMOS pivot their strategies.
+Return ONLY valid JSON matching this exact structure:
+{
+  "impactSummary": "1-2 sentence overview of how this constraint reshapes the problem",
+  "pivots": [
+    {
+      "personaId": "nova",
+      "originalStance": "10-18 word summary of NOVA's original assumption",
+      "adaptedStrategy": "22-35 word concrete pivot by NOVA under the new constraint",
+      "keyTradeoff": "10-16 word technical trade-off accepted"
+    },
+    {
+      "personaId": "orbit",
+      "originalStance": "10-18 word summary of ORBIT's original approach",
+      "adaptedStrategy": "22-35 word scrappy/creative pivot by ORBIT under the new constraint",
+      "keyTradeoff": "10-16 word execution trade-off accepted"
+    },
+    {
+      "personaId": "cosmos",
+      "originalStance": "10-18 word summary of COSMOS's original philosophy",
+      "adaptedStrategy": "22-35 word strategic realignment by COSMOS under the new constraint",
+      "keyTradeoff": "10-16 word long-term trade-off accepted"
+    }
+  ]
+}
+Raw JSON only. No markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_stress_test',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Original Query: "${msg.query}"\nNew Constraint: "${cleanConstraint}"\n\nOriginal Responses:\n${transcript}`,
+        },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.45,
+      maxTokens: 850,
+      timeoutMs: 30000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        impactSummary?: string;
+        pivots?: Array<{
+          personaId?: string;
+          originalStance?: string;
+          adaptedStrategy?: string;
+          keyTradeoff?: string;
+        }>;
+      };
+
+      if (Array.isArray(parsed.pivots) && parsed.pivots.length >= 2) {
+        const metaMap: Record<MultiChatPersonaId, { name: string; icon: string; color: string }> = {
+          nova: {
+            name: config.personas.nova?.name || 'NOVA',
+            icon: config.personas.nova?.icon || '🔬',
+            color: config.personas.nova?.accentColor || '#38bdf8',
+          },
+          orbit: {
+            name: config.personas.orbit?.name || 'ORBIT',
+            icon: config.personas.orbit?.icon || '💡',
+            color: config.personas.orbit?.accentColor || '#f59e0b',
+          },
+          cosmos: {
+            name: config.personas.cosmos?.name || 'COSMOS',
+            icon: config.personas.cosmos?.icon || '🌌',
+            color: config.personas.cosmos?.accentColor || '#c084fc',
+          },
+        };
+
+        const builtPivots: MultiChatStressTestPivot[] = parsed.pivots
+          .map((p, idx) => {
+            const rawPid = (p.personaId || '').toLowerCase();
+            const pid: MultiChatPersonaId =
+              rawPid === 'nova' || rawPid === 'orbit' || rawPid === 'cosmos'
+                ? rawPid
+                : (['nova', 'orbit', 'cosmos'][idx % 3] as MultiChatPersonaId);
+            const meta = metaMap[pid];
+            return {
+              personaId: pid,
+              personaName: meta.name,
+              icon: meta.icon,
+              accentColor: meta.color,
+              originalStance: (p.originalStance || 'Original unconstrained stance').trim(),
+              adaptedStrategy: (p.adaptedStrategy || '').trim(),
+              keyTradeoff: (p.keyTradeoff || 'Scope vs. speed trade-off').trim(),
+            };
+          })
+          .filter((p) => p.adaptedStrategy.length > 0);
+
+        if (builtPivots.length >= 2) {
+          return {
+            constraint: cleanConstraint,
+            impactSummary: (
+              parsed.impactSummary ||
+              `All 3 personas recalibrated their approach around "${cleanConstraint}".`
+            ).trim(),
+            pivots: builtPivots,
+            generatedAt: Date.now(),
+          };
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackStressTest();
+}
+
+/**
+ * NEW IDEA 3: Live "Tri-Mind Alignment & Fact-Check Radar"
+ * Scores Consensus (0-100%), Confidence Level, Risk vs. Opportunity balance per persona, and #1 Clash Point.
+ */
+export async function generateMultiChatAlignmentRadar(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatAlignmentRadarData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const buildFallbackRadar = (): MultiChatAlignmentRadarData => {
+    const isDebate = msg.dialogueMode === 'debate';
+    const consensusScore = isDebate ? 64 : 86;
+    return {
+      consensusScore,
+      confidenceLevel: isDebate ? 'Moderate Consensus' : 'High Confidence',
+      clashPoint:
+        msg.consensus?.disagreements ||
+        'NOVA prioritizes strict verification and risk mitigation first, whereas ORBIT favors immediate iterative action before all edge cases are solved.',
+      sharedGround:
+        msg.consensus?.agreements?.[0] ||
+        'All three minds agree on the foundational mechanics and the importance of structured execution.',
+      personaMetrics: [
+        {
+          personaId: 'nova',
+          personaName: config.personas.nova?.name || 'NOVA',
+          icon: config.personas.nova?.icon || '🔬',
+          accentColor: config.personas.nova?.accentColor || '#38bdf8',
+          riskFocus: 84,
+          opportunityFocus: 58,
+          stanceTag: 'Evidence & Risk Guard',
+        },
+        {
+          personaId: 'orbit',
+          personaName: config.personas.orbit?.name || 'ORBIT',
+          icon: config.personas.orbit?.icon || '💡',
+          accentColor: config.personas.orbit?.accentColor || '#f59e0b',
+          riskFocus: 38,
+          opportunityFocus: 92,
+          stanceTag: 'High-Upside Catalyst',
+        },
+        {
+          personaId: 'cosmos',
+          personaName: config.personas.cosmos?.name || 'COSMOS',
+          icon: config.personas.cosmos?.icon || '🌌',
+          accentColor: config.personas.cosmos?.accentColor || '#c084fc',
+          riskFocus: 62,
+          opportunityFocus: 76,
+          stanceTag: 'Holistic Equilibrium',
+        },
+      ],
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length < 2) {
+    return buildFallbackRadar();
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 700);
+  if (primary.error) {
+    return buildFallbackRadar();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 420)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Tri-Mind Alignment & Fact-Check Telemetry Analyzer.
+Analyze the agreement, risk vs. opportunity posture, and #1 point of contention across NOVA, ORBIT, and COSMOS.
+Return ONLY valid JSON matching this exact structure:
+{
+  "consensusScore": 82,
+  "confidenceLevel": "High Confidence",
+  "clashPoint": "1-sentence description of the single biggest divergence or tension between the 3 responses",
+  "sharedGround": "1-sentence description of the strongest core agreement across all 3 responses",
+  "personaMetrics": [
+    { "personaId": "nova", "riskFocus": 85, "opportunityFocus": 55, "stanceTag": "3-word posture tag" },
+    { "personaId": "orbit", "riskFocus": 35, "opportunityFocus": 92, "stanceTag": "3-word posture tag" },
+    { "personaId": "cosmos", "riskFocus": 60, "opportunityFocus": 78, "stanceTag": "3-word posture tag" }
+  ]
+}
+Note: confidenceLevel must be one of "High Confidence", "Moderate Consensus", or "High Contention". Raw JSON only.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_alignment_radar',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Query: "${msg.query}"\n\nResponses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.25,
+      maxTokens: 650,
+      timeoutMs: 25000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        consensusScore?: number;
+        confidenceLevel?: string;
+        clashPoint?: string;
+        sharedGround?: string;
+        personaMetrics?: Array<{
+          personaId?: string;
+          riskFocus?: number;
+          opportunityFocus?: number;
+          stanceTag?: string;
+        }>;
+      };
+
+      const score = Math.max(15, Math.min(99, Number(parsed.consensusScore) || 82));
+      const conf: 'High Confidence' | 'Moderate Consensus' | 'High Contention' =
+        parsed.confidenceLevel === 'High Contention' || score < 55
+          ? 'High Contention'
+          : parsed.confidenceLevel === 'Moderate Consensus' || score < 75
+          ? 'Moderate Consensus'
+          : 'High Confidence';
+
+      const fallback = buildFallbackRadar();
+      const metrics = fallback.personaMetrics.map((fbItem) => {
+        const found = (parsed.personaMetrics || []).find(
+          (m) => (m.personaId || '').toLowerCase() === fbItem.personaId,
+        );
+        if (!found) return fbItem;
+        return {
+          ...fbItem,
+          riskFocus: Math.max(10, Math.min(98, Number(found.riskFocus) || fbItem.riskFocus)),
+          opportunityFocus: Math.max(
+            10,
+            Math.min(98, Number(found.opportunityFocus) || fbItem.opportunityFocus),
+          ),
+          stanceTag: (found.stanceTag || fbItem.stanceTag).trim(),
+        };
+      });
+
+      return {
+        consensusScore: score,
+        confidenceLevel: conf,
+        clashPoint: (parsed.clashPoint || fallback.clashPoint).trim(),
+        sharedGround: (parsed.sharedGround || fallback.sharedGround).trim(),
+        personaMetrics: metrics,
+        generatedAt: Date.now(),
+      };
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackRadar();
+}
+
+/**
+ * NEW IDEA 4: Interactive Study Deck & Quiz Generator
+ * Generates 3 Flip Flashcards (NOVA Fact, ORBIT Analogy, COSMOS Principle) + 3-Question Multiple-Choice Quiz.
+ */
+export async function generateMultiChatStudyDeck(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatStudyDeckData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const shortTopic =
+    msg.query.trim().length > 48 ? `${msg.query.trim().slice(0, 48)}…` : msg.query.trim();
+
+  const buildFallbackStudyDeck = (): MultiChatStudyDeckData => {
+    const flashcards: MultiChatFlashcardItem[] = completed.map((r, idx) => {
+      const clean = getPersonaCleanText(r).replace(/\s+/g, ' ').trim();
+      return {
+        id: `fc_${msg.id}_${r.personaId}_${idx}`,
+        personaId: r.personaId,
+        personaName: r.name,
+        icon: r.icon,
+        accentColor: r.accentColor,
+        categoryLabel:
+          r.personaId === 'nova'
+            ? 'Hard Fact & Architecture'
+            : r.personaId === 'orbit'
+            ? 'Real-World Analogy & Action'
+            : 'First-Principles Synthesis',
+        frontQuestion:
+          r.personaId === 'nova'
+            ? `What is the core analytical or technical mechanism behind "${shortTopic}"?`
+            : r.personaId === 'orbit'
+            ? `How can "${shortTopic}" be applied practically in the real world right away?`
+            : `What is the deeper strategic or long-term takeaway of "${shortTopic}"?`,
+        backAnswer: clean.slice(0, 240),
+      };
+    });
+
+    const quiz: MultiChatQuizQuestionItem[] = [
+      {
+        id: `qz_${msg.id}_1`,
+        personaId: 'nova',
+        personaName: config.personas.nova?.name || 'NOVA',
+        icon: config.personas.nova?.icon || '🔬',
+        accentColor: config.personas.nova?.accentColor || '#38bdf8',
+        question: `According to NOVA's analytical breakdown of "${shortTopic}", what should be prioritized first?`,
+        options: [
+          'Verifying core evidence, system boundaries, and measurable metrics',
+          'Skipping validation and guessing randomly without data',
+          'Ignoring all technical constraints and failure modes',
+          'Waiting indefinitely without defining clear criteria',
+        ],
+        correctIndex: 0,
+        explanation:
+          'NOVA emphasizes grounding every decision in empirical data, clear architectural boundaries, and verifiable metrics.',
+      },
+      {
+        id: `qz_${msg.id}_2`,
+        personaId: 'orbit',
+        personaName: config.personas.orbit?.name || 'ORBIT',
+        icon: config.personas.orbit?.icon || '💡',
+        accentColor: config.personas.orbit?.accentColor || '#f59e0b',
+        question: `What is ORBIT's recommended execution philosophy for tackling "${shortTopic}"?`,
+        options: [
+          'Over-complicating the theory before taking a single step',
+          'Translating complex ideas into vivid mental models and high-leverage action steps',
+          'Avoiding any practical experimentation',
+          'Focusing only on abstract terminology',
+        ],
+        correctIndex: 1,
+        explanation:
+          'ORBIT focuses on demystifying complexity through relatable analogies and immediate, high-momentum action.',
+      },
+      {
+        id: `qz_${msg.id}_3`,
+        personaId: 'cosmos',
+        personaName: config.personas.cosmos?.name || 'COSMOS',
+        icon: config.personas.cosmos?.icon || '🌌',
+        accentColor: config.personas.cosmos?.accentColor || '#c084fc',
+        question: `How does COSMOS frame the long-term success of "${shortTopic}"?`,
+        options: [
+          'Optimizing only for the next 5 minutes regardless of consequences',
+          'Balancing analytical precision and rapid action with sustainable, holistic wisdom',
+          'Discarding human values and second-order effects',
+          'Treating every problem in complete isolation',
+        ],
+        correctIndex: 1,
+        explanation:
+          'COSMOS harmonizes NOVA’s rigor and ORBIT’s momentum with long-term sustainability and second-order awareness.',
+      },
+    ];
+
+    return {
+      topicTitle: shortTopic || 'Tri-Mind Study Deck',
+      flashcards,
+      quiz,
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length === 0) {
+    return buildFallbackStudyDeck();
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.orbit || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 950);
+  if (primary.error) {
+    return buildFallbackStudyDeck();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 450)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Active Recall & Study Deck Architect.
+Based on the user query and the 3 persona responses (NOVA, ORBIT, COSMOS), create 3 flip flashcards and 3 multiple-choice quiz questions testing mastery of the topic.
+Return ONLY valid JSON matching this exact structure:
+{
+  "topicTitle": "Short 3-6 word study deck title",
+  "flashcards": [
+    {
+      "personaId": "nova",
+      "categoryLabel": "Hard Fact & Mechanism",
+      "frontQuestion": "Clear, specific flashcard question testing NOVA's analytical insight",
+      "backAnswer": "Concise 20-35 word answer on the back of the card"
+    },
+    {
+      "personaId": "orbit",
+      "categoryLabel": "Mental Model & Execution",
+      "frontQuestion": "Clear flashcard question testing ORBIT's analogy or practical playbook",
+      "backAnswer": "Concise 20-35 word actionable answer"
+    },
+    {
+      "personaId": "cosmos",
+      "categoryLabel": "Strategic & Second-Order Principle",
+      "frontQuestion": "Clear flashcard question testing COSMOS's holistic perspective",
+      "backAnswer": "Concise 20-35 word strategic answer"
+    }
+  ],
+  "quiz": [
+    {
+      "personaId": "nova",
+      "question": "Specific multiple-choice question from NOVA's technical/factual angle",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 0,
+      "explanation": "1-sentence explanation of why the correct option is right"
+    },
+    {
+      "personaId": "orbit",
+      "question": "Specific multiple-choice question from ORBIT's practical/application angle",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 1,
+      "explanation": "1-sentence explanation of why the correct option is right"
+    },
+    {
+      "personaId": "cosmos",
+      "question": "Specific multiple-choice question from COSMOS's strategic/holistic angle",
+      "options": ["Option A", "Option B", "Option C", "Option D"],
+      "correctIndex": 2,
+      "explanation": "1-sentence explanation of why the correct option is right"
+    }
+  ]
+}
+Raw JSON only. No markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_study_deck',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Topic: "${msg.query}"\n\nResponses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.4,
+      maxTokens: 950,
+      timeoutMs: 32000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        topicTitle?: string;
+        flashcards?: Array<{
+          personaId?: string;
+          categoryLabel?: string;
+          frontQuestion?: string;
+          backAnswer?: string;
+        }>;
+        quiz?: Array<{
+          personaId?: string;
+          question?: string;
+          options?: string[];
+          correctIndex?: number;
+          explanation?: string;
+        }>;
+      };
+
+      const metaMap: Record<MultiChatPersonaId, { name: string; icon: string; color: string }> = {
+        nova: {
+          name: config.personas.nova?.name || 'NOVA',
+          icon: config.personas.nova?.icon || '🔬',
+          color: config.personas.nova?.accentColor || '#38bdf8',
+        },
+        orbit: {
+          name: config.personas.orbit?.name || 'ORBIT',
+          icon: config.personas.orbit?.icon || '💡',
+          color: config.personas.orbit?.accentColor || '#f59e0b',
+        },
+        cosmos: {
+          name: config.personas.cosmos?.name || 'COSMOS',
+          icon: config.personas.cosmos?.icon || '🌌',
+          color: config.personas.cosmos?.accentColor || '#c084fc',
+        },
+      };
+
+      const fallback = buildFallbackStudyDeck();
+
+      const builtCards: MultiChatFlashcardItem[] =
+        Array.isArray(parsed.flashcards) && parsed.flashcards.length >= 2
+          ? parsed.flashcards.map((fc, idx) => {
+              const rawPid = (fc.personaId || '').toLowerCase();
+              const pid: MultiChatPersonaId =
+                rawPid === 'nova' || rawPid === 'orbit' || rawPid === 'cosmos'
+                  ? rawPid
+                  : (['nova', 'orbit', 'cosmos'][idx % 3] as MultiChatPersonaId);
+              const meta = metaMap[pid];
+              return {
+                id: `fc_${msg.id}_${pid}_${idx}`,
+                personaId: pid,
+                personaName: meta.name,
+                icon: meta.icon,
+                accentColor: meta.color,
+                categoryLabel: (fc.categoryLabel || `${meta.name} Card`).trim(),
+                frontQuestion: (fc.frontQuestion || fallback.flashcards[0].frontQuestion).trim(),
+                backAnswer: (fc.backAnswer || fallback.flashcards[0].backAnswer).trim(),
+              };
+            })
+          : fallback.flashcards;
+
+      const builtQuiz: MultiChatQuizQuestionItem[] =
+        Array.isArray(parsed.quiz) && parsed.quiz.length >= 2
+          ? parsed.quiz.map((q, idx) => {
+              const rawPid = (q.personaId || '').toLowerCase();
+              const pid: MultiChatPersonaId =
+                rawPid === 'nova' || rawPid === 'orbit' || rawPid === 'cosmos'
+                  ? rawPid
+                  : (['nova', 'orbit', 'cosmos'][idx % 3] as MultiChatPersonaId);
+              const meta = metaMap[pid];
+              const opts =
+                Array.isArray(q.options) && q.options.length >= 2
+                  ? q.options.map((o) => String(o).trim())
+                  : fallback.quiz[idx % fallback.quiz.length].options;
+              const cIdx = Math.max(0, Math.min(opts.length - 1, Number(q.correctIndex) || 0));
+              return {
+                id: `qz_${msg.id}_${pid}_${idx}`,
+                personaId: pid,
+                personaName: meta.name,
+                icon: meta.icon,
+                accentColor: meta.color,
+                question: (q.question || fallback.quiz[idx % fallback.quiz.length].question).trim(),
+                options: opts,
+                correctIndex: cIdx,
+                explanation: (
+                  q.explanation || fallback.quiz[idx % fallback.quiz.length].explanation
+                ).trim(),
+              };
+            })
+          : fallback.quiz;
+
+      return {
+        topicTitle: (parsed.topicTitle || shortTopic || 'Tri-Mind Study Deck').trim(),
+        flashcards: builtCards,
+        quiz: builtQuiz,
+        generatedAt: Date.now(),
+      };
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackStudyDeck();
+}
+
+/**
+ * NEW IDEA 5: Side-by-Side Weighted Decision Matrix Table
+ * Evaluates strategic options/approaches for the query across NOVA (Technical/Data),
+ * ORBIT (Speed/Execution), and COSMOS (Sustainability/Long-Term).
+ */
+export async function generateMultiChatDecisionMatrix(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatDecisionMatrixData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+
+  const shortTopic =
+    msg.query.trim().length > 48 ? `${msg.query.trim().slice(0, 48)}…` : msg.query.trim();
+
+  const buildFallbackMatrix = (): MultiChatDecisionMatrixData => {
+    return {
+      matrixTitle: `Decision Matrix: ${shortTopic}`,
+      options: [
+        {
+          id: `opt_${msg.id}_1`,
+          optionName: 'Path A: Rigorous Foundation-First',
+          novaScore: 9.4,
+          novaNote: 'Highest reliability, verifiable architecture, and lowest failure rate.',
+          orbitScore: 6.8,
+          orbitNote: 'Slower initial launch velocity due to upfront validation.',
+          cosmosScore: 8.6,
+          cosmosNote: 'Strong long-term stability with predictable maintenance.',
+          bestFor: 'Mission-critical production & high-reliability requirements',
+        },
+        {
+          id: `opt_${msg.id}_2`,
+          optionName: 'Path B: Rapid Iterative Prototype',
+          novaScore: 7.1,
+          novaNote: 'Accepts technical debt early; requires strict telemetry guardrails.',
+          orbitScore: 9.5,
+          orbitNote: 'Fastest time-to-value and immediate real-world user feedback loop.',
+          cosmosScore: 7.4,
+          cosmosNote: 'High momentum, provided refactoring is scheduled before scale.',
+          bestFor: 'Fast market validation, experiments & tight deadlines',
+        },
+        {
+          id: `opt_${msg.id}_3`,
+          optionName: 'Path C: Hybrid Phased Rollout',
+          novaScore: 8.7,
+          novaNote: 'Locks down core invariants while modularizing secondary features.',
+          orbitScore: 8.5,
+          orbitNote: 'Ships core value quickly without blocking on edge-case polish.',
+          cosmosScore: 9.3,
+          cosmosNote: 'Best sustainable balance between speed, quality, and team alignment.',
+          bestFor: 'Balanced execution combining speed with long-term resilience',
+        },
+      ],
+      recommendationSummary:
+        'Adjust the persona weight multipliers (1x–3x) below to dynamically rank the winning path based on whether Technical Precision (NOVA), Speed (ORBIT), or Longevity (COSMOS) matters most right now.',
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length === 0) {
+    return buildFallbackMatrix();
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 900);
+  if (primary.error) {
+    return buildFallbackMatrix();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 450)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Decision Matrix Architect.
+Based on the user's query and the 3 persona responses (NOVA, ORBIT, COSMOS), identify 3 distinct actionable options, strategies, or approaches discussed (or implied) and score each from 1.0 to 10.0 from each persona's lens:
+- novaScore: Technical rigor, data evidence & risk safety (1-10)
+- orbitScore: Speed, ease of execution & practical upside (1-10)
+- cosmosScore: Long-term sustainability, ethics & strategic fit (1-10)
+Return ONLY valid JSON matching this exact structure:
+{
+  "matrixTitle": "Short 4-7 word Decision Matrix title",
+  "options": [
+    {
+      "optionName": "Name of Option / Strategy 1 (3-6 words)",
+      "novaScore": 9.2,
+      "novaNote": "8-14 word note from NOVA's analytical lens",
+      "orbitScore": 7.4,
+      "orbitNote": "8-14 word note from ORBIT's execution lens",
+      "cosmosScore": 8.5,
+      "cosmosNote": "8-14 word note from COSMOS's strategic lens",
+      "bestFor": "6-12 word description of when to choose this option"
+    },
+    {
+      "optionName": "Name of Option / Strategy 2 (3-6 words)",
+      "novaScore": 7.5,
+      "novaNote": "8-14 word note from NOVA's analytical lens",
+      "orbitScore": 9.4,
+      "orbitNote": "8-14 word note from ORBIT's execution lens",
+      "cosmosScore": 7.8,
+      "cosmosNote": "8-14 word note from COSMOS's strategic lens",
+      "bestFor": "6-12 word description of when to choose this option"
+    },
+    {
+      "optionName": "Name of Option / Strategy 3 (3-6 words)",
+      "novaScore": 8.6,
+      "novaNote": "8-14 word note from NOVA's analytical lens",
+      "orbitScore": 8.5,
+      "orbitNote": "8-14 word note from ORBIT's execution lens",
+      "cosmosScore": 9.3,
+      "cosmosNote": "8-14 word note from COSMOS's strategic lens",
+      "bestFor": "6-12 word description of when to choose this option"
+    }
+  ],
+  "recommendationSummary": "1-2 sentence executive takeaway comparing the options"
+}
+Raw JSON only. No markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_decision_matrix',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Query: "${msg.query}"\n\nResponses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.35,
+      maxTokens: 900,
+      timeoutMs: 30000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        matrixTitle?: string;
+        options?: Array<{
+          optionName?: string;
+          novaScore?: number;
+          novaNote?: string;
+          orbitScore?: number;
+          orbitNote?: string;
+          cosmosScore?: number;
+          cosmosNote?: string;
+          bestFor?: string;
+        }>;
+        recommendationSummary?: string;
+      };
+
+      if (Array.isArray(parsed.options) && parsed.options.length >= 2) {
+        const clampScore = (val: unknown, def: number) =>
+          Math.round(Math.max(1, Math.min(10, Number(val) || def)) * 10) / 10;
+
+        const builtOptions: MultiChatDecisionOptionRow[] = parsed.options.map((o, idx) => ({
+          id: `opt_${msg.id}_${idx}`,
+          optionName: (o.optionName || `Strategy Option ${idx + 1}`).trim(),
+          novaScore: clampScore(o.novaScore, 8.2),
+          novaNote: (o.novaNote || 'Solid analytical foundation.').trim(),
+          orbitScore: clampScore(o.orbitScore, 8.0),
+          orbitNote: (o.orbitNote || 'Practical execution path.').trim(),
+          cosmosScore: clampScore(o.cosmosScore, 8.4),
+          cosmosNote: (o.cosmosNote || 'Balanced long-term fit.').trim(),
+          bestFor: (o.bestFor || 'General strategic execution').trim(),
+        }));
+
+        return {
+          matrixTitle: (parsed.matrixTitle || `Decision Matrix: ${shortTopic}`).trim(),
+          options: builtOptions,
+          recommendationSummary: (
+            parsed.recommendationSummary ||
+            'Use the interactive persona weight multipliers below to test which option wins under your priorities.'
+          ).trim(),
+          generatedAt: Date.now(),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackMatrix();
+}
+
+// ============================================================================
+// NEW BATCH OF 5 MULTI CHAT FEATURES
+// ============================================================================
+
+export interface MultiChatGuestSpecialistProfile {
+  id: MultiChatGuestSpecialistId;
+  name: string;
+  roleBadge: string;
+  icon: string;
+  accentColor: string;
+  tagline: string;
+  systemDirective: string;
+}
+
+export const MULTICHAT_GUEST_SPECIALISTS: MultiChatGuestSpecialistProfile[] = [
+  {
+    id: 'cfo',
+    name: 'LEDGER (CFO Hawk)',
+    roleBadge: 'CFO & Unit Economics',
+    icon: '💰',
+    accentColor: '#10b981',
+    tagline: 'Audits ROI, burn rate, margins, pricing power & unit economics',
+    systemDirective:
+      'You are LEDGER, the Guest CFO & Unit-Economics Hawk summoned into the NEXUS Multi-Chat panel. Audit the user query and the 3 panelists (NOVA, ORBIT, COSMOS) through the lens of capital efficiency, ROI, cost structure, pricing power, payback period, and financial downside.',
+  },
+  {
+    id: 'cyber',
+    name: 'CIPHER (SecOps Red-Team)',
+    roleBadge: 'Cybersecurity & Privacy',
+    icon: '🕵️',
+    accentColor: '#f43f5e',
+    tagline: 'Uncovers attack vectors, data leaks, auth flaws & failure modes',
+    systemDirective:
+      'You are CIPHER, the Guest Principal Cybersecurity & Privacy Red-Teamer summoned into the NEXUS Multi-Chat panel. Audit the user query and the 3 panelists (NOVA, ORBIT, COSMOS) for security vulnerabilities, threat models, privacy/compliance leaks, abuse cases, and operational resilience.',
+  },
+  {
+    id: 'ux',
+    name: 'PIXEL (Principal UX Critic)',
+    roleBadge: 'UI/UX & Human Factors',
+    icon: '🎨',
+    accentColor: '#ec4899',
+    tagline: 'Evaluates cognitive load, onboarding friction, delight & clarity',
+    systemDirective:
+      'You are PIXEL, the Guest Principal Product & UI/UX Design Critic summoned into the NEXUS Multi-Chat panel. Evaluate the user query and the 3 panelists (NOVA, ORBIT, COSMOS) through the lens of human psychology, onboarding friction, visual clarity, accessibility, and user delight.',
+  },
+  {
+    id: 'legal',
+    name: 'LEX (Legal & IP Counsel)',
+    roleBadge: 'Legal, Risk & Compliance',
+    icon: '⚖️',
+    accentColor: '#eab308',
+    tagline: 'Checks regulatory compliance, IP ownership, liability & governance',
+    systemDirective:
+      'You are LEX, the Guest General Counsel & Regulatory Strategist summoned into the NEXUS Multi-Chat panel. Evaluate the user query and the 3 panelists (NOVA, ORBIT, COSMOS) for contractual risk, IP/licensing boundaries, regulatory compliance, liability, and governance guardrails.',
+  },
+];
+
+export function getGuestSpecialistById(
+  id: MultiChatGuestSpecialistId,
+): MultiChatGuestSpecialistProfile {
+  return (
+    MULTICHAT_GUEST_SPECIALISTS.find((s) => s.id === id) || MULTICHAT_GUEST_SPECIALISTS[0]
+  );
+}
+
+/**
+ * 1. Summon 4th Guest Specialist On-Demand
+ */
+export async function executeGuestSpecialistCall(
+  msg: MultiChatMessage,
+  specialistId: MultiChatGuestSpecialistId,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatGuestSpecialistResponse> {
+  const spec = getGuestSpecialistById(specialistId);
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+  const shortTopic =
+    msg.query.trim().length > 55 ? `${msg.query.trim().slice(0, 55)}…` : msg.query.trim();
+
+  const buildFallbackGuest = (): MultiChatGuestSpecialistResponse => {
+    const fallbackMap: Record<
+      MultiChatGuestSpecialistId,
+      { verdict: string; body: string }
+    > = {
+      cfo: {
+        verdict: 'Prioritize high-margin phases first and cap upfront fixed commitments.',
+        body: `Looking at "${shortTopic}" alongside NOVA, ORBIT, and COSMOS: the biggest financial lever is keeping initial validation cost near-zero while instrumenting unit economics early. Gate Phase 2 expansion on measurable ROI and clear payback metrics rather than unvalidated scale.`,
+      },
+      cyber: {
+        verdict: 'Enforce zero-trust input validation, least-privilege access, and rate limiting.',
+        body: `Auditing "${shortTopic}" from a Red-Team lens: while ORBIT pushes speed and NOVA maps the architecture, ensure strict boundary validation, secret isolation, and audit logging are locked in on Day 1 so rapid iteration never exposes attack surface.`,
+      },
+      ux: {
+        verdict: 'Strip away cognitive friction and deliver the core "Aha!" moment in under 10 seconds.',
+        body: `Reviewing "${shortTopic}" through a human-centered UX lens: users won't care about NOVA's deep complexity unless the interface feels effortless. Combine progressive disclosure with crisp visual hierarchy so first-time users succeed immediately.`,
+      },
+      legal: {
+        verdict: 'Document data provenance, licensing terms, and clear liability boundaries upfront.',
+        body: `Evaluating "${shortTopic}" from a compliance & governance perspective: verify third-party licensing, user consent flows, and transparent terms of use early so scaling across jurisdictions remains friction-free.`,
+      },
+    };
+    const fb = fallbackMap[specialistId] || fallbackMap.cfo;
+    return {
+      id: `guest_${msg.id}_${specialistId}_${Date.now()}`,
+      specialistId,
+      name: spec.name,
+      roleBadge: spec.roleBadge,
+      icon: spec.icon,
+      accentColor: spec.accentColor,
+      keyVerdict: fb.verdict,
+      text: fb.body,
+      status: 'completed',
+      timestamp: Date.now(),
+    };
+  };
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 600);
+  if (primary.error) {
+    return buildFallbackGuest();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.toneBadge || 'Panelist'}):\n${getPersonaCleanText(r).slice(0, 380)}`)
+    .join('\n\n');
+
+  const attachmentNote =
+    msg.attachments && msg.attachments.length > 0
+      ? `\n\nAttached Files:\n${msg.attachments
+          .map((a) => `- ${a.name}: ${a.content.slice(0, 1200)}`)
+          .join('\n')}`
+      : '';
+
+  const systemPrompt = `${spec.systemDirective}
+Return ONLY valid JSON in this exact structure:
+{
+  "keyVerdict": "Sharp 1-sentence executive specialist verdict (10-18 words)",
+  "analysis": "65-95 word in-character specialist audit referencing NOVA, ORBIT, or COSMOS where relevant and giving concrete domain recommendations"
+}
+Raw JSON only. No markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: `multichat_guest_${specialistId}`,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `User Inquiry: "${msg.query}"${attachmentNote}\n\nTrio Panel Responses:\n${transcript}`,
+        },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.4,
+      maxTokens: 600,
+      timeoutMs: 30000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        keyVerdict?: string;
+        analysis?: string;
+      };
+      if (parsed.analysis && parsed.analysis.trim().length > 15) {
+        return {
+          id: `guest_${msg.id}_${specialistId}_${Date.now()}`,
+          specialistId,
+          name: spec.name,
+          roleBadge: spec.roleBadge,
+          icon: spec.icon,
+          accentColor: spec.accentColor,
+          keyVerdict: (parsed.keyVerdict || `${spec.roleBadge} Audit Complete`).trim(),
+          text: parsed.analysis.trim(),
+          status: 'completed',
+          timestamp: Date.now(),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackGuest();
+}
+
+/**
+ * 2. 180° Stance Reversal / Devil's Advocate Flip for any single Persona
+ */
+export async function executePersonaStanceFlip(
+  msg: MultiChatMessage,
+  resp: MultiChatPersonaResponse,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatStanceFlip> {
+  const originalText = getPersonaCleanText(resp);
+  const flippedRoleLabel =
+    resp.personaId === 'nova'
+      ? '180° Flip: Contrarian Bull / Bold Speculator'
+      : resp.personaId === 'orbit'
+      ? '180° Flip: Ruthless Skeptic & Risk Auditor'
+      : '180° Flip: Pragmatic Short-Term Tactician';
+
+  const fallbackFlip = (): MultiChatStanceFlip => {
+    const fallbackText =
+      resp.personaId === 'nova'
+        ? `Playing 180° Devil's Advocate against my own analytical caution: if we over-index on perfect data before acting on "${msg.query.slice(0, 50)}", we risk analysis paralysis and missing the asymmetric first-mover window.`
+        : resp.personaId === 'orbit'
+        ? `Flipping 180° against my own high-energy optimism: moving fast without strict guardrails on "${msg.query.slice(0, 50)}" could create hidden fragility, technical debt, and user churn once initial hype fades.`
+        : `Arguing the 180° opposite of my long-term philosophical view: sometimes overarching harmony is a luxury—immediate, decisive execution today matters more than 10-year theoretical balance.`;
+    return {
+      personaId: resp.personaId,
+      personaName: resp.name,
+      icon: resp.icon,
+      accentColor: resp.accentColor,
+      flippedRoleLabel,
+      text: fallbackText,
+      flippedText: fallbackText,
+      timestamp: Date.now(),
+    };
+  };
+
+  const personaConfig =
+    config.personas[resp.personaId] ||
+    Object.values(config.personas).find((p) => p.id === resp.personaId) ||
+    Object.values(config.personas)[0];
+
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 450);
+  if (primary.error) {
+    return fallbackFlip();
+  }
+
+  const systemPrompt = `You are ${resp.name} executing a "180° Stance Reversal (Play Devil's Advocate)" on your own previous answer.
+Your task:
+- Argue the EXACT OPPOSITE of your initial stance with sharp intellectual honesty.
+- Expose what your original answer might have missed, over-optimized for, or gotten wrong.
+- Keep it punchy, insightful, and between 45 and 75 words.
+- Output ONLY the 180° counter-argument text (no preambles or meta-commentary).`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: `multichat_flip_${resp.personaId}`,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Original User Query: "${msg.query}"\n\nYour Original Answer:\n"${originalText}"\n\nNow deliver your 180° Devil's Advocate reversal:`,
+        },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.55,
+      maxTokens: 450,
+      timeoutMs: 25000,
+    });
+
+    const clean = extractCleanPersonaResponse(
+      { content: res.content, reasoning: res.reasoning, text: res.text },
+      resp.name,
+      msg.query,
+    );
+    if (clean && clean.trim().length > 15) {
+      const finalText = clean.trim();
+      return {
+        personaId: resp.personaId,
+        personaName: resp.name,
+        icon: resp.icon,
+        accentColor: resp.accentColor,
+        flippedRoleLabel,
+        text: finalText,
+        flippedText: finalText,
+        timestamp: Date.now(),
+      };
+    }
+  } catch {
+    // fallback
+  }
+
+  return fallbackFlip();
+}
+
+/**
+ * 4. Smart Prompt Splitter & Pre-Flight Tuner (Instant + AI-Refined)
+ */
+export function buildInstantPromptSplit(rawPrompt: string): MultiChatPromptSplitPlan {
+  const clean = rawPrompt
+    .replace(/(?:^|\s)@(?:nova|orbit|cosmos)\b/gi, '')
+    .trim();
+  const topic = clean || 'this strategic initiative';
+
+  return {
+    originalPrompt: topic,
+    novaMission: `Analyze the hard facts, quantitative benchmarks, failure modes, and technical constraints for: ${topic}`,
+    orbitMission: `Brainstorm unconventional quick wins, real-world analogies, and a high-momentum action playbook for: ${topic}`,
+    cosmosMission: `Synthesize the long-term second-order consequences, ethical/human balance, and enduring strategy for: ${topic}`,
+  };
+}
+
+export async function generateSmartPromptSplit(
+  rawPrompt: string,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatPromptSplitPlan> {
+  const fallback = buildInstantPromptSplit(rawPrompt);
+  if (!rawPrompt.trim()) return fallback;
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 500);
+  if (primary.error) return fallback;
+
+  const systemPrompt = `You are the NEXUS Pre-Flight Prompt Splitter.
+Given a user's rough prompt or idea, split it into 3 sharp, specialized sub-missions tailored for our 3 AI personas:
+- novaMission: Precision analytical, data, architecture, or verification mission for NOVA (12-22 words)
+- orbitMission: Creative, rapid execution, UX/growth, or practical analogy mission for ORBIT (12-22 words)
+- cosmosMission: Holistic, second-order strategy, risk/ethics, or long-term synthesis mission for COSMOS (12-22 words)
+Return ONLY valid JSON:
+{
+  "novaMission": "...",
+  "orbitMission": "...",
+  "cosmosMission": "..."
+}
+Raw JSON only.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_prompt_splitter',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `User Prompt: "${rawPrompt.trim()}"` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.4,
+      maxTokens: 500,
+      timeoutMs: 20000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        novaMission?: string;
+        orbitMission?: string;
+        cosmosMission?: string;
+      };
+      if (parsed.novaMission && parsed.orbitMission && parsed.cosmosMission) {
+        return {
+          originalPrompt: rawPrompt.trim(),
+          novaMission: parsed.novaMission.trim(),
+          orbitMission: parsed.orbitMission.trim(),
+          cosmosMission: parsed.cosmosMission.trim(),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return fallback;
+}
+
+export function formatSplitPlanIntoPrompt(plan: MultiChatPromptSplitPlan): string {
+  return `${plan.originalPrompt}\n\n[TRI-MIND SPECIALIZED MISSIONS]:\n• @NOVA: ${plan.novaMission}\n• @ORBIT: ${plan.orbitMission}\n• @COSMOS: ${plan.cosmosMission}`;
+}
+
+/**
+ * 5. Auto-Chart & Visual Telemetry Builder
+ */
+export async function generateMultiChatChartTelemetry(
+  msg: MultiChatMessage,
+  config: MultiChatSystemConfig,
+): Promise<MultiChatChartTelemetryData> {
+  const completed = msg.responses.filter(
+    (r) => r.status === 'completed' && getPersonaCleanText(r).trim().length > 0,
+  );
+  const shortTopic =
+    msg.query.trim().length > 44 ? `${msg.query.trim().slice(0, 44)}…` : msg.query.trim();
+
+  const buildFallbackChart = (): MultiChatChartTelemetryData => {
+    const metrics: MultiChatChartMetricRow[] = [
+      {
+        id: `m_${msg.id}_1`,
+        dimension: 'Factual & Technical Rigor',
+        novaValue: 94,
+        orbitValue: 74,
+        cosmosValue: 85,
+        consensusValue: 84,
+        unit: '/100',
+        insight: 'NOVA leads on verifiable specifications and edge-case precision.',
+      },
+      {
+        id: `m_${msg.id}_2`,
+        dimension: 'Speed & Actionability',
+        novaValue: 72,
+        orbitValue: 95,
+        cosmosValue: 78,
+        consensusValue: 82,
+        unit: '/100',
+        insight: 'ORBIT prioritizes immediate momentum and low-friction execution.',
+      },
+      {
+        id: `m_${msg.id}_3`,
+        dimension: 'Long-Term Resilience',
+        novaValue: 86,
+        orbitValue: 71,
+        cosmosValue: 96,
+        consensusValue: 84,
+        unit: '/100',
+        insight: 'COSMOS anchors second-order sustainability and strategic balance.',
+      },
+      {
+        id: `m_${msg.id}_4`,
+        dimension: 'Risk Mitigation & Safety',
+        novaValue: 92,
+        orbitValue: 68,
+        cosmosValue: 90,
+        consensusValue: 83,
+        unit: '/100',
+        insight: 'Combining NOVA and COSMOS guardrails offsets rapid-iteration risk.',
+      },
+    ];
+    return {
+      chartTitle: `Tri-Mind Telemetry: ${shortTopic}`,
+      subtitle: 'Comparative evaluation across NOVA, ORBIT & COSMOS (0–100 Index)',
+      metrics,
+      keyTakeaway:
+        'High synergy between NOVA’s technical guardrails (94/100) and ORBIT’s execution velocity (95/100), stabilized by COSMOS’s long-term resilience (96/100).',
+      generatedAt: Date.now(),
+    };
+  };
+
+  if (completed.length === 0) {
+    return buildFallbackChart();
+  }
+
+  const personaConfig =
+    config.personas.nova || config.personas.cosmos || Object.values(config.personas)[0];
+  const primary = resolvePersonaProviderConfig(personaConfig, false, 800);
+  if (primary.error) {
+    return buildFallbackChart();
+  }
+
+  const transcript = completed
+    .map((r) => `${r.name} (${r.personaId}):\n${getPersonaCleanText(r).slice(0, 420)}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are the NEXUS Visual Telemetry & Chart Architect.
+Extract 4 quantitative comparison dimensions (scored 0 to 100) from the user's query and the 3 persona responses (NOVA, ORBIT, COSMOS) so they can be plotted on an interactive SVG Bar & Radar Chart.
+Return ONLY valid JSON matching this exact structure:
+{
+  "chartTitle": "Short 4-7 word chart title",
+  "subtitle": "Short 6-12 word chart subtitle",
+  "metrics": [
+    {
+      "dimension": "Dimension 1 Name (2-4 words, e.g. Technical Feasibility)",
+      "novaValue": 92,
+      "orbitValue": 76,
+      "cosmosValue": 85,
+      "insight": "8-14 word insight comparing the scores on this dimension"
+    },
+    {
+      "dimension": "Dimension 2 Name (2-4 words, e.g. Execution Speed)",
+      "novaValue": 74,
+      "orbitValue": 94,
+      "cosmosValue": 80,
+      "insight": "8-14 word insight comparing the scores on this dimension"
+    },
+    {
+      "dimension": "Dimension 3 Name (2-4 words, e.g. Long-Term Moat)",
+      "novaValue": 86,
+      "orbitValue": 72,
+      "cosmosValue": 95,
+      "insight": "8-14 word insight comparing the scores on this dimension"
+    },
+    {
+      "dimension": "Dimension 4 Name (2-4 words, e.g. Risk Resilience)",
+      "novaValue": 90,
+      "orbitValue": 70,
+      "cosmosValue": 88,
+      "insight": "8-14 word insight comparing the scores on this dimension"
+    }
+  ],
+  "keyTakeaway": "1-2 sentence executive takeaway summarizing the chart telemetry"
+}
+Raw JSON only. No markdown fences.`;
+
+  try {
+    const res = await api.jarvisAgentCall({
+      agentId: 'multichat_chart_telemetry',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Query: "${msg.query}"\n\nResponses:\n${transcript}` },
+      ],
+      providerConfig: primary.provider,
+      temperature: 0.3,
+      maxTokens: 800,
+      timeoutMs: 30000,
+    });
+
+    const rawText = (res.content || res.text || '').trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        chartTitle?: string;
+        subtitle?: string;
+        metrics?: Array<{
+          dimension?: string;
+          novaValue?: number;
+          orbitValue?: number;
+          cosmosValue?: number;
+          insight?: string;
+        }>;
+        keyTakeaway?: string;
+      };
+      if (Array.isArray(parsed.metrics) && parsed.metrics.length >= 3) {
+        const clamp = (v: unknown, def: number) =>
+          Math.round(Math.max(10, Math.min(100, Number(v) || def)));
+        const builtMetrics: MultiChatChartMetricRow[] = parsed.metrics.slice(0, 5).map((m, idx) => {
+          const nv = clamp(m.novaValue, 85);
+          const ov = clamp(m.orbitValue, 82);
+          const cv = clamp(m.cosmosValue, 86);
+          const avg = Math.round((nv + ov + cv) / 3);
+          return {
+            id: `m_${msg.id}_${idx}`,
+            dimension: (m.dimension || `Dimension ${idx + 1}`).trim(),
+            novaValue: nv,
+            orbitValue: ov,
+            cosmosValue: cv,
+            consensusValue: avg,
+            unit: '/100',
+            insight: (m.insight || 'Balanced multi-persona evaluation across this axis.').trim(),
+          };
+        });
+        return {
+          chartTitle: (parsed.chartTitle || `Tri-Mind Telemetry: ${shortTopic}`).trim(),
+          subtitle: (
+            parsed.subtitle || 'Comparative evaluation across NOVA, ORBIT & COSMOS (0–100 Index)'
+          ).trim(),
+          metrics: builtMetrics,
+          keyTakeaway: (
+            parsed.keyTakeaway || buildFallbackChart().keyTakeaway
+          ).trim(),
+          generatedAt: Date.now(),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  return buildFallbackChart();
+}
+
+
+
+

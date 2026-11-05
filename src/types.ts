@@ -531,6 +531,7 @@ export interface MultiChatPersonaResponse {
   providerName?: string;
   durationMs?: number;
   branches?: MultiChatBranchTurn[];
+  stanceFlip?: MultiChatStanceFlip;
 }
 
 export type MultiChatCategoryId =
@@ -553,6 +554,234 @@ export interface MultiChatCategoryConfig {
   suggestedQuestions: string[];
 }
 
+export type MultiChatScenarioId =
+  | 'default'
+  | 'standard'
+  | 'startup_pitch'
+  | 'code_review'
+  | 'war_room'
+  | 'socratic_trial'
+  | 'courtroom';
+
+export interface MultiChatRebuttalItem {
+  personaId: MultiChatPersonaId;
+  name: string;
+  icon: string;
+  accentColor: string;
+  toneBadge?: string;
+  targetNames?: string[];
+  targetSummary?: string;
+  text: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  error?: string;
+  timestamp: number;
+}
+
+export interface MultiChatPodcastDialogueLine {
+  id: string;
+  speakerId: MultiChatPersonaId;
+  speakerName: string;
+  icon: string;
+  accentColor: string;
+  roleLabel: string;
+  cue?: string;
+  text: string;
+}
+
+export interface MultiChatFollowUpChip {
+  id: string;
+  label: string;
+  prompt: string;
+  targetPersonaId?: MultiChatPersonaId | 'all';
+  badge: string;
+  icon?: string;
+  accentColor: string;
+}
+
+export interface MultiChatVisualMapNode {
+  id: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  branchLabel: string;
+  title: string;
+  summary: string;
+  followUpPrompt: string;
+}
+
+export interface MultiChatVisualMapData {
+  centerTitle: string;
+  centerSubtitle: string;
+  synthesisTakeaway: string;
+  nodes: MultiChatVisualMapNode[];
+  generatedAt: number;
+}
+
+export interface MultiChatMergedSection {
+  id: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  roleContribution: string;
+  heading: string;
+  content: string;
+}
+
+export interface MultiChatMergedAnswerData {
+  title: string;
+  executiveSummary: string;
+  sections: MultiChatMergedSection[];
+  unifiedConclusion: string;
+  generatedAt: number;
+}
+
+export interface MultiChatStressTestPivot {
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  originalStance: string;
+  adaptedStrategy: string;
+  keyTradeoff: string;
+}
+
+export interface MultiChatStressTestResult {
+  constraint: string;
+  impactSummary: string;
+  pivots: MultiChatStressTestPivot[];
+  generatedAt: number;
+}
+
+export interface MultiChatAlignmentRadarData {
+  consensusScore: number; // 0-100
+  confidenceLevel: 'High Confidence' | 'Moderate Consensus' | 'High Contention';
+  clashPoint: string;
+  sharedGround: string;
+  personaMetrics: Array<{
+    personaId: MultiChatPersonaId;
+    personaName: string;
+    icon: string;
+    accentColor: string;
+    riskFocus: number; // 0-100
+    opportunityFocus: number; // 0-100
+    stanceTag: string;
+  }>;
+  generatedAt: number;
+}
+
+export interface MultiChatFlashcardItem {
+  id: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  categoryLabel: string;
+  frontQuestion: string;
+  backAnswer: string;
+}
+
+export interface MultiChatQuizQuestionItem {
+  id: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface MultiChatStudyDeckData {
+  topicTitle: string;
+  flashcards: MultiChatFlashcardItem[];
+  quiz: MultiChatQuizQuestionItem[];
+  generatedAt: number;
+}
+
+export interface MultiChatDecisionOptionRow {
+  id: string;
+  optionName: string;
+  novaScore: number; // 1-10 Technical / Analytical
+  novaNote: string;
+  orbitScore: number; // 1-10 Speed / Execution
+  orbitNote: string;
+  cosmosScore: number; // 1-10 Sustainability / Strategic
+  cosmosNote: string;
+  bestFor: string;
+}
+
+export interface MultiChatDecisionMatrixData {
+  matrixTitle: string;
+  options: MultiChatDecisionOptionRow[];
+  recommendationSummary: string;
+  generatedAt: number;
+}
+
+export interface MultiChatStanceFlip {
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  flippedRoleLabel: string;
+  text: string;
+  flippedText?: string;
+  timestamp: number;
+}
+
+export type MultiChatGuestSpecialistId = 'cfo' | 'cyber' | 'ux' | 'legal';
+
+export interface MultiChatGuestSpecialistResponse {
+  id: string;
+  specialistId: MultiChatGuestSpecialistId;
+  name: string;
+  roleBadge: string;
+  icon: string;
+  accentColor: string;
+  text: string;
+  keyVerdict: string;
+  status: 'running' | 'completed' | 'failed';
+  error?: string;
+  timestamp: number;
+}
+
+export interface MultiChatAttachedFile {
+  id: string;
+  name: string;
+  size?: number;
+  sizeBytes?: number;
+  extension: string;
+  content: string;
+}
+
+export interface MultiChatPromptSplitPlan {
+  originalPrompt: string;
+  novaMission: string;
+  orbitMission: string;
+  cosmosMission: string;
+}
+
+export interface MultiChatChartMetricRow {
+  id: string;
+  dimension: string;
+  novaValue: number; // 0-100
+  orbitValue: number; // 0-100
+  cosmosValue: number; // 0-100
+  consensusValue: number; // 0-100
+  unit: string;
+  insight: string;
+}
+
+export interface MultiChatChartTelemetryData {
+  chartTitle: string;
+  subtitle: string;
+  metrics: MultiChatChartMetricRow[];
+  keyTakeaway: string;
+  generatedAt: number;
+}
+
 export interface MultiChatMessage {
   id: string;
   query: string;
@@ -563,8 +792,22 @@ export interface MultiChatMessage {
   webSources?: MultiChatWebSource[];
   webLensEnabled?: boolean;
   dialogueMode?: MultiChatDialogueMode;
+  scenarioId?: MultiChatScenarioId;
   targetPersonaIds?: MultiChatPersonaId[];
   consensus?: MultiChatConsensusData;
+  rebuttals?: MultiChatRebuttalItem[];
+  votedBestPersonaId?: MultiChatPersonaId;
+  podcastScript?: MultiChatPodcastDialogueLine[];
+  followUpChips?: MultiChatFollowUpChip[];
+  visualMap?: MultiChatVisualMapData;
+  mergedAnswer?: MultiChatMergedAnswerData;
+  stressTest?: MultiChatStressTestResult;
+  alignmentRadar?: MultiChatAlignmentRadarData;
+  studyDeck?: MultiChatStudyDeckData;
+  decisionMatrix?: MultiChatDecisionMatrixData;
+  guestResponses?: MultiChatGuestSpecialistResponse[];
+  attachments?: MultiChatAttachedFile[];
+  chartTelemetry?: MultiChatChartTelemetryData;
   pinned?: boolean;
   category?: MultiChatCategoryId | string;
 }
