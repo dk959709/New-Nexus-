@@ -2073,6 +2073,215 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
   const [modesSectionOpen, setModesSectionOpen] = useState(false);
 
+  // Smart Follow-Up Suggestions (One-Tap Deep Dive Chips)
+  const FOLLOW_UPS_STORAGE_KEY = 'nexus_assistant_followups_enabled';
+  const [followUpsEnabled, setFollowUpsEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('nexus_assistant_followups_enabled');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [customFollowUpsMap, setCustomFollowUpsMap] = useState<
+    Record<number, Array<{ category: string; emoji: string; label: string; prompt: string }>>
+  >({});
+  const [loadingFollowUpsIndex, setLoadingFollowUpsIndex] = useState<number | null>(null);
+  const [dismissedFollowUpsMap, setDismissedFollowUpsMap] = useState<Record<number, boolean>>({});
+
+  const toggleFollowUpsEnabled = () => {
+    setFollowUpsEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(FOLLOW_UPS_STORAGE_KEY, String(next));
+      } catch {
+        // Ignore storage error
+      }
+      triggerSettingsToast(
+        next
+          ? 'Smart Follow-Up Suggestions enabled'
+          : 'Smart Follow-Up Suggestions disabled',
+      );
+      return next;
+    });
+  };
+
+  const buildSmartFollowUpSuggestions = useCallback(
+    (
+      userQuery: string,
+      assistantContent: string,
+      tool?: Message['tool'],
+    ): Array<{ category: string; emoji: string; label: string; prompt: string }> => {
+      const cleanQuery = (userQuery || '')
+        .replace(/^\/[a-z]+\s+/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Extract headings or bold concepts from the assistant's answer
+      const headings = Array.from(
+        (assistantContent || '').matchAll(/^#{1,3}\s+([^\n]+)/gm),
+      )
+        .map((m) =>
+          m[1]
+            .replace(/[*_`~]/g, '')
+            .replace(/^[\d.)\s-]+/, '')
+            .trim(),
+        )
+        .filter((h) => h.length > 3 && h.length < 55 && !/^(overview|summary|conclusion|sources|references)/i.test(h));
+
+      const boldTerms = Array.from(
+        (assistantContent || '').matchAll(/\*\*([^*]{4,42})\*\*/g),
+      )
+        .map((m) => m[1].replace(/[:.,;!?]+$/, '').trim())
+        .filter(
+          (t) =>
+            t.length > 3 &&
+            !/^(note|tip|warning|source|claim|step|phase|verdict|summary|key|overview)/i.test(t),
+        );
+
+      const shortTopic =
+        cleanQuery.length > 48
+          ? cleanQuery.slice(0, 46).replace(/\s+\S*$/, '') + '...'
+          : cleanQuery || headings[0] || boldTerms[0] || 'this topic';
+
+      const focusConcept1 = headings[0] || boldTerms[0] || shortTopic;
+      const focusConcept2 = headings[1] || boldTerms[1] || focusConcept1;
+
+      if (tool === 'coder') {
+        return [
+          {
+            category: 'Go Deeper',
+            emoji: '⚡',
+            label: `Add error handling & edge cases to this code`,
+            prompt: `How can we make this implementation for "${shortTopic}" production-ready with comprehensive error handling, edge-case validation, and unit tests?`,
+          },
+          {
+            category: 'Optimize',
+            emoji: '🔬',
+            label: `Optimize performance & time/space complexity`,
+            prompt: `Analyze the time and space complexity of this solution and show how to optimize it for high-scale performance.`,
+          },
+          {
+            category: 'Next Step',
+            emoji: '🧭',
+            label: `Show a complete real-world integration example`,
+            prompt: `Show a complete, end-to-end real-world usage example integrating this code into a full application.`,
+          },
+        ];
+      }
+
+      if (tool === 'image' || tool === 'wikimedia') {
+        return [
+          {
+            category: 'Go Deeper',
+            emoji: '⚡',
+            label: `Explain the visual details & background of ${shortTopic}`,
+            prompt: `Explain the key visual characteristics, historical context, and fascinating facts about ${shortTopic}.`,
+          },
+          {
+            category: 'Compare',
+            emoji: '🔬',
+            label: `Compare key variations & styles of ${shortTopic}`,
+            prompt: `Compare the most notable variations, styles, or related examples of ${shortTopic} in a clear breakdown.`,
+          },
+          {
+            category: 'Next Step',
+            emoji: '🧭',
+            label: `Generate creative AI image prompts for ${shortTopic}`,
+            prompt: `Give me 3 highly detailed cinematic prompt ideas to visualize ${shortTopic} from different artistic angles.`,
+          },
+        ];
+      }
+
+      return [
+        {
+          category: 'Go Deeper',
+          emoji: '⚡',
+          label:
+            focusConcept1 && focusConcept1 !== shortTopic
+              ? `Deep dive into ${focusConcept1}`
+              : `Explain the underlying mechanism of ${shortTopic}`,
+          prompt:
+            focusConcept1 && focusConcept1 !== shortTopic
+              ? `Go deeper into "${focusConcept1}" regarding ${shortTopic}—explain the technical details, internal mechanics, and key nuances.`
+              : `Go deeper into "${shortTopic}" and explain the underlying mechanics, technical architecture, and most important nuances.`,
+        },
+        {
+          category: 'Practical',
+          emoji: '🔬',
+          label: `Real-world examples & pros vs. cons comparison`,
+          prompt: `Provide concrete real-world examples and a structured pros vs. cons comparison table for "${shortTopic}"${
+            focusConcept2 && focusConcept2 !== shortTopic ? ` (including ${focusConcept2})` : ''
+          }.`,
+        },
+        {
+          category: 'Next Step',
+          emoji: '🧭',
+          label: `Future trends, common pitfalls & action checklist`,
+          prompt: `What are the biggest common pitfalls, emerging future trends, and a practical step-by-step action checklist for "${shortTopic}"?`,
+        },
+      ];
+    },
+    [],
+  );
+
+  const handleRefreshFollowUpsWithAI = useCallback(
+    async (msgIndex: number, userQuery: string, assistantContent: string) => {
+      if (loadingFollowUpsIndex !== null) return;
+      setLoadingFollowUpsIndex(msgIndex);
+      try {
+        const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
+        const currentLanguage = storage.getAssistantLanguage();
+        const langNote = currentLanguage ? ` Write the questions in ${currentLanguage}.` : '';
+        const prompt = `Based on the user's question and the assistant's answer below, generate exactly 3 smart, concise follow-up questions the user can ask next:
+1. One that drills deeper into a specific technical detail or concept mentioned.
+2. One practical comparison, real-world application, or pros/cons question.
+3. One forward-looking next step, edge case, or related angle.
+
+User Question: "${(userQuery || '').slice(0, 300)}"
+Assistant Answer Excerpt: "${(assistantContent || '').slice(0, 900)}"
+
+Return ONLY valid JSON array of 3 objects with keys "label" (short chip text, max 9 words) and "prompt" (full clear question to send).${langNote}
+Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y at scale in real production environments?"},{"label":"Compare X vs Z with a table","prompt":"Compare X and Z side-by-side in a detailed comparison table."},{"label":"What are the main risks of X?","prompt":"What are the main security and operational risks of adopting X?"}]`;
+
+        const res = await api.aiChat(prompt, [], '', sessionProvider, false, {
+          language: currentLanguage,
+        });
+        const rawText = (res.answer || '').trim();
+        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed) && parsed.length >= 3) {
+            const categories = [
+              { category: 'Go Deeper', emoji: '⚡' },
+              { category: 'Practical', emoji: '🔬' },
+              { category: 'Next Step', emoji: '🧭' },
+            ];
+            const mapped = parsed.slice(0, 3).map((item, i) => {
+              const labelStr = String(item?.label || item?.question || item?.prompt || '').trim();
+              const promptStr = String(item?.prompt || item?.question || item?.label || '').trim();
+              return {
+                category: categories[i].category,
+                emoji: categories[i].emoji,
+                label: labelStr.length > 68 ? labelStr.slice(0, 65) + '...' : labelStr,
+                prompt: promptStr || labelStr,
+              };
+            }).filter((x) => x.label && x.prompt);
+
+            if (mapped.length === 3) {
+              setCustomFollowUpsMap((prev) => ({ ...prev, [msgIndex]: mapped }));
+            }
+          }
+        }
+      } catch {
+        // Keep existing context-aware suggestions if background AI call fails
+      } finally {
+        setLoadingFollowUpsIndex(null);
+      }
+    },
+    [activeProviderId, activeModelId, loadingFollowUpsIndex],
+  );
+
   const [webApiMode, setWebApiMode] = useState<'default' | 'custom'>(() => storage.getAssistantWebApiMode());
   const [customSearchKey, setCustomSearchKey] = useState<string>(() => storage.getAssistantCustomSearchKey());
   const [customSearchUrl, setCustomSearchUrl] = useState<string>(() => storage.getAssistantCustomSearchUrl());
@@ -6450,15 +6659,36 @@ DIRECTIVES:
       >
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span
-              className={`text-sm tracking-tight ${
-                theme === 'classic'
-                  ? 'font-bold text-cyan-300 drop-shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                  : theme === 'fulldark'
-                  ? 'font-medium text-[#f9f9f9]'
-                  : 'font-semibold text-zinc-100'
-              }`}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 18 18"
+              className="shrink-0 overflow-visible"
+              aria-hidden="true"
             >
+              <circle
+                cx="9"
+                cy="9"
+                r="7.2"
+                fill="none"
+                stroke="#00f0ff"
+                strokeWidth="1.3"
+                strokeDasharray="3.5 2"
+                className="mc-orbit-cw"
+              />
+              <circle
+                cx="9"
+                cy="9"
+                r="4.2"
+                fill="none"
+                stroke="#a855f7"
+                strokeWidth="1"
+                strokeDasharray="2 2"
+                className="mc-orbit-ccw"
+              />
+              <circle cx="9" cy="9" r="2.2" fill="#ec4899" />
+            </svg>
+            <span className="text-sm font-extrabold tracking-tight px-headline-aurora">
               NEXUS AI
             </span>
             {responseLanguage && (
@@ -7354,9 +7584,101 @@ DIRECTIVES:
           {/* Empty / Welcome state hero */}
           {isOnlyWelcome && (
             <div className="py-12 sm:py-20 text-center flex flex-col items-center justify-center">
-              <h2 className="text-2xl sm:text-3xl font-normal text-zinc-200 tracking-tight mb-3">
-                How can I help you today?
-              </h2>
+              <div className="flex flex-col items-center gap-2 mb-3">
+                <div className="flex items-center justify-center gap-2.5 flex-wrap">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    className="shrink-0 overflow-visible"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      fill="none"
+                      stroke="#00f0ff"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 2.5"
+                      className="mc-orbit-cw"
+                    />
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="6.2"
+                      fill="none"
+                      stroke="#ec4899"
+                      strokeWidth="1.2"
+                      strokeDasharray="2.5 2"
+                      className="mc-orbit-ccw"
+                    />
+                    <circle cx="12" cy="12" r="2.8" fill="#fbbf24" />
+                  </svg>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold px-headline-aurora tracking-tight m-0">
+                    How can I help you today?
+                  </h2>
+                  <svg
+                    width="34"
+                    height="20"
+                    viewBox="0 0 34 20"
+                    className="shrink-0 overflow-visible"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="2"
+                      y="4"
+                      width="3"
+                      height="12"
+                      rx="1.5"
+                      fill="#00f0ff"
+                      className="mc-wave-bar"
+                      style={{ animationDelay: '0s' }}
+                    />
+                    <rect
+                      x="8"
+                      y="2"
+                      width="3"
+                      height="16"
+                      rx="1.5"
+                      fill="#38bdf8"
+                      className="mc-wave-bar"
+                      style={{ animationDelay: '0.18s' }}
+                    />
+                    <rect
+                      x="14"
+                      y="5"
+                      width="3"
+                      height="10"
+                      rx="1.5"
+                      fill="#a855f7"
+                      className="mc-wave-bar"
+                      style={{ animationDelay: '0.35s' }}
+                    />
+                    <rect
+                      x="20"
+                      y="1"
+                      width="3"
+                      height="18"
+                      rx="1.5"
+                      fill="#ec4899"
+                      className="mc-wave-bar"
+                      style={{ animationDelay: '0.52s' }}
+                    />
+                    <rect
+                      x="26"
+                      y="4"
+                      width="3"
+                      height="12"
+                      rx="1.5"
+                      fill="#fbbf24"
+                      className="mc-wave-bar"
+                      style={{ animationDelay: '0.7s' }}
+                    />
+                  </svg>
+                </div>
+                <div className="px-headline-laser-track mx-auto !max-w-[280px]" />
+              </div>
               <p className="text-sm text-zinc-400 max-w-md mb-8">
                 Ask questions, synthesize documents, solve technical problems, or explore live web data.
               </p>
@@ -7438,15 +7760,40 @@ DIRECTIVES:
                         )}
 
                         <div
-                          className={`leading-relaxed break-words whitespace-pre-wrap transition-all ${
+                          className={`relative overflow-hidden leading-relaxed break-words whitespace-pre-wrap transition-all ${
                             theme === 'classic'
-                              ? 'px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-950/90 to-blue-950/90 text-cyan-50 text-[14.5px] border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                              ? 'px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-950/90 to-blue-950/90 text-[14.5px] border border-cyan-500/45 shadow-[0_0_18px_rgba(6,182,212,0.2)]'
                               : theme === 'fulldark'
-                              ? 'px-5 py-3 rounded-[24px] bg-[#212121] text-[#f4f4f5] text-[15px] border border-[#2f2f2f] shadow-none'
-                              : 'px-4 py-2.5 rounded-2xl bg-[#27272a] text-zinc-100 text-[14.5px] border border-zinc-700/60'
+                              ? 'px-5 py-3 rounded-[24px] bg-[#212121] text-[15px] border border-[#383838] shadow-[0_0_16px_rgba(168,85,247,0.14)]'
+                              : 'px-4 py-2.5 rounded-2xl bg-[#27272a] text-[14.5px] border border-zinc-700/75 shadow-[0_0_16px_rgba(56,189,248,0.14)]'
                           }`}
                         >
-                          {message.content}
+                          {/* Subtle Graphic Laser Sweep along User Query Bubble */}
+                          <div className="mc-laser-line" aria-hidden="true" />
+                          <div className="relative z-10 flex items-start gap-2">
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 16 16"
+                              className="shrink-0 mt-1 overflow-visible"
+                              aria-hidden="true"
+                            >
+                              <circle
+                                cx="8"
+                                cy="8"
+                                r="6.2"
+                                fill="none"
+                                stroke="#00f0ff"
+                                strokeWidth="1.3"
+                                strokeDasharray="3.5 2"
+                                className="mc-orbit-cw"
+                              />
+                              <circle cx="8" cy="8" r="2.4" fill="#ec4899" />
+                            </svg>
+                            <span className="font-semibold ai-user-query-gradient">
+                              {message.content}
+                            </span>
+                          </div>
                         </div>
 
                         {/* User Message Action Toolbar (Copy & Delete) */}
@@ -8591,6 +8938,173 @@ DIRECTIVES:
                             </button>
                           </div>
                         )}
+
+                        {/* Smart Follow-Up Suggestions (One-Tap Deep Dive Chips) */}
+                        {followUpsEnabled &&
+                          !loading &&
+                          index === messages.length - 1 &&
+                          !dismissedFollowUpsMap[index] &&
+                          message.content &&
+                          message.content.trim().length > 20 &&
+                          message.tool !== 'swarmlive' &&
+                          message.tool !== 'commander' && (() => {
+                            const prevUserMsg =
+                              index > 0 && messages[index - 1]?.role === 'user'
+                                ? messages[index - 1].content
+                                : '';
+                            const suggestions =
+                              customFollowUpsMap[index] ||
+                              buildSmartFollowUpSuggestions(
+                                prevUserMsg,
+                                message.content,
+                                message.tool,
+                              );
+                            const isRefreshingThis = loadingFollowUpsIndex === index;
+
+                            return (
+                              <div
+                                className={`mt-2.5 pt-2.5 border-t transition-all animate-in fade-in slide-in-from-bottom-1 duration-200 ${
+                                  theme === 'classic'
+                                    ? 'border-cyan-500/20'
+                                    : theme === 'fulldark'
+                                    ? 'border-[#262626]'
+                                    : 'border-zinc-800/80'
+                                }`}
+                              >
+                                {/* Header Row */}
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <span
+                                      className="relative inline-flex items-center justify-center w-3.5 h-3.5 shrink-0"
+                                      aria-hidden="true"
+                                    >
+                                      <svg
+                                        className="w-3.5 h-3.5 text-cyan-400 mc-orbit-cw"
+                                        viewBox="0 0 16 16"
+                                        fill="none"
+                                      >
+                                        <circle
+                                          cx="8"
+                                          cy="8"
+                                          r="6"
+                                          stroke="currentColor"
+                                          strokeWidth="1.4"
+                                          strokeDasharray="8 4"
+                                        />
+                                        <circle cx="8" cy="8" r="2" fill="#f472b6" />
+                                      </svg>
+                                    </span>
+                                    <span className="px-section-headline font-mono text-[10.5px] font-extrabold uppercase tracking-[0.14em]">
+                                      EXPLORE FURTHER
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">
+                                      · 1-Tap Deep Dive
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleRefreshFollowUpsWithAI(
+                                          index,
+                                          prevUserMsg,
+                                          message.content,
+                                        )
+                                      }
+                                      disabled={isRefreshingThis}
+                                      className={`px-2 py-0.5 rounded-md text-[10.5px] font-mono flex items-center gap-1 transition-all cursor-pointer ${
+                                        theme === 'classic'
+                                          ? 'bg-cyan-950/60 text-cyan-300 hover:bg-cyan-900/70 border border-cyan-500/30'
+                                          : theme === 'fulldark'
+                                          ? 'bg-[#1f1f1f] text-zinc-300 hover:text-white hover:bg-[#2a2a2a] border border-[#333]'
+                                          : 'bg-zinc-800/80 text-zinc-300 hover:text-white hover:bg-zinc-700/80 border border-zinc-700/60'
+                                      }`}
+                                      title="Generate 3 fresh AI-tailored follow-up questions"
+                                    >
+                                      {isRefreshingThis ? (
+                                        <Loader2 size={10} className="animate-spin text-cyan-400" />
+                                      ) : (
+                                        <Sparkles size={10} className="text-amber-400" />
+                                      )}
+                                      <span>{isRefreshingThis ? 'Thinking...' : 'AI Refresh'}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setDismissedFollowUpsMap((prev) => ({
+                                          ...prev,
+                                          [index]: true,
+                                        }))
+                                      }
+                                      className="p-1 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/60 transition-colors cursor-pointer"
+                                      title="Hide follow-up suggestions for this answer"
+                                      aria-label="Hide follow-up suggestions"
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* 3 Suggestion Chips */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  {suggestions.map((item, sIdx) => (
+                                    <div
+                                      key={sIdx}
+                                      className={`group/chip relative flex items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2 transition-all ${
+                                        theme === 'classic'
+                                          ? 'border-cyan-500/25 bg-slate-900/75 hover:bg-cyan-950/50 hover:border-cyan-400/60'
+                                          : theme === 'fulldark'
+                                          ? 'border-[#2a2a2a] bg-[#161616] hover:bg-[#202020] hover:border-[#404040]'
+                                          : 'border-zinc-800/90 bg-zinc-900/65 hover:bg-zinc-800/80 hover:border-indigo-500/40'
+                                      }`}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          playTapSound();
+                                          sendMessage(item.prompt);
+                                        }}
+                                        className="flex-1 min-w-0 text-left flex items-start gap-2 cursor-pointer active:scale-[0.99] transition-transform"
+                                        title={`Tap to ask: "${item.prompt}"`}
+                                      >
+                                        <span className="text-xs shrink-0 mt-0.5">
+                                          {item.emoji}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                          <div className="text-[9.5px] font-mono uppercase tracking-wider text-cyan-400/90 font-semibold">
+                                            {item.category}
+                                          </div>
+                                          <div className="text-[11.5px] sm:text-xs font-medium text-zinc-200 group-hover/chip:text-white line-clamp-2 leading-snug mt-0.5">
+                                            {item.label}
+                                          </div>
+                                        </div>
+                                      </button>
+
+                                      {/* Insert into Input Box Button */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          playTapSound();
+                                          setInput(item.prompt);
+                                          setTimeout(() => {
+                                            textareaRef.current?.focus();
+                                          }, 30);
+                                        }}
+                                        className="p-1.5 rounded-lg text-zinc-500 hover:text-cyan-300 hover:bg-white/5 transition-colors shrink-0 cursor-pointer"
+                                        title="Insert into input box to edit before sending"
+                                        aria-label="Edit follow-up question in input box"
+                                      >
+                                        <Edit3 size={11} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                       </div>
                     )}
                   </div>
@@ -8813,10 +9327,10 @@ DIRECTIVES:
             </div>
           )}
 
-          {/* Input Box with Animated Glowing Border & Graphics */}
+          {/* Input Box with Animated Colorful Border & Graphics (No Border Glow) */}
           <div
             data-generating={loading ? 'true' : 'false'}
-            className={`mc-glow-input-wrap ${
+            className={`mc-glow-input-wrap mc-no-border-glow ${
               theme === 'minimal'
                 ? 'theme-minimal-glow !rounded-[17.5px]'
                 : theme === 'fulldark'
@@ -8831,13 +9345,13 @@ DIRECTIVES:
             }}
             className={`relative transition-all ${
               theme === 'classic'
-                ? 'rounded-2xl border border-cyan-400/30 bg-slate-950/95 backdrop-blur-xl shadow-[inset_0_1px_24px_rgba(6,182,212,0.14)] p-2.5 flex flex-col gap-2'
+                ? 'rounded-2xl bg-slate-950 p-2.5 flex flex-col gap-2'
                 : theme === 'fulldark'
-                ? 'rounded-[28px] border border-white/15 bg-[#121215]/95 backdrop-blur-xl shadow-[inset_0_1px_24px_rgba(168,85,247,0.1)] p-3 flex flex-col gap-2'
-                : 'rounded-2xl border border-indigo-500/25 bg-[#16161a]/95 backdrop-blur-xl shadow-[inset_0_1px_22px_rgba(99,102,241,0.12)] p-2.5 flex flex-col gap-2'
+                ? 'rounded-[28px] bg-[#121215] p-3 flex flex-col gap-2'
+                : 'rounded-2xl bg-[#16161a] p-2.5 flex flex-col gap-2'
             }`}
           >
-            {/* Decorative Powerful Graphics & Dual Laser Animation Layer (clipped to form bounds without clipping upward popovers) */}
+            {/* Decorative Graphics & Dual Laser Animation Layer (clipped to form bounds without clipping upward popovers) */}
             <div
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden z-0"
@@ -8845,34 +9359,6 @@ DIRECTIVES:
               {/* Top & Bottom Animated Laser Sweep Beams */}
               <div className="mc-laser-line" />
               <div className="mc-laser-line-bottom" />
-
-              {/* Ambient Plasma Glow Orbs */}
-              <div
-                className={`absolute -top-10 -left-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
-                  loading ? 'opacity-65 animate-pulse' : 'opacity-30'
-                } ${
-                  deepResearchEnabled
-                    ? 'bg-emerald-500/35'
-                    : imageGenEnabled
-                    ? 'bg-purple-500/35'
-                    : theme === 'classic'
-                    ? 'bg-cyan-500/35'
-                    : 'bg-indigo-500/30'
-                }`}
-              />
-              <div
-                className={`absolute -bottom-10 -right-10 w-36 h-24 rounded-full blur-2xl transition-opacity duration-500 ${
-                  loading ? 'opacity-65 animate-pulse' : 'opacity-30'
-                } ${
-                  deepResearchEnabled
-                    ? 'bg-cyan-500/30'
-                    : imageGenEnabled
-                    ? 'bg-fuchsia-500/35'
-                    : theme === 'classic'
-                    ? 'bg-violet-500/30'
-                    : 'bg-cyan-500/25'
-                }`}
-              />
 
               {/* Subtle Cybernetic Corner Reticle Graphics */}
               <svg
@@ -9093,7 +9579,7 @@ DIRECTIVES:
                 }
                 rows={1}
                 disabled={loading}
-                className={`w-full bg-transparent text-[14.5px] leading-relaxed resize-none outline-none px-2 pt-1 pb-1 ${
+                className={`w-full bg-transparent text-[14.5px] font-medium leading-relaxed resize-none outline-none px-2 pt-1 pb-1 ai-user-query-input ${
                   activeSpecialistMode || enabledSkillsCount > 0 ? 'pr-36 sm:pr-44' : 'pr-11'
                 } min-h-[44px] max-h-[180px] ${
                   theme === 'classic'
@@ -10179,36 +10665,6 @@ DIRECTIVES:
               />
             </button>
             <span>·</span>
-            <span>
-              {multiChatEnabled
-                ? 'Multi Chat (3-Persona Pipeline)'
-                : deepResearchEnabled
-                ? 'Deep Research (JARVIS Multi-Agent)'
-                : imageGenEnabled
-                ? imageEnhanceEnabled
-                  ? 'Image Gen (AI Enhanced)'
-                  : 'Image Generation Mode Active'
-                : webSearchEnabled
-                ? webSearchExtendedEnabled
-                  ? 'Live Web Search (Extended: 20 Sources)'
-                  : 'Live Web Search Active (10 Sources)'
-                : 'Automatic Web Search'}
-            </span>
-            <span>·</span>
-            <span>Theme: {theme === 'classic' ? 'NEXUS Classic' : theme === 'fulldark' ? 'Full Dark' : 'NEXUS Minimal'}</span>
-            {responseLanguage && (
-              <>
-                <span>·</span>
-                <span className="text-cyan-400/90">Language: {responseLanguage}</span>
-              </>
-            )}
-            {permanentMemories.length > 0 && (
-              <>
-                <span>·</span>
-                <span>{permanentMemories.length} Permanent {permanentMemories.length === 1 ? 'Memory' : 'Memories'}</span>
-              </>
-            )}
-            <span>·</span>
             <div className="relative inline-flex items-center" ref={bottomHistoryDropdownRef}>
               <button
                 type="button"
@@ -10278,7 +10734,7 @@ DIRECTIVES:
                   <SettingsIcon size={18} className="text-cyan-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-zinc-100">
+                  <h3 className="text-base font-extrabold px-headline-aurora">
                     AI Assistant Settings
                   </h3>
                   <p className="text-xs text-zinc-400 mt-0.5">
@@ -10663,6 +11119,49 @@ DIRECTIVES:
               <p className="text-[11px] text-zinc-500 italic">
                 Tip: Country names like &quot;Russia&quot; or &quot;Japan&quot; will be automatically inferred as Russian and Japanese.
               </p>
+            </div>
+
+            <div className="h-px bg-zinc-800" />
+
+            {/* Section 2.5: Smart Follow-Up Suggestions Toggle */}
+            <div className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-zinc-800 bg-zinc-900/60">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <div className="p-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 shrink-0 mt-0.5">
+                  <Sparkles size={14} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                    <span>Smart Follow-Up Suggestions</span>
+                    <span
+                      className={`text-[9.5px] font-mono px-1.5 py-0.2 rounded border ${
+                        followUpsEnabled
+                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                      }`}
+                    >
+                      {followUpsEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                    Display 3 context-aware follow-up chips (Go Deeper, Practical, Next Step) below the latest answer for 1-tap exploration.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={toggleFollowUpsEnabled}
+                className={`w-10 h-5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 cursor-pointer ${
+                  followUpsEnabled ? 'bg-cyan-500' : 'bg-zinc-700'
+                }`}
+                aria-pressed={followUpsEnabled}
+                title="Toggle Smart Follow-Up Suggestions"
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                    followUpsEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
 
             <div className="h-px bg-zinc-800" />
@@ -13805,7 +14304,7 @@ DIRECTIVES:
             <div className="flex items-center justify-between pb-1 border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <Brain size={16} className="text-cyan-400" />
-                <h3 className="text-sm font-semibold text-zinc-100">
+                <h3 className="text-sm font-extrabold px-headline-aurora">
                   Short-Term Memory Scratchpad
                 </h3>
               </div>
@@ -13866,7 +14365,7 @@ DIRECTIVES:
               <div className="flex items-center gap-2 min-w-0">
                 <Brain size={16} className="text-cyan-400 shrink-0" />
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-zinc-100 truncate">
+                  <h3 className="text-sm font-extrabold px-headline-aurora truncate">
                     Memory Scratchpad & Size
                   </h3>
                   <p className="text-[11px] text-zinc-400 truncate">
@@ -14010,7 +14509,7 @@ DIRECTIVES:
                   <Bot size={15} />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-zinc-100 truncate">
+                  <h3 className="text-sm font-extrabold px-headline-aurora truncate">
                     Session AI Model
                   </h3>
                   <p className="text-[11px] text-zinc-400 truncate">

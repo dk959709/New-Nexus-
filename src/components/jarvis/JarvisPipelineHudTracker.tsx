@@ -359,12 +359,17 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
         {/* Header Row: Pulsing Dot + "PIPELINE EXECUTION STATE" + Real Right Caption */}
         <div className="jarvis-pipeline-hud-header flex items-center justify-between flex-wrap gap-2 pb-1.5">
           <div className="flex items-center gap-2">
-            <span
-              className={`inline-block w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] ${
-                hasRunning ? 'animate-ping' : ''
-              }`}
-            />
-            <span className="font-mono text-[10px] font-semibold uppercase text-[var(--j-accent)] tracking-[0.12em]">
+            <span className="relative inline-flex items-center justify-center w-3.5 h-3.5 shrink-0" aria-hidden="true">
+              <svg className="w-3.5 h-3.5 mc-orbit-cw" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="6" stroke="#00f0ff" strokeWidth="1.4" strokeDasharray="8 4" />
+              </svg>
+              <span
+                className={`inline-block w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] absolute ${
+                  hasRunning ? 'animate-ping' : ''
+                }`}
+              />
+            </span>
+            <span className="px-section-headline font-mono text-[10px] font-extrabold uppercase tracking-[0.14em]">
               PIPELINE EXECUTION STATE
             </span>
           </div>

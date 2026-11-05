@@ -76,12 +76,62 @@ export function JarvisPage() {
           {/* Row 1: JARVIS Title + 10-AGENT COGNITIVE MESH Pill | Right: Info + Palette */}
           <div className="flex items-center justify-between gap-2 w-full min-h-[38px]">
             <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-              <span className="jarvis-page-title text-[18px] sm:text-[20px] font-bold tracking-wider uppercase text-[var(--j-text)]">
-                JARVIS
-              </span>
-              <div className="jarvis-page-badge inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[var(--j-high)]">
+              <div className="flex flex-col">
+                <div className="inline-flex items-center gap-2">
+                  {/* Animated Dual-Orbit Neural Emblem */}
+                  <span className="relative inline-flex items-center justify-center w-5 h-5 shrink-0" aria-hidden="true">
+                    <svg className="w-5 h-5 mc-orbit-cw" viewBox="0 0 24 24" fill="none">
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="url(#jarvisTitleGrad1)"
+                        strokeWidth="1.6"
+                        strokeDasharray="12 6"
+                      />
+                      <defs>
+                        <linearGradient id="jarvisTitleGrad1" x1="0" y1="0" x2="24" y2="24">
+                          <stop offset="0%" stopColor="#00f0ff" />
+                          <stop offset="50%" stopColor="#a855f7" />
+                          <stop offset="100%" stopColor="#ec4899" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <svg className="w-3 h-3 absolute mc-orbit-ccw" viewBox="0 0 16 16" fill="none">
+                      <polygon
+                        points="8,1 15,8 8,15 1,8"
+                        stroke="#34d399"
+                        strokeWidth="1.4"
+                        fill="rgba(0,240,255,0.2)"
+                      />
+                    </svg>
+                  </span>
+                  <span className="jarvis-page-title px-headline-aurora text-[18px] sm:text-[21px] font-extrabold tracking-wider uppercase">
+                    JARVIS
+                  </span>
+                  {/* Mini Harmonic Equalizer Bars */}
+                  <span className="hidden sm:inline-flex items-end gap-[2px] h-3.5 px-1" aria-hidden="true">
+                    <span className="w-[2px] h-2 rounded-full bg-cyan-400 mc-wave-bar" />
+                    <span
+                      className="w-[2px] h-3.5 rounded-full bg-fuchsia-400 mc-wave-bar"
+                      style={{ animationDelay: '0.18s' }}
+                    />
+                    <span
+                      className="w-[2px] h-2.5 rounded-full bg-amber-300 mc-wave-bar"
+                      style={{ animationDelay: '0.35s' }}
+                    />
+                    <span
+                      className="w-[2px] h-3 rounded-full bg-emerald-400 mc-wave-bar"
+                      style={{ animationDelay: '0.5s' }}
+                    />
+                  </span>
+                </div>
+                <div className="px-headline-laser-track !max-w-[130px] !h-[1.5px] mt-0.5" />
+              </div>
+
+              <div className="jarvis-page-badge px-kicker-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[var(--j-high)] border border-cyan-400/25">
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-pulse shrink-0" />
-                <span className="font-mono text-[9.5px] sm:text-[10px] font-medium text-[var(--j-accent2)] uppercase tracking-widest truncate">
+                <span className="px-subheadline-spectrum font-mono text-[9.5px] sm:text-[10px] font-bold uppercase tracking-widest truncate">
                   {activeAgentsCount}-AGENT COGNITIVE MESH
                 </span>
               </div>

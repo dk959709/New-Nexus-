@@ -1998,16 +1998,22 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
             <Layers size={17} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono font-bold tracking-wider text-cyan-300 uppercase">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-section-headline text-xs sm:text-[13px] font-mono font-extrabold tracking-wider uppercase">
                 {isDeepResearch
                   ? 'DEEP RESEARCH // AGENT MESH FULL ANSWERS'
                   : 'MULTI-AGENT INTELLIGENCE // INDIVIDUAL AGENT ANSWERS'}
+              </span>
+              <span className="inline-flex items-end gap-[2px] h-3 shrink-0" aria-hidden="true">
+                <span className="w-[2px] h-1.5 rounded-full bg-cyan-400 mc-wave-bar" />
+                <span className="w-[2px] h-3 rounded-full bg-fuchsia-400 mc-wave-bar" style={{ animationDelay: '0.18s' }} />
+                <span className="w-[2px] h-2 rounded-full bg-amber-300 mc-wave-bar" style={{ animationDelay: '0.35s' }} />
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/15 border border-cyan-400/30 text-cyan-300">
                 {agentSteps.length} AGENTS COMPLETED
               </span>
             </div>
+            <div className="px-headline-laser-track !max-w-[200px] !h-[1.5px] my-1" />
             <p className="text-[11px] text-slate-400 m-0">
               {isDeepResearch
                 ? 'Unfiltered individual agent answers across the autonomous intelligence pipeline'
@@ -2075,9 +2081,12 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
 
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
+                      <svg className="w-3.5 h-3.5 text-cyan-400 mc-orbit-cw shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" strokeDasharray="8 4" />
+                        <circle cx="8" cy="8" r="2" fill="#f472b6" />
+                      </svg>
                       <span
-                        className="font-bold text-xs sm:text-sm tracking-wider uppercase font-mono"
-                        style={{ color: theme.text }}
+                        className="px-round-headline font-extrabold text-xs sm:text-sm tracking-wider uppercase font-mono"
                       >
                         {theme.title}
                       </span>

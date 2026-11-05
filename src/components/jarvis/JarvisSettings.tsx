@@ -616,11 +616,19 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '24px' }}>🤖</span>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff' }}>
-                JARVIS Agent Orchestration & Customization
-              </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span className="relative inline-flex items-center justify-center w-6 h-6 shrink-0" aria-hidden="true">
+                <svg className="w-6 h-6 mc-orbit-cw" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="#00f0ff" strokeWidth="1.5" strokeDasharray="12 6" />
+                </svg>
+                <span style={{ fontSize: '15px' }} className="absolute">🤖</span>
+              </span>
+              <div className="flex flex-col">
+                <h2 className="px-headline-aurora" style={{ margin: 0, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em' }}>
+                  JARVIS Agent Orchestration &amp; Customization
+                </h2>
+                <div className="px-headline-laser-track !max-w-[220px] !h-[1.5px] mt-1" />
+              </div>
             </div>
             <p style={{ margin: '6px 0 0', color: 'var(--muted)', fontSize: '13px', lineHeight: 1.6 }}>
               Inspect and edit custom system prompts for each agent, add new specialized agents to the multi-AI pipeline, and configure custom providers or models.
@@ -797,7 +805,7 @@ export function JarvisSettings({ onSaved }: JarvisSettingsProps) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Bot size={18} className="text-cyan-400" />
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>
+            <h3 className="px-section-headline" style={{ margin: 0, fontSize: '16px', fontWeight: 800, letterSpacing: '-0.01em' }}>
               Built-In Neural Agents (10 Agents)
             </h3>
           </div>

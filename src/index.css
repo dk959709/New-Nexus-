@@ -5473,6 +5473,23 @@ button:active .stitch-dice-icon {
   filter: blur(18px);
 }
 
+/* AI Assistant Input Box: Keep colorful animated border, remove border glow */
+.mc-glow-input-wrap.mc-no-border-glow,
+.mc-glow-input-wrap.mc-no-border-glow.theme-minimal-glow,
+.mc-glow-input-wrap.mc-no-border-glow.theme-fulldark-glow,
+.mc-glow-input-wrap.mc-no-border-glow:focus-within,
+.mc-glow-input-wrap.mc-no-border-glow[data-generating="true"] {
+  box-shadow: none !important;
+}
+
+.mc-glow-input-wrap.mc-no-border-glow::before,
+.mc-glow-input-wrap.mc-no-border-glow:focus-within::before,
+.mc-glow-input-wrap.mc-no-border-glow[data-generating="true"]::before {
+  display: none !important;
+  opacity: 0 !important;
+  content: none !important;
+}
+
 /* Laser Sweep Line along top of Input Box and Response Cards */
 .mc-laser-line {
   position: absolute;
@@ -5734,5 +5751,49 @@ button:active .stitch-dice-icon {
 .px-kicker-pill {
   animation: pxHeadlineBadgePulse 4s ease-in-out infinite;
 }
+
+.px-headline-aurora strong,
+.px-section-headline strong,
+.px-round-headline strong,
+.px-subheadline-spectrum strong {
+  color: inherit !important;
+}
+
+/* AI Assistant User Query Colorful Animated Text */
+.ai-user-query-gradient {
+  background: linear-gradient(
+    110deg,
+    #67e8f9 0%,
+    #38bdf8 20%,
+    #c084fc 42%,
+    #f472b6 64%,
+    #fde047 84%,
+    #6ee7b7 100%
+  );
+  background-size: 240% 240%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent !important;
+  animation: pxAuroraTextFlow 6s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.22));
+}
+
+/* AI Assistant User Query Input Textarea Colorful Shimmer */
+.ai-user-query-input:not(:placeholder-shown) {
+  background: linear-gradient(
+    95deg,
+    #67e8f9 0%,
+    #a5b4fc 32%,
+    #f0abfc 65%,
+    #fde68a 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  caret-color: #22d3ee;
+  animation: pxAuroraTextFlow 7s linear infinite;
+}
+
 
 

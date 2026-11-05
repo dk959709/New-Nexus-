@@ -1028,18 +1028,44 @@ export function JarvisChat({
         />
 
         {/* Stitch Status Monospace Caption (from real state) */}
-        <div className="flex flex-col items-center gap-1 mt-1 text-center">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-ping" />
-            <span className="font-mono text-[10px] font-semibold tracking-[0.2em] text-[var(--j-text)] uppercase">
+        <div className="flex flex-col items-center gap-1 mt-1.5 text-center">
+          <div className="inline-flex items-center gap-2">
+            {/* Orbital SVG Emblem */}
+            <span className="relative inline-flex items-center justify-center w-4 h-4 shrink-0" aria-hidden="true">
+              <svg className="w-4 h-4 mc-orbit-cw" viewBox="0 0 18 18" fill="none">
+                <circle
+                  cx="9"
+                  cy="9"
+                  r="7"
+                  stroke="#00f0ff"
+                  strokeWidth="1.4"
+                  strokeDasharray="9 5"
+                />
+              </svg>
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-ping absolute" />
+            </span>
+            <span className="px-headline-aurora font-mono text-[11px] sm:text-[12px] font-extrabold tracking-[0.2em] uppercase">
               {isRunning
                 ? 'PROCESSING'
                 : voiceListening
                 ? 'VOICE LISTENING'
                 : 'COGNITIVE MESH ONLINE'}
             </span>
+            {/* Mini Harmonic Wave Bars */}
+            <span className="inline-flex items-end gap-[2px] h-3" aria-hidden="true">
+              <span className="w-[2px] h-1.5 rounded-full bg-cyan-400 mc-wave-bar" />
+              <span
+                className="w-[2px] h-3 rounded-full bg-fuchsia-400 mc-wave-bar"
+                style={{ animationDelay: '0.18s' }}
+              />
+              <span
+                className="w-[2px] h-2 rounded-full bg-amber-300 mc-wave-bar"
+                style={{ animationDelay: '0.35s' }}
+              />
+            </span>
           </div>
-          <span className="font-mono text-[9px] text-[var(--j-muted)] uppercase tracking-widest">
+          <div className="px-headline-laser-track !max-w-[180px] !h-[1.5px] my-0.5" />
+          <span className="px-subheadline-spectrum font-mono text-[9.5px] font-bold uppercase tracking-widest">
             ORCHESTRATING {activeAgentsCount} RESEARCH AGENTS //{' '}
             {isRunning ? 'PIPELINE ACTIVE' : 'SYNTHESIS READY'}
           </span>
@@ -1052,10 +1078,16 @@ export function JarvisChat({
       {!isRunning && (
         <section className="flex flex-col gap-1.5 w-full">
           <div className="flex items-center justify-between px-1">
-            <span className="font-mono text-[10px] font-semibold uppercase text-[var(--j-muted)] tracking-[0.12em]">
-              DEPLOY SYNTHESIS DIRECTIVE
-            </span>
-            <span className="font-mono text-[9px] font-medium uppercase text-[var(--j-accent2)] tracking-wider">
+            <div className="inline-flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-cyan-400 mc-orbit-cw shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" strokeDasharray="8 4" />
+                <circle cx="8" cy="8" r="2" fill="#f472b6" />
+              </svg>
+              <span className="px-section-headline font-mono text-[10.5px] font-extrabold uppercase tracking-[0.14em]">
+                DEPLOY SYNTHESIS DIRECTIVE
+              </span>
+            </div>
+            <span className="px-round-headline font-mono text-[9.5px] font-bold uppercase tracking-wider">
               SWARM READY
             </span>
           </div>
@@ -1088,15 +1120,20 @@ export function JarvisChat({
           <div className="flex items-center justify-between flex-wrap gap-2 mb-2.5 pb-2 border-b border-white/[0.04]">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-ping shrink-0" />
-              <span className="text-xs sm:text-[13px] font-semibold text-[var(--j-text)] truncate">
+              <span className="px-section-headline text-xs sm:text-[13.5px] font-extrabold truncate">
                 JARVIS Multi-Agent Pipeline In Progress
               </span>
+              <span className="inline-flex items-end gap-[2px] h-3 shrink-0" aria-hidden="true">
+                <span className="w-[2px] h-1.5 rounded-full bg-cyan-400 mc-wave-bar" />
+                <span className="w-[2px] h-3 rounded-full bg-fuchsia-400 mc-wave-bar" style={{ animationDelay: '0.2s' }} />
+                <span className="w-[2px] h-2 rounded-full bg-emerald-400 mc-wave-bar" style={{ animationDelay: '0.4s' }} />
+              </span>
               <span className="text-[var(--j-faint)] hidden sm:inline">·</span>
-              <span className="text-[10px] text-[var(--j-muted)] font-mono hidden sm:inline truncate">
+              <span className="px-subheadline-spectrum text-[10px] font-mono font-semibold hidden sm:inline truncate">
                 Live Neural Orchestration &amp; Cross-Verification
               </span>
             </div>
-            <span className="text-[10px] font-mono text-[var(--j-accent)] font-semibold uppercase tracking-wider">
+            <span className="px-round-headline text-[10px] font-mono font-bold uppercase tracking-wider">
               ENGAGED
             </span>
           </div>
@@ -1186,7 +1223,11 @@ export function JarvisChat({
               <div className="jarvis-user-bubble-row flex flex-col items-end gap-1 w-full pl-6 sm:pl-12">
                 {/* Tiny Mono Meta Line Above (DIRECTIVE · time) */}
                 <div className="flex items-center gap-1.5 pr-1 flex-wrap justify-end font-mono text-[9px] text-[var(--j-muted)] uppercase tracking-wider">
-                  <span>DIRECTIVE</span>
+                  <svg className="w-3 h-3 text-cyan-400 mc-orbit-cw shrink-0" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.3" strokeDasharray="7 4" />
+                    <circle cx="7" cy="7" r="1.8" fill="#f472b6" />
+                  </svg>
+                  <span className="px-subheadline-spectrum font-bold">DIRECTIVE</span>
                   <span className="w-1 h-1 rounded-full bg-[var(--j-muted)]" />
                   <span>{msgTimeStr}</span>
                   {msg.deepResearch && (
@@ -1200,10 +1241,11 @@ export function JarvisChat({
                 </div>
 
                 {/* User Bubble */}
-                <div className="jarvis-user-card bg-[var(--j-high)] text-[var(--j-text)] px-3.5 py-2.5 rounded-xl rounded-tr-xs shadow-md max-w-[92%] sm:max-w-[82%]">
-                  <p className="text-[13.5px] sm:text-[14px] font-normal text-[var(--j-text)] m-0 leading-relaxed">
+                <div className="jarvis-user-card relative overflow-hidden bg-[var(--j-high)] text-[var(--j-text)] px-3.5 py-2.5 rounded-xl rounded-tr-xs shadow-md max-w-[92%] sm:max-w-[82%] border border-cyan-500/20">
+                  <p className="ai-user-query-gradient text-[13.5px] sm:text-[14.5px] font-bold tracking-tight m-0 leading-relaxed">
                     {msg.query}
                   </p>
+                  <div className="px-headline-laser-track !max-w-[140px] !h-[1.5px] mt-1.5 opacity-80 ml-auto" />
 
                   {/* Attached File Chips on User Message Card */}
                   {msg.attachments && msg.attachments.length > 0 && (
@@ -1235,8 +1277,13 @@ export function JarvisChat({
               <div className="jarvis-response-row flex flex-col gap-1.5 w-full">
                 {/* Agent Metadata Line Above Card */}
                 <div className="flex items-center gap-2 pl-1 flex-wrap">
-                  <div className="w-2 h-2 rounded-full bg-[var(--j-accent)] animate-pulse shrink-0" />
-                  <span className="font-mono text-[10px] uppercase text-[var(--j-accent)] font-semibold tracking-[0.12em]">
+                  <span className="relative inline-flex items-center justify-center w-3.5 h-3.5 shrink-0" aria-hidden="true">
+                    <svg className="w-3.5 h-3.5 mc-orbit-cw" viewBox="0 0 16 16" fill="none">
+                      <circle cx="8" cy="8" r="6.5" stroke="#00f0ff" strokeWidth="1.3" strokeDasharray="8 4" />
+                    </svg>
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--j-accent)] animate-pulse absolute" />
+                  </span>
+                  <span className="px-section-headline font-mono text-[10.5px] uppercase font-extrabold tracking-[0.14em]">
                     JARVIS MESH
                     {executedAgentsCount > 0
                       ? ` • ${executedAgentsCount} ${
@@ -1320,9 +1367,20 @@ export function JarvisChat({
                                   s.status === 'completed' && s.agentId !== 'finalSynthesizer',
                               ))) && (
                             <div className="jarvis-synthesis-header flex items-center justify-between flex-wrap gap-2 mb-2.5 pt-2 border-t border-white/[0.05]">
-                              <div className="jarvis-synthesis-badge inline-flex items-center gap-1.5">
-                                <span className="px-2 py-0.5 rounded-full bg-[var(--j-high)] font-mono text-[10px] font-semibold text-[var(--j-accent2)] uppercase tracking-wider">
-                                  UNIFIED SYNTHESIS
+                              <div className="jarvis-synthesis-badge inline-flex items-center gap-2">
+                                <span className="px-kicker-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[var(--j-high)] border border-cyan-400/25">
+                                  <svg className="w-3.5 h-3.5 text-cyan-400 mc-orbit-cw shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4" strokeDasharray="8 4" />
+                                    <circle cx="8" cy="8" r="2" fill="#f472b6" />
+                                  </svg>
+                                  <span className="px-round-headline font-mono text-[10.5px] font-extrabold uppercase tracking-wider">
+                                    UNIFIED SYNTHESIS
+                                  </span>
+                                  <span className="inline-flex items-end gap-[2px] h-2.5" aria-hidden="true">
+                                    <span className="w-[1.5px] h-1.5 rounded-full bg-cyan-400 mc-wave-bar" />
+                                    <span className="w-[1.5px] h-2.5 rounded-full bg-fuchsia-400 mc-wave-bar" style={{ animationDelay: '0.18s' }} />
+                                    <span className="w-[1.5px] h-2 rounded-full bg-amber-300 mc-wave-bar" style={{ animationDelay: '0.35s' }} />
+                                  </span>
                                 </span>
                               </div>
 
@@ -1991,7 +2049,7 @@ export function JarvisChat({
                           : 'Instruct 10-Agent Cognitive Mesh...'
                       }
                       disabled={isRunning}
-                      className="jarvis-search-input flex-1 min-w-0 w-full bg-transparent border-none outline-none text-[13px] sm:text-[14px] text-[var(--j-text)] placeholder:text-[var(--j-faint)] focus:outline-none focus:ring-0 disabled:opacity-50 py-0.5"
+                      className="jarvis-search-input ai-user-query-input flex-1 min-w-0 w-full bg-transparent border-none outline-none text-[13px] sm:text-[14px] font-semibold text-[var(--j-text)] placeholder:text-[var(--j-faint)] placeholder:font-normal focus:outline-none focus:ring-0 disabled:opacity-50 py-0.5"
                     />
                   </div>
 
