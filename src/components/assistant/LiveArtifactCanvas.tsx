@@ -131,6 +131,7 @@ interface LiveArtifactCanvasProps {
   onSelectArtifact: (id: string) => void;
   onUpdateArtifact: (updated: CanvasArtifact) => void;
   onCreateArtifact: (newArtifact: CanvasArtifact) => void;
+  onDeleteArtifact?: (id: string) => void;
   onSyncToMessage?: (messageIndex: number, updatedArtifact: CanvasArtifact) => void;
   activeProvider?: AIProviderConfig | null;
   responseLanguage?: string;
@@ -1004,6 +1005,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   onSelectArtifact,
   onUpdateArtifact,
   onCreateArtifact,
+  onDeleteArtifact,
   onSyncToMessage,
   activeProvider,
   responseLanguage,
@@ -2322,10 +2324,21 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           >
             {artifacts.map((art, idx) => (
               <option key={art.id} value={art.id}>
-                {idx + 1}. [{art.kind.toUpperCase()}] {art.title}
+                {idx + 1}. [{(art.kind || 'html').toUpperCase()}] {art.title}
               </option>
             ))}
           </select>
+
+          {activeArtifact && onDeleteArtifact && (
+            <button
+              type="button"
+              onClick={() => onDeleteArtifact(activeArtifact.id)}
+              className="p-1.5 rounded-lg bg-zinc-900 hover:bg-rose-950/70 border border-zinc-700/80 hover:border-rose-500/40 text-zinc-400 hover:text-rose-300 transition-colors cursor-pointer shrink-0"
+              title={`Delete "${activeArtifact.title}" artifact`}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
 
           <button
             type="button"
@@ -2359,26 +2372,67 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           </button>
         </div>
 
-        {/* Version History Pills */}
+        {/* Version History Pills with Per-Version Delete (v1, v2, v3...) */}
         {activeArtifact && activeArtifact.versions.length > 0 && (
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
             <History size={12} className="text-zinc-400 mr-0.5 shrink-0" />
             {activeArtifact.versions.map((ver, vIdx) => {
               const isCurrent = vIdx === activeArtifact.currentVersionIndex;
+              const canDeleteVersion = activeArtifact.versions.length > 1;
               return (
-                <button
+                <div
                   key={`${ver.versionNumber}-${vIdx}`}
-                  type="button"
-                  onClick={() => handleSelectVersion(vIdx)}
-                  className={`px-2 py-0.5 rounded-md text-[11px] font-mono transition-colors cursor-pointer shrink-0 ${
+                  className={`inline-flex items-center rounded-md text-[11px] font-mono transition-colors shrink-0 border ${
                     isCurrent
-                      ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 font-semibold'
-                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border border-zinc-800'
+                      ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 font-semibold'
+                      : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 border-zinc-800'
                   }`}
-                  title={`${ver.label} (${new Date(ver.timestamp).toLocaleTimeString()})`}
                 >
-                  v{ver.versionNumber}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectVersion(vIdx)}
+                    className="px-2 py-0.5 cursor-pointer"
+                    title={`${ver.label} (${new Date(ver.timestamp).toLocaleTimeString()})`}
+                  >
+                    v{ver.versionNumber}
+                  </button>
+                  {canDeleteVersion && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const remaining = activeArtifact.versions
+                          .filter((_, idx) => idx !== vIdx)
+                          .map((v, idx) => ({
+                            ...v,
+                            versionNumber: idx + 1,
+                          }));
+                        if (remaining.length === 0) return;
+                        const nextIdx = Math.min(
+                          vIdx <= activeArtifact.currentVersionIndex
+                            ? Math.max(0, activeArtifact.currentVersionIndex - 1)
+                            : activeArtifact.currentVersionIndex,
+                          remaining.length - 1,
+                        );
+                        const nextVer = remaining[nextIdx];
+                        const updatedArtifact: CanvasArtifact = {
+                          ...activeArtifact,
+                          versions: remaining,
+                          currentVersionIndex: nextIdx,
+                          content: nextVer.content,
+                        };
+                        onUpdateArtifact(updatedArtifact);
+                        if (onSyncToMessage && activeArtifact.messageIndex >= 0) {
+                          onSyncToMessage(activeArtifact.messageIndex, updatedArtifact);
+                        }
+                      }}
+                      className="pr-1.5 pl-0.5 py-0.5 text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
+                      title={`Delete v${ver.versionNumber}`}
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>

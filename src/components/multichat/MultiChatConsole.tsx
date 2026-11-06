@@ -49,6 +49,13 @@ import {
   Paperclip,
   RefreshCw,
   FileText,
+  Flame,
+  ShieldCheck,
+  GitBranch,
+  Bookmark,
+  MonitorPlay,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
@@ -67,6 +74,13 @@ import {
   MultiChatGuestSpecialistPanel,
   MultiChatChartTelemetryPanel,
   MultiChatPromptSplitterDrawer,
+  MultiChatRelayPipelinePanel,
+  MultiChatFactMatrixPanel,
+  MultiChatCherryPickPanel,
+  MultiChatHotSeatPanel,
+  MultiChatTurnTelemetryStrip,
+  MultiChatVaultDrawer,
+  sendMultiChatContentToCanvas,
 } from '@/components/multichat/MultiChatAdvancedLabPanels';
 import {
   executeMultiChatTurn,
@@ -92,6 +106,12 @@ import {
   generateSmartPromptSplit,
   formatSplitPlanIntoPrompt,
   generateMultiChatChartTelemetry,
+  generateMultiChatRelayPipeline,
+  generateMultiChatFactMatrix,
+  buildInitialCherryPickMixer,
+  generateAISmoothedCherryPick,
+  executeMultiChatHotSeat,
+  executeSinglePersonaRerun,
 } from '@/services/multiChatOrchestrator';
 import type {
   MultiChatMessage,
@@ -106,6 +126,9 @@ import type {
   MultiChatGuestSpecialistId,
   MultiChatAttachedFile,
   MultiChatPromptSplitPlan,
+  MultiChatCognitiveOverride,
+  MultiChatCherryPickBlock,
+  MultiChatVaultItem,
   Skill,
 } from '@/types';
 
@@ -251,11 +274,11 @@ export function MultiChatConsole({
   });
   const [expandedWebMsgId, setExpandedWebMsgId] = useState<string | null>(null);
 
-  // DIALOGUE MODE STATE (Harmony / Debate / Parallel)
+  // DIALOGUE MODE STATE (Harmony / Debate / Parallel / Relay)
   const [dialogueMode, setDialogueMode] = useState<MultiChatDialogueMode>(() => {
     try {
       const saved = localStorage.getItem('nexus_multichat_dialogue_mode');
-      if (saved === 'harmony' || saved === 'debate' || saved === 'parallel') {
+      if (saved === 'harmony' || saved === 'debate' || saved === 'parallel' || saved === 'relay') {
         return saved;
       }
     } catch {
@@ -499,13 +522,13 @@ export function MultiChatConsole({
     }
   };
 
-  // HANDLER: Vote Best Persona Answer on a Turn
+  // HANDLER: Vote Best Persona Answer on a Turn (auto-reveals Blind Arena identities on vote)
   const handleVoteBestPersona = (msgId: string, personaId: MultiChatPersonaId) => {
     setMessages((prev) => {
       const next = prev.map((m) => {
         if (m.id !== msgId) return m;
         const nextVote = m.votedBestPersonaId === personaId ? undefined : personaId;
-        return { ...m, votedBestPersonaId: nextVote };
+        return { ...m, votedBestPersonaId: nextVote, blindRevealed: true };
       });
       storage.saveMultiChatMessages(next);
       setSessions(storage.getMultiChatSessions());
@@ -1032,6 +1055,386 @@ export function MultiChatConsole({
     } finally {
       setChartLoadingMsgId(null);
     }
+  };
+
+  // ============================================================================
+  // 10 NEW POWER-USER MULTI-CHAT FEATURES (STATE & HANDLERS)
+  // ============================================================================
+  // IDEA #1: Blind A/B/C Arena Mode ("Anonymous Model & Persona Judging")
+  const [blindArenaMode, setBlindArenaMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nexus_multichat_blind_arena') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleBlindArena = () => {
+    setBlindArenaMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('nexus_multichat_blind_arena', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const handleRevealBlindTurn = (msgId: string) => {
+    setMessages((prev) => {
+      const next = prev.map((m) => (m.id === msgId ? { ...m, blindRevealed: !m.blindRevealed } : m));
+      storage.saveMultiChatMessages(next);
+      return next;
+    });
+  };
+
+  // IDEA #2: Sequential Chain-of-Custody Relay Pipeline (Draft -> Expand -> Audit)
+  const [relayLoadingMsgId, setRelayLoadingMsgId] = useState<string | null>(null);
+  const [expandedRelayMsgId, setExpandedRelayMsgId] = useState<string | null>(null);
+
+  const handleToggleRelayPipeline = async (msg: MultiChatMessage, forceRegen = false) => {
+    if (!forceRegen && expandedRelayMsgId === msg.id && msg.relayPipeline) {
+      setExpandedRelayMsgId(null);
+      return;
+    }
+    if (!forceRegen && msg.relayPipeline) {
+      setExpandedRelayMsgId(msg.id);
+      return;
+    }
+    if (relayLoadingMsgId) return;
+    setRelayLoadingMsgId(msg.id);
+    setExpandedRelayMsgId(msg.id);
+    try {
+      const relayData = await generateMultiChatRelayPipeline(msg, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, relayPipeline: relayData } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setRelayLoadingMsgId(null);
+    }
+  };
+
+  // IDEA #3: Live Claim-by-Claim Fact-Checker & Hallucination Matrix
+  const [factMatrixLoadingMsgId, setFactMatrixLoadingMsgId] = useState<string | null>(null);
+  const [expandedFactMatrixMsgId, setExpandedFactMatrixMsgId] = useState<string | null>(null);
+
+  const handleToggleFactMatrix = async (
+    msg: MultiChatMessage,
+    useLiveWeb = false,
+    forceRegen = false,
+  ) => {
+    if (!forceRegen && !useLiveWeb && expandedFactMatrixMsgId === msg.id && msg.factMatrix) {
+      setExpandedFactMatrixMsgId(null);
+      return;
+    }
+    if (!forceRegen && !useLiveWeb && msg.factMatrix) {
+      setExpandedFactMatrixMsgId(msg.id);
+      return;
+    }
+    if (factMatrixLoadingMsgId) return;
+    setFactMatrixLoadingMsgId(msg.id);
+    setExpandedFactMatrixMsgId(msg.id);
+    try {
+      const factData = await generateMultiChatFactMatrix(msg, config, useLiveWeb);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, factMatrix: factData } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setFactMatrixLoadingMsgId(null);
+    }
+  };
+
+  // IDEA #4: "Frankenstein" Interactive Paragraph Mixer (Cherry-Pick Composer)
+  const [cherryPickSmoothingMsgId, setCherryPickSmoothingMsgId] = useState<string | null>(null);
+  const [expandedCherryPickMsgId, setExpandedCherryPickMsgId] = useState<string | null>(null);
+
+  const handleToggleCherryPick = (msg: MultiChatMessage) => {
+    if (expandedCherryPickMsgId === msg.id && msg.cherryPickMixer) {
+      setExpandedCherryPickMsgId(null);
+      return;
+    }
+    if (!msg.cherryPickMixer) {
+      const initialMixer = buildInitialCherryPickMixer(msg);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, cherryPickMixer: initialMixer } : m));
+        storage.saveMultiChatMessages(next);
+        return next;
+      });
+    }
+    setExpandedCherryPickMsgId(msg.id);
+  };
+
+  const handleUpdateCherryPickBlocks = (msgId: string, blocks: MultiChatCherryPickBlock[]) => {
+    setMessages((prev) => {
+      const next = prev.map((m) =>
+        m.id === msgId
+          ? {
+              ...m,
+              cherryPickMixer: {
+                blocks,
+                smoothedOutput: undefined,
+                generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              },
+            }
+          : m,
+      );
+      storage.saveMultiChatMessages(next);
+      return next;
+    });
+  };
+
+  const handleSmoothCherryPickWithAI = async (
+    msg: MultiChatMessage,
+    selectedBlocks: MultiChatCherryPickBlock[],
+  ) => {
+    if (cherryPickSmoothingMsgId) return;
+    setCherryPickSmoothingMsgId(msg.id);
+    try {
+      const smoothed = await generateAISmoothedCherryPick(msg, selectedBlocks, config);
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m.id === msg.id && m.cherryPickMixer
+            ? {
+                ...m,
+                cherryPickMixer: {
+                  ...m.cherryPickMixer,
+                  smoothedOutput: smoothed,
+                },
+              }
+            : m,
+        );
+        storage.saveMultiChatMessages(next);
+        return next;
+      });
+    } finally {
+      setCherryPickSmoothingMsgId(null);
+    }
+  };
+
+  // IDEA #5: Cross-Examination "Hot Seat" Mode (2 Personas Grill 1 Persona)
+  const [hotSeatLoadingMsgId, setHotSeatLoadingMsgId] = useState<string | null>(null);
+  const [expandedHotSeatMsgId, setExpandedHotSeatMsgId] = useState<string | null>(null);
+
+  const handleToggleHotSeat = async (
+    msg: MultiChatMessage,
+    targetPersonaId?: MultiChatPersonaId,
+  ) => {
+    const target = targetPersonaId || msg.hotSeat?.targetPersona || 'nova';
+    if (
+      !targetPersonaId &&
+      expandedHotSeatMsgId === msg.id &&
+      msg.hotSeat
+    ) {
+      setExpandedHotSeatMsgId(null);
+      return;
+    }
+    if (
+      !targetPersonaId &&
+      msg.hotSeat &&
+      msg.hotSeat.targetPersona === target
+    ) {
+      setExpandedHotSeatMsgId(msg.id);
+      return;
+    }
+    if (hotSeatLoadingMsgId) return;
+    setHotSeatLoadingMsgId(msg.id);
+    setExpandedHotSeatMsgId(msg.id);
+    try {
+      const hotSeatData = await executeMultiChatHotSeat(msg, target, config);
+      setMessages((prev) => {
+        const next = prev.map((m) => (m.id === msg.id ? { ...m, hotSeat: hotSeatData } : m));
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+    } finally {
+      setHotSeatLoadingMsgId(null);
+    }
+  };
+
+  // IDEA #6: Per-Persona Live Temperature & Depth Sliders ("Cognitive Dial") + Single-Persona Re-Run
+  const [activeCognitiveDialKey, setActiveCognitiveDialKey] = useState<string | null>(null);
+  const [cognitiveOverrides, setCognitiveOverrides] = useState<
+    Record<string, MultiChatCognitiveOverride>
+  >({});
+  const [soloRerunLoadingKey, setSoloRerunLoadingKey] = useState<string | null>(null);
+
+  const getCognitiveOverrideForKey = (
+    key: string,
+    defaultTemp = 0.7,
+  ): MultiChatCognitiveOverride => {
+    return (
+      cognitiveOverrides[key] || {
+        temperature: defaultTemp,
+        depth: 'balanced',
+      }
+    );
+  };
+
+  const handleUpdateCognitiveOverride = (
+    key: string,
+    patch: Partial<MultiChatCognitiveOverride>,
+  ) => {
+    setCognitiveOverrides((prev) => {
+      const current = prev[key] || { temperature: 0.7, depth: 'balanced' };
+      return {
+        ...prev,
+        [key]: { ...current, ...patch },
+      };
+    });
+  };
+
+  const handleRunSoloPersonaRerun = async (
+    msg: MultiChatMessage,
+    personaId: MultiChatPersonaId,
+  ) => {
+    const key = `${msg.id}_${personaId}`;
+    if (soloRerunLoadingKey) return;
+    const override = getCognitiveOverrideForKey(key, 0.7);
+    setSoloRerunLoadingKey(key);
+    try {
+      const updatedResp = await executeSinglePersonaRerun(
+        msg,
+        personaId,
+        override,
+        messages,
+        config,
+      );
+      setMessages((prev) => {
+        const next = prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                responses: m.responses.map((r) =>
+                  r.personaId === personaId ? updatedResp : r,
+                ),
+              }
+            : m,
+        );
+        storage.saveMultiChatMessages(next);
+        setSessions(storage.getMultiChatSessions());
+        return next;
+      });
+      setActiveCognitiveDialKey(null);
+    } finally {
+      setSoloRerunLoadingKey(null);
+    }
+  };
+
+  // IDEA #8: Pinboard & Cross-Turn Insight Bookmarks ("Multi-Chat Vault")
+  const MULTICHAT_VAULT_KEY = 'nexus_multichat_vault_v1';
+  const [showVaultDrawer, setShowVaultDrawer] = useState(false);
+  const [vaultItems, setVaultItems] = useState<MultiChatVaultItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('nexus_multichat_vault_v1');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [toastBanner, setToastBanner] = useState<string | null>(null);
+
+  const triggerToast = (msgText: string) => {
+    setToastBanner(msgText);
+    setTimeout(() => {
+      setToastBanner((prev) => (prev === msgText ? null : prev));
+    }, 3200);
+  };
+
+  const handleSaveToVault = (
+    title: string,
+    content: string,
+    sourceLabel: string,
+    personaId?: MultiChatPersonaId | 'consensus' | 'synthesis',
+  ) => {
+    if (!content.trim()) return;
+    const newItem: MultiChatVaultItem = {
+      id: `vault_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: title.slice(0, 80),
+      content: content.trim(),
+      sourceLabel,
+      personaId,
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setVaultItems((prev) => {
+      const next = [newItem, ...prev].slice(0, 50);
+      try {
+        localStorage.setItem(MULTICHAT_VAULT_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    triggerToast(`📌 Saved "${title.slice(0, 32)}..." to Multi-Chat Vault!`);
+  };
+
+  const handleRemoveVaultItem = (id: string) => {
+    setVaultItems((prev) => {
+      const next = prev.filter((it) => it.id !== id);
+      try {
+        localStorage.setItem(MULTICHAT_VAULT_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const handleClearVault = () => {
+    setVaultItems([]);
+    try {
+      localStorage.removeItem(MULTICHAT_VAULT_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  // IDEA #9: "What-If" Counterfactual Forking (Fork Any Turn into a New Branch Session)
+  const handleForkTurnIntoNewSession = (msg: MultiChatMessage) => {
+    stopAudio();
+    const msgIdx = messages.findIndex((m) => m.id === msg.id);
+    const historyUpToTurn = (msgIdx >= 0 ? messages.slice(0, msgIdx + 1) : [msg]).map((m) => ({
+      ...m,
+      forkedFromTurnId: msg.id,
+    }));
+
+    const { session } = storage.createMultiChatSession();
+    const forkTitle = `🔀 Fork: ${(msg.query || msg.userPrompt || 'Branch').slice(0, 26)}`;
+    storage.saveMultiChatMessages(historyUpToTurn);
+    const updatedSessions = storage.renameMultiChatSession(session.id, forkTitle);
+
+    setActiveSessionId(session.id);
+    setSessions(updatedSessions);
+    setMessages(historyUpToTurn);
+    setShowPinnedOnly(false);
+
+    setInputText(
+      `What if we reverse our core assumption on "${(msg.query || msg.userPrompt || '').slice(0, 60)}" and optimize for 10x speed and zero external dependencies?`,
+    );
+    triggerToast(`🔀 Forked turn into new session "${forkTitle}"!`);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 120);
+  };
+
+  // IDEA #10: Send Any Persona or Consensus Directly to Live AI Canvas Studio
+  const handleSendToCanvasStudio = (title: string, content: string, badge: string) => {
+    if (!content.trim()) return;
+    sendMultiChatContentToCanvas({
+      title,
+      markdownContent: content,
+      sourceBadge: badge,
+    });
+    triggerToast(
+      `🖥️ Sent "${title.slice(0, 30)}..." to Live AI Canvas Studio! Switch to AI Assistant to view & edit live.`,
+    );
   };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -2442,6 +2845,41 @@ export function MultiChatConsole({
             </button>
           )}
 
+          {/* IDEA #1: BLIND A/B/C ARENA MODE TOGGLE */}
+          <button
+            type="button"
+            onClick={handleToggleBlindArena}
+            className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border transition-all text-[11px] font-semibold flex items-center gap-1 cursor-pointer ${
+              blindArenaMode
+                ? 'bg-amber-500/20 border-amber-400/50 text-amber-200 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
+                : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300 hover:text-white'
+            }`}
+            title="Blind A/B/C Arena Mode: Anonymize NOVA, ORBIT & COSMOS as Candidate A/B/C until you vote for the best answer"
+          >
+            {blindArenaMode ? <EyeOff size={12} className="text-amber-300" /> : <Eye size={12} />}
+            <span className="hidden md:inline">
+              {blindArenaMode ? 'Blind Arena: ON' : 'Blind Arena'}
+            </span>
+          </button>
+
+          {/* IDEA #8: MULTI-CHAT INSIGHT VAULT DRAWER BUTTON */}
+          <button
+            type="button"
+            onClick={() => setShowVaultDrawer((prev) => !prev)}
+            className={`p-1.5 sm:px-2.5 sm:py-1 rounded-xl border transition-all text-[11px] font-semibold flex items-center gap-1 cursor-pointer ${
+              showVaultDrawer || vaultItems.length > 0
+                ? 'bg-amber-500/15 border-amber-500/35 text-amber-200 hover:bg-amber-500/25'
+                : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300 hover:text-white'
+            }`}
+            title="Open Multi-Chat Insight Vault (Pinboard of saved persona responses & synthesis deliverables)"
+          >
+            <Bookmark size={12} className="text-amber-400" />
+            <span className="hidden sm:inline">Vault</span>
+            <span className="px-1 py-0.2 rounded-full bg-amber-500/25 text-[9.5px] font-mono text-amber-200">
+              {vaultItems.length}
+            </span>
+          </button>
+
           <button
             type="button"
             onClick={onNavigateToSettings}
@@ -2459,6 +2897,31 @@ export function MultiChatConsole({
           </button>
         </div>
       </div>
+
+      {/* TOAST NOTIFICATION BANNER FOR VAULT / FORK / LIVE CANVAS EXPORT */}
+      {toastBanner && (
+        <div className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-950/90 via-slate-900 to-indigo-950/90 border border-cyan-400/40 text-cyan-200 text-xs font-mono flex items-center justify-between gap-2 shadow-lg animate-in fade-in duration-150">
+          <span>{toastBanner}</span>
+          <button
+            type="button"
+            onClick={() => setToastBanner(null)}
+            className="text-slate-400 hover:text-white cursor-pointer"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* IDEA #8: MULTI-CHAT INSIGHT VAULT DRAWER */}
+      {showVaultDrawer && (
+        <MultiChatVaultDrawer
+          items={vaultItems}
+          onRemoveItem={handleRemoveVaultItem}
+          onClearAll={handleClearVault}
+          onSendToCanvas={handleSendToCanvasStudio}
+          onClose={() => setShowVaultDrawer(false)}
+        />
+      )}
 
       {/* Multi-Session Thread Bar + Pinned Filter + Skills Popover + Dialogue Mode Switcher */}
       <MultiChatSessionBar
@@ -3193,6 +3656,49 @@ export function MultiChatConsole({
                                 )}
                               </button>
 
+                              {/* IDEA #1: Reveal Blind Identities Button (when Blind Arena is active on this turn) */}
+                              {blindArenaMode && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevealBlindTurn(msg.id)}
+                                  className="px-2 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/50 transition-all cursor-pointer"
+                                  title="Reveal or hide anonymous Candidate A/B/C identities for this turn"
+                                >
+                                  {msg.blindRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
+                                  <span className="hidden sm:inline">
+                                    {msg.blindRevealed ? 'Hide Names' : 'Reveal Trio'}
+                                  </span>
+                                </button>
+                              )}
+
+                              {/* IDEA #9: Counterfactual Turn Forking Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleForkTurnIntoNewSession(msg)}
+                                className="px-2 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-white/[0.04] hover:bg-indigo-500/20 text-slate-200 hover:text-indigo-200 border border-white/10 hover:border-indigo-400/40 transition-all cursor-pointer"
+                                title="Fork this turn & conversation history into a new Multi-Chat branch session to explore a What-If counterfactual"
+                              >
+                                <GitBranch size={12} className="text-indigo-400" />
+                                <span className="hidden sm:inline">Fork Turn</span>
+                              </button>
+
+                              {/* IDEA #10: Send Entire Turn Synthesis to Live AI Canvas Studio */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleSendToCanvasStudio(
+                                    msg.query || msg.userPrompt || 'Multi-Chat Synthesis',
+                                    buildTurnFullCopyText(msg),
+                                    '🖥️ Full Trio Turn',
+                                  )
+                                }
+                                className="px-2 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-400/40 transition-all cursor-pointer"
+                                title="Send this turn's complete Trio responses & synthesis directly to Live AI Canvas Studio"
+                              >
+                                <MonitorPlay size={12} className="text-cyan-300" />
+                                <span className="hidden sm:inline">Canvas</span>
+                              </button>
+
                               {/* Pin / Star Turn Button */}
                               <button
                                 type="button"
@@ -3328,6 +3834,16 @@ export function MultiChatConsole({
                               const isBranchOpen = activeBranchCardKey === personaKey;
                               const branches = resp.branches || [];
 
+                              const isBlindAnonymous = Boolean(blindArenaMode && !msg.blindRevealed);
+                              const candidateLetter = String.fromCharCode(65 + rIdx);
+                              const displayedPersonaName = isBlindAnonymous
+                                ? `CANDIDATE ${candidateLetter}`
+                                : resp.name;
+                              const displayedPersonaIcon = isBlindAnonymous ? '🕶️' : resp.icon;
+                              const displayedAccent = isBlindAnonymous ? '#94a3b8' : resp.accentColor;
+                              const isDialOpen = activeCognitiveDialKey === personaKey;
+                              const currentDialOverride = getCognitiveOverrideForKey(personaKey, 0.7);
+
                               return (
                                 <div
                                   key={`${msg.id}_resp_${resp.personaId || rIdx}_${rIdx}`}
@@ -3336,29 +3852,29 @@ export function MultiChatConsole({
                                   {/* Persona Chat Header Bar */}
                                   <div
                                     className="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-white/5 gap-1.5 flex-wrap"
-                                    style={{ background: `${resp.accentColor}08` }}
+                                    style={{ background: `${displayedAccent}08` }}
                                   >
                                     {/* Left: Avatar + Identity */}
                                     <div className="flex items-center gap-2 min-w-0 flex-1">
                                       <div
                                         className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl grid place-items-center text-sm sm:text-lg shrink-0 shadow-sm"
                                         style={{
-                                          background: `${resp.accentColor}20`,
-                                          border: `1px solid ${resp.accentColor}45`,
+                                          background: `${displayedAccent}20`,
+                                          border: `1px solid ${displayedAccent}45`,
                                         }}
                                       >
-                                        {resp.icon}
+                                        {displayedPersonaIcon}
                                       </div>
 
                                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                         <span
                                           className="font-bold text-xs sm:text-sm tracking-tight shrink-0"
-                                          style={{ color: resp.accentColor }}
+                                          style={{ color: displayedAccent }}
                                         >
-                                          {resp.name}
+                                          {displayedPersonaName}
                                         </span>
 
-                                        {resp.toneBadge && (
+                                        {!isBlindAnonymous && resp.toneBadge && (
                                           <span
                                             className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.2 sm:py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0"
                                             style={{
@@ -3371,6 +3887,18 @@ export function MultiChatConsole({
                                           </span>
                                         )}
 
+                                        {isBlindAnonymous && (
+                                          <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/30">
+                                            Blind Arena • Vote to Reveal
+                                          </span>
+                                        )}
+
+                                        {resp.cognitiveOverride && (
+                                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                            🎚️ T={resp.cognitiveOverride.temperature.toFixed(1)} • {resp.cognitiveOverride.depth}
+                                          </span>
+                                        )}
+
                                         {resp.durationMs && resp.status === 'completed' && (
                                           <span className="text-[9px] sm:text-[10px] font-mono text-slate-500 flex items-center gap-0.5 whitespace-nowrap shrink-0">
                                             <Clock size={9} />
@@ -3378,7 +3906,7 @@ export function MultiChatConsole({
                                           </span>
                                         )}
 
-                                        {resp.modelName && (
+                                        {!isBlindAnonymous && resp.modelName && (
                                           <span className="text-[10px] font-mono text-slate-500 items-center gap-1 hidden md:flex">
                                             <Cpu size={10} />
                                             {resp.modelName.split('/').pop()}
@@ -3563,10 +4091,147 @@ export function MultiChatConsole({
                                               {isCopied ? 'Copied' : 'Copy'}
                                             </span>
                                           </button>
+
+                                          {/* IDEA #6: Per-Persona Cognitive Dial (Temp & Depth + Solo Re-Run) */}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setActiveCognitiveDialKey(isDialOpen ? null : personaKey)
+                                            }
+                                            className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 border transition-all cursor-pointer ${
+                                              isDialOpen || soloRerunLoadingKey === personaKey
+                                                ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60'
+                                                : 'bg-black/30 hover:bg-white/10 text-slate-400 hover:text-cyan-200 border-white/10'
+                                            }`}
+                                            title="Cognitive Dial: Tune Temperature & Depth and Re-Run only this persona in-place"
+                                          >
+                                            {soloRerunLoadingKey === personaKey ? (
+                                              <Loader2 size={12} className="animate-spin text-cyan-400" />
+                                            ) : (
+                                              <Sliders size={12} className="text-cyan-400" />
+                                            )}
+                                            <span className="text-[10.5px] font-mono hidden lg:inline">Dial</span>
+                                          </button>
+
+                                          {/* IDEA #5: Put This Persona in the Cross-Examination Hot Seat */}
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleHotSeat(msg, resp.personaId)}
+                                            className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 bg-black/30 hover:bg-orange-500/20 text-slate-400 hover:text-orange-200 border border-white/10 hover:border-orange-400/40 transition-all cursor-pointer"
+                                            title={`Put ${resp.name} in the Hot Seat (the other 2 personas cross-examine ${resp.name})`}
+                                          >
+                                            <Flame size={12} className="text-orange-400" />
+                                            <span className="text-[10.5px] font-mono hidden xl:inline">Grill</span>
+                                          </button>
+
+                                          {/* IDEA #8: Save Persona Response to Multi-Chat Vault */}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleSaveToVault(
+                                                `${resp.name} on: ${(msg.query || msg.userPrompt || '').slice(0, 42)}`,
+                                                displayText,
+                                                `${resp.icon} ${resp.name}`,
+                                                resp.personaId,
+                                              )
+                                            }
+                                            className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 bg-black/30 hover:bg-amber-500/20 text-slate-400 hover:text-amber-200 border border-white/10 hover:border-amber-400/40 transition-all cursor-pointer"
+                                            title={`Pin ${resp.name}'s response to Multi-Chat Insight Vault`}
+                                          >
+                                            <Bookmark size={12} className="text-amber-400" />
+                                          </button>
+
+                                          {/* IDEA #10: Send Persona Response Directly to Live AI Canvas Studio */}
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleSendToCanvasStudio(
+                                                `${resp.name}: ${(msg.query || msg.userPrompt || '').slice(0, 40)}`,
+                                                displayText,
+                                                `${resp.icon} ${resp.name}`,
+                                              )
+                                            }
+                                            className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium flex items-center gap-1 bg-black/30 hover:bg-cyan-500/20 text-slate-400 hover:text-cyan-200 border border-white/10 hover:border-cyan-400/40 transition-all cursor-pointer"
+                                            title={`Open ${resp.name}'s response in Live AI Canvas Studio`}
+                                          >
+                                            <MonitorPlay size={12} className="text-cyan-400" />
+                                          </button>
                                         </>
                                       )}
                                     </div>
                                   </div>
+
+                                  {/* IDEA #6: INLINE COGNITIVE DIAL POPOVER BAR (Per-Persona Temperature, Depth & Solo Re-Run) */}
+                                  {isDialOpen && (
+                                    <div className="px-4 py-2.5 bg-slate-950/95 border-b border-cyan-500/30 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+                                      <div className="flex flex-wrap items-center gap-3">
+                                        <span className="text-cyan-300 font-bold flex items-center gap-1">
+                                          <Sliders size={12} /> {resp.name} Cognitive Dial:
+                                        </span>
+
+                                        <label className="flex items-center gap-2 text-slate-300">
+                                          <span>Temp: {currentDialOverride.temperature.toFixed(1)}</span>
+                                          <input
+                                            type="range"
+                                            min={0.1}
+                                            max={1.0}
+                                            step={0.1}
+                                            value={currentDialOverride.temperature}
+                                            onChange={(e) =>
+                                              handleUpdateCognitiveOverride(personaKey, {
+                                                temperature: parseFloat(e.target.value),
+                                              })
+                                            }
+                                            className="w-24 accent-cyan-400 cursor-pointer"
+                                          />
+                                        </label>
+
+                                        <div className="flex items-center gap-1">
+                                          {(['concise', 'balanced', 'deep'] as const).map((dMode) => (
+                                            <button
+                                              key={dMode}
+                                              type="button"
+                                              onClick={() =>
+                                                handleUpdateCognitiveOverride(personaKey, {
+                                                  depth: dMode,
+                                                })
+                                              }
+                                              className={`px-2 py-0.5 rounded uppercase text-[10px] cursor-pointer transition border ${
+                                                currentDialOverride.depth === dMode
+                                                  ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/50 font-bold'
+                                                  : 'bg-white/5 text-slate-400 border-white/10 hover:text-white'
+                                              }`}
+                                            >
+                                              {dMode}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          disabled={soloRerunLoadingKey === personaKey}
+                                          onClick={() => handleRunSoloPersonaRerun(msg, resp.personaId)}
+                                          className="px-3 py-1 rounded-lg bg-cyan-500/25 hover:bg-cyan-500/35 text-cyan-200 border border-cyan-400/50 font-bold flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                          {soloRerunLoadingKey === personaKey ? (
+                                            <Loader2 size={12} className="animate-spin" />
+                                          ) : (
+                                            <RotateCcw size={12} />
+                                          )}
+                                          <span>Re-Run {resp.name} Solo</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveCognitiveDialKey(null)}
+                                          className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                                        >
+                                          <X size={13} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
 
                                   {/* Persona Answer Body */}
                                   <div className="p-3 sm:p-5 flex flex-col gap-3">
@@ -4345,11 +5010,149 @@ export function MultiChatConsole({
                                   )}
                                   <span>Visual Chart</span>
                                 </button>
+
+                                {/* 8. IDEA #2: Chain-of-Custody Relay Pipeline (Draft -> Expand -> Audit) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleRelayPipeline(msg)}
+                                  disabled={isGenerating || relayLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedRelayMsgId === msg.id
+                                      ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/60'
+                                      : 'bg-white/[0.04] hover:bg-cyan-500/15 text-slate-200 hover:text-cyan-200 border-white/10'
+                                  }`}
+                                  title="Sequential Chain-of-Custody Relay: NOVA drafts blueprint -> ORBIT expands -> COSMOS audits & polishes"
+                                >
+                                  {relayLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-cyan-400" />
+                                  ) : (
+                                    <GitBranch size={11} className="text-cyan-400" />
+                                  )}
+                                  <span>Relay Pipeline</span>
+                                </button>
+
+                                {/* 9. IDEA #3: Live Claim-by-Claim Fact-Checker & Hallucination Matrix */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleFactMatrix(msg, false)}
+                                  disabled={isGenerating || factMatrixLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedFactMatrixMsgId === msg.id
+                                      ? 'bg-emerald-500/25 text-emerald-200 border-emerald-400/60'
+                                      : 'bg-white/[0.04] hover:bg-emerald-500/15 text-slate-200 hover:text-emerald-200 border-white/10'
+                                  }`}
+                                  title="Extract factual claims from NOVA, ORBIT & COSMOS and audit for consensus or hallucination risk"
+                                >
+                                  {factMatrixLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-emerald-400" />
+                                  ) : (
+                                    <ShieldCheck size={11} className="text-emerald-400" />
+                                  )}
+                                  <span>Fact Matrix</span>
+                                  {msg.factMatrix && (
+                                    <span className="px-1 rounded bg-emerald-500/25 text-[9.5px] font-mono text-emerald-200">
+                                      {msg.factMatrix.overallTrustScore}%
+                                    </span>
+                                  )}
+                                </button>
+
+                                {/* 10. IDEA #4: Cherry-Pick Paragraph Mixer */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCherryPick(msg)}
+                                  disabled={isGenerating}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedCherryPickMsgId === msg.id
+                                      ? 'bg-fuchsia-500/25 text-fuchsia-200 border-fuchsia-400/60'
+                                      : 'bg-white/[0.04] hover:bg-fuchsia-500/15 text-slate-200 hover:text-fuchsia-200 border-white/10'
+                                  }`}
+                                  title="Interactive Cherry-Pick Composer: Toggle & reorder paragraphs from NOVA, ORBIT & COSMOS"
+                                >
+                                  <Wand2 size={11} className="text-fuchsia-400" />
+                                  <span>Cherry-Pick</span>
+                                </button>
+
+                                {/* 11. IDEA #5: Cross-Examination Hot Seat Tribunal */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleHotSeat(msg)}
+                                  disabled={isGenerating || hotSeatLoadingMsgId === msg.id}
+                                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold flex items-center gap-1 border transition-all cursor-pointer ${
+                                    expandedHotSeatMsgId === msg.id
+                                      ? 'bg-orange-500/25 text-orange-200 border-orange-400/60'
+                                      : 'bg-white/[0.04] hover:bg-orange-500/15 text-slate-200 hover:text-orange-200 border-white/10'
+                                  }`}
+                                  title="Hot Seat Cross-Examination: 2 personas grill 1 target persona who must defend under oath"
+                                >
+                                  {hotSeatLoadingMsgId === msg.id ? (
+                                    <Loader2 size={11} className="animate-spin text-orange-400" />
+                                  ) : (
+                                    <Flame size={11} className="text-orange-400" />
+                                  )}
+                                  <span>Hot Seat</span>
+                                </button>
                               </div>
                             </div>
                           )}
 
+                          {/* IDEA #7: LIVE TOKEN, LATENCY & EFFICIENCY TELEMETRY STRIP */}
+                          <div className="px-3 sm:px-4">
+                            <MultiChatTurnTelemetryStrip
+                              message={msg}
+                              blindMode={blindArenaMode}
+                            />
+                          </div>
+
                           {/* RENDER EXPANDED SYNTHESIS LAB PANELS */}
+                          {expandedRelayMsgId === msg.id && (
+                            <div className="px-3 sm:px-4">
+                              <MultiChatRelayPipelinePanel
+                                message={msg}
+                                isLoading={relayLoadingMsgId === msg.id}
+                                onRegenerate={(m) => handleToggleRelayPipeline(m, true)}
+                                onSendToCanvas={handleSendToCanvasStudio}
+                                onSaveToVault={(t, c, b) => handleSaveToVault(t, c, b, 'synthesis')}
+                                onClose={() => setExpandedRelayMsgId(null)}
+                              />
+                            </div>
+                          )}
+
+                          {expandedFactMatrixMsgId === msg.id && (
+                            <div className="px-3 sm:px-4">
+                              <MultiChatFactMatrixPanel
+                                message={msg}
+                                isLoading={factMatrixLoadingMsgId === msg.id}
+                                onRunFactCheck={(m, useWeb) => handleToggleFactMatrix(m, useWeb, true)}
+                                onClose={() => setExpandedFactMatrixMsgId(null)}
+                              />
+                            </div>
+                          )}
+
+                          {expandedCherryPickMsgId === msg.id && (
+                            <div className="px-3 sm:px-4">
+                              <MultiChatCherryPickPanel
+                                message={msg}
+                                isSmoothing={cherryPickSmoothingMsgId === msg.id}
+                                onUpdateBlocks={handleUpdateCherryPickBlocks}
+                                onSmoothWithAI={handleSmoothCherryPickWithAI}
+                                onSendToCanvas={handleSendToCanvasStudio}
+                                onSaveToVault={(t, c, b) => handleSaveToVault(t, c, b, 'synthesis')}
+                                onClose={() => setExpandedCherryPickMsgId(null)}
+                              />
+                            </div>
+                          )}
+
+                          {expandedHotSeatMsgId === msg.id && (
+                            <div className="px-3 sm:px-4">
+                              <MultiChatHotSeatPanel
+                                message={msg}
+                                isLoading={hotSeatLoadingMsgId === msg.id}
+                                onSelectTargetAndGrill={(m, targetId) => handleToggleHotSeat(m, targetId)}
+                                onClose={() => setExpandedHotSeatMsgId(null)}
+                              />
+                            </div>
+                          )}
+
                           {expandedGuestMsgId === msg.id && (
                             <MultiChatGuestSpecialistPanel
                               message={msg}

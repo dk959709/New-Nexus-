@@ -1360,9 +1360,71 @@ export function AssistantPage() {
   const [skillsPanelOpen, setSkillsPanelOpen] = useState<boolean>(false);
   const [skillsLimitWarning, setSkillsLimitWarning] = useState<string | null>(null);
   const [canvasOpen, setCanvasOpen] = useState<boolean>(false);
-  const [canvasArtifacts, setCanvasArtifacts] = useState<CanvasArtifact[]>([]);
-  const [activeCanvasArtifactId, setActiveCanvasArtifactId] = useState<string | null>(null);
+  const [canvasArtifacts, setCanvasArtifacts] = useState<CanvasArtifact[]>(() => {
+    try {
+      const raw = localStorage.getItem('nexus_canvas_session_artifacts_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed.map((art) => ({
+            ...art,
+            messageIndex: typeof art.messageIndex === 'number' ? art.messageIndex : -1,
+            kind: art.kind || art.type || 'html',
+            currentVersionIndex:
+              typeof art.currentVersionIndex === 'number'
+                ? art.currentVersionIndex
+                : Math.max(0, (Array.isArray(art.versions) ? art.versions.length : 1) - 1),
+          }));
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return [];
+  });
+  const [activeCanvasArtifactId, setActiveCanvasArtifactId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('nexus_canvas_active_id_v1') || null;
+    } catch {
+      return null;
+    }
+  });
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Persist canvasArtifacts & activeCanvasArtifactId across reloads
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexus_canvas_session_artifacts_v1', JSON.stringify(canvasArtifacts.slice(0, 40)));
+    } catch {
+      // ignore quota errors
+    }
+  }, [canvasArtifacts]);
+
+  useEffect(() => {
+    try {
+      if (activeCanvasArtifactId) {
+        localStorage.setItem('nexus_canvas_active_id_v1', activeCanvasArtifactId);
+      } else {
+        localStorage.removeItem('nexus_canvas_active_id_v1');
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeCanvasArtifactId]);
+
+  // Auto-open Canvas if user sent an artifact from Multi-Chat ("Open in Canvas")
+  useEffect(() => {
+    try {
+      const autoOpenId = localStorage.getItem('nexus_canvas_auto_open_v1');
+      if (autoOpenId) {
+        localStorage.removeItem('nexus_canvas_auto_open_v1');
+        setActiveCanvasArtifactId(autoOpenId);
+        setCanvasOpen(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const syncSessionArtifacts = useCallback(
     (targetMessageIndex?: number) => {
@@ -14925,6 +14987,15 @@ DIRECTIVES:
         onCreateArtifact={(created) => {
           setCanvasArtifacts((prev) => [created, ...prev]);
           setActiveCanvasArtifactId(created.id);
+        }}
+        onDeleteArtifact={(id) => {
+          setCanvasArtifacts((prev) => {
+            const next = prev.filter((a) => a.id !== id);
+            if (activeCanvasArtifactId === id) {
+              setActiveCanvasArtifactId(next.length > 0 ? next[0].id : null);
+            }
+            return next;
+          });
         }}
         onSyncToMessage={handleSyncArtifactToMessage}
         activeProvider={activeTurnProvider}

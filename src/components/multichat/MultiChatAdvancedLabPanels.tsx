@@ -21,6 +21,15 @@ import {
   Wand2,
   Volume2,
   VolumeX,
+  ArrowUp,
+  ArrowDown,
+  Flame,
+  ShieldCheck,
+  GitBranch,
+  Bookmark,
+  Trash2,
+  MonitorPlay,
+  Globe,
 } from 'lucide-react';
 import { copyToClipboard } from '@/lib/clipboard';
 import { MULTICHAT_GUEST_SPECIALISTS } from '@/services/multiChatOrchestrator';
@@ -29,6 +38,9 @@ import type {
   MultiChatPersonaId,
   MultiChatGuestSpecialistId,
   MultiChatPromptSplitPlan,
+  MultiChatCherryPickBlock,
+  MultiChatVaultItem,
+  CanvasArtifact,
 } from '@/types';
 
 const STRESS_TEST_PRESETS = [
@@ -1766,4 +1778,975 @@ export const MultiChatPromptSplitterDrawer: React.FC<{
     </div>
   );
 };
+
+// ============================================================================
+// HELPER: SEND MULTI-CHAT OUTPUT TO LIVE AI CANVAS STUDIO
+// ============================================================================
+const SESSION_CANVAS_ARTIFACTS_KEY = 'nexus_canvas_session_artifacts_v1';
+const CANVAS_VAULT_STORAGE_KEY = 'nexus_canvas_vault_v1';
+const CANVAS_AUTO_OPEN_KEY = 'nexus_canvas_auto_open_v1';
+
+export function sendMultiChatContentToCanvas(params: {
+  title: string;
+  markdownContent: string;
+  sourceBadge: string;
+}): CanvasArtifact {
+  const { title, markdownContent, sourceBadge } = params;
+  const escapedTitle = title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escapedBadge = sourceBadge.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Check if markdownContent already contains a full ```html block
+  const htmlFenceMatch = markdownContent.match(/```html\s*([\s\S]*?)```/i);
+  const rawHtml =
+    htmlFenceMatch && htmlFenceMatch[1] && htmlFenceMatch[1].trim().length > 60
+      ? htmlFenceMatch[1].trim()
+      : `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${escapedTitle}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased p-6 md:p-10">
+  <div class="max-w-4xl mx-auto space-y-6">
+    <header class="p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950/60 to-slate-900 border border-cyan-500/30 shadow-2xl">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <span class="px-3 py-1 rounded-full text-xs font-mono font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+          ${escapedBadge}
+        </span>
+        <span class="text-xs font-mono text-slate-400">${new Date().toLocaleString()}</span>
+      </div>
+      <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight text-white">${escapedTitle}</h1>
+    </header>
+
+    <main id="content-root" class="p-6 md:p-8 rounded-2xl bg-slate-900/90 border border-white/10 shadow-xl space-y-4 leading-relaxed text-slate-200 whitespace-pre-wrap font-sans text-sm md:text-base"></main>
+
+    <footer class="flex items-center justify-between text-xs font-mono text-slate-500 pt-2">
+      <span>Generated via NEXUS Multi-Chat Trio Synthesis</span>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('content-root').innerText)" class="px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 cursor-pointer transition">
+        Copy Content
+      </button>
+    </footer>
+  </div>
+  <script>
+    const rawText = ${JSON.stringify(markdownContent)};
+    document.getElementById('content-root').textContent = rawText;
+  </script>
+</body>
+</html>`;
+
+  const artifactId = `mc-canvas-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const newArtifact: CanvasArtifact = {
+    id: artifactId,
+    title: title.slice(0, 64),
+    type: 'html',
+    language: 'html',
+    content: rawHtml,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    versions: [
+      {
+        id: `${artifactId}-v1`,
+        versionNumber: 1,
+        label: `v1 • ${sourceBadge}`,
+        content: rawHtml,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ],
+  };
+
+  try {
+    const existingRaw = localStorage.getItem(SESSION_CANVAS_ARTIFACTS_KEY);
+    const existingList: CanvasArtifact[] = existingRaw ? JSON.parse(existingRaw) : [];
+    const updatedSession = [newArtifact, ...existingList.filter((a) => a.id !== newArtifact.id)].slice(0, 35);
+    localStorage.setItem(SESSION_CANVAS_ARTIFACTS_KEY, JSON.stringify(updatedSession));
+
+    const vaultRaw = localStorage.getItem(CANVAS_VAULT_STORAGE_KEY);
+    const vaultList: CanvasArtifact[] = vaultRaw ? JSON.parse(vaultRaw) : [];
+    const updatedVault = [newArtifact, ...vaultList.filter((a) => a.id !== newArtifact.id)].slice(0, 25);
+    localStorage.setItem(CANVAS_VAULT_STORAGE_KEY, JSON.stringify(updatedVault));
+
+    localStorage.setItem(CANVAS_AUTO_OPEN_KEY, newArtifact.id);
+  } catch {
+    // ignore storage quota errors
+  }
+
+  return newArtifact;
+}
+
+// ============================================================================
+// 9. SEQUENTIAL CHAIN-OF-CUSTODY RELAY PIPELINE PANEL (IDEA #2)
+// ============================================================================
+export const MultiChatRelayPipelinePanel: React.FC<{
+  message: MultiChatMessage;
+  isLoading: boolean;
+  onRegenerate: (msg: MultiChatMessage) => void;
+  onSendToCanvas: (title: string, content: string, badge: string) => void;
+  onSaveToVault: (title: string, content: string, badge: string) => void;
+  onClose: () => void;
+}> = ({ message, isLoading, onRegenerate, onSendToCanvas, onSaveToVault, onClose }) => {
+  const data = message.relayPipeline;
+  const [copiedFinal, setCopiedFinal] = useState(false);
+
+  const handleCopyFinal = async () => {
+    if (!data) return;
+    const fullText = [
+      `# 🔗 Chain-of-Custody Relay Deliverable`,
+      `Query: ${message.userPrompt}`,
+      '',
+      ...data.steps.map(
+        (s, idx) =>
+          `## Stage ${idx + 1}: ${s.stageLabel} (${s.personaId.toUpperCase()})\nHandoff Note: ${s.handoffNote}\n\n${s.output}`
+      ),
+      '',
+      `## 🏆 Final Polished Deliverable`,
+      data.finalDeliverable,
+    ].join('\n\n');
+    await copyToClipboard(fullText);
+    setCopiedFinal(true);
+    setTimeout(() => setCopiedFinal(false), 1800);
+  };
+
+  return (
+    <div className="mt-3 rounded-2xl border border-cyan-500/40 bg-gradient-to-br from-slate-950/95 via-cyan-950/20 to-slate-950/95 p-4 shadow-2xl space-y-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300">
+            <GitBranch size={15} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-cyan-200">
+                🔗 Chain-of-Custody Relay Pipeline
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                Draft → Expand → Audit
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Sequential baton pass: NOVA architectures the foundation → ORBIT expands with examples → COSMOS audits &amp; polishes
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {data && (
+            <>
+              <button
+                type="button"
+                onClick={handleCopyFinal}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 flex items-center gap-1 cursor-pointer"
+              >
+                {copiedFinal ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                <span>{copiedFinal ? 'Copied!' : 'Copy Relay'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onSaveToVault(
+                    `Relay Deliverable: ${message.userPrompt.slice(0, 48)}`,
+                    data.finalDeliverable,
+                    '🔗 Relay Pipeline'
+                  )
+                }
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-500/30 flex items-center gap-1 cursor-pointer"
+              >
+                <Bookmark size={12} />
+                <span>Vault</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onSendToCanvas(
+                    `Relay: ${message.userPrompt.slice(0, 42)}`,
+                    data.finalDeliverable,
+                    '🔗 Chain-of-Custody Relay'
+                  )
+                }
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 flex items-center gap-1 cursor-pointer"
+              >
+                <MonitorPlay size={12} />
+                <span>Open in Canvas</span>
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => onRegenerate(message)}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 cursor-pointer"
+          >
+            <RotateCcw size={12} className={isLoading ? 'animate-spin' : ''} />
+            <span>Re-Run Relay</span>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {isLoading && !data ? (
+        <div className="py-8 flex flex-col items-center justify-center gap-2 text-cyan-300">
+          <Loader2 size={22} className="animate-spin" />
+          <span className="text-xs font-mono">Passing the baton: NOVA (Step 1) → ORBIT (Step 2) → COSMOS (Step 3)...</span>
+        </div>
+      ) : data ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {data.steps.map((step, idx) => {
+              const badgeColor =
+                step.personaId === 'nova'
+                  ? 'border-cyan-500/35 bg-cyan-950/20 text-cyan-200'
+                  : step.personaId === 'orbit'
+                  ? 'border-amber-500/35 bg-amber-950/20 text-amber-200'
+                  : 'border-purple-500/35 bg-purple-950/20 text-purple-200';
+              return (
+                <div
+                  key={`${step.personaId}-${idx}`}
+                  className={`p-3 rounded-xl border ${badgeColor} flex flex-col justify-between gap-2`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-black/40">
+                        Stage {idx + 1} • {step.personaId.toUpperCase()}
+                      </span>
+                      <span className="text-[10px] font-mono opacity-80">{step.stageLabel}</span>
+                    </div>
+                    <p className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
+                      {step.output}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-white/10 text-[10.5px] font-mono text-slate-300 italic">
+                    👉 {step.handoffNote}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-cyan-950/40 border border-emerald-400/40 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+                <Trophy size={13} /> Final Relay Deliverable (Synthesized &amp; Audited)
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">{data.generatedAt}</span>
+            </div>
+            <div className="text-xs md:text-sm text-slate-100 whitespace-pre-wrap leading-relaxed">
+              {data.finalDeliverable}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+// ============================================================================
+// 10. LIVE CLAIM-BY-CLAIM FACT-CHECKER & HALLUCINATION MATRIX (IDEA #3)
+// ============================================================================
+export const MultiChatFactMatrixPanel: React.FC<{
+  message: MultiChatMessage;
+  isLoading: boolean;
+  onRunFactCheck: (msg: MultiChatMessage, useLiveWeb: boolean) => void;
+  onClose: () => void;
+}> = ({ message, isLoading, onRunFactCheck, onClose }) => {
+  const data = message.factMatrix;
+  const [filterStatus, setFilterStatus] = useState<'all' | 'verified' | 'nuance' | 'disputed'>('all');
+
+  const filteredClaims = (data?.claims || []).filter((c) =>
+    filterStatus === 'all' ? true : c.status === filterStatus
+  );
+
+  return (
+    <div className="mt-3 rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-slate-950/95 via-emerald-950/15 to-slate-950/95 p-4 shadow-2xl space-y-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+            <ShieldCheck size={15} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-emerald-200">
+                🔍 Claim-by-Claim Fact-Checker &amp; Hallucination Matrix
+              </span>
+              {data && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                  Trust Score: {data.overallTrustScore}%
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Audits factual claims made by NOVA, ORBIT &amp; COSMOS for consensus verification or hallucination risk
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => onRunFactCheck(message, true)}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-400/40 flex items-center gap-1 cursor-pointer"
+            title="Cross-verify all claims against live web search"
+          >
+            <Globe size={12} className={isLoading ? 'animate-spin' : ''} />
+            <span>Verify with Live Web</span>
+          </button>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => onRunFactCheck(message, false)}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 cursor-pointer"
+          >
+            <RotateCcw size={12} className={isLoading ? 'animate-spin' : ''} />
+            <span>Re-Audit</span>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {isLoading && !data ? (
+        <div className="py-8 flex flex-col items-center justify-center gap-2 text-emerald-300">
+          <Loader2 size={22} className="animate-spin" />
+          <span className="text-xs font-mono">Extracting claims &amp; cross-verifying across NOVA, ORBIT, and COSMOS...</span>
+        </div>
+      ) : data ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-black/40 p-2.5 rounded-xl border border-white/10">
+            <p className="text-xs text-slate-300">{data.summaryNote}</p>
+            <div className="flex items-center gap-1">
+              {(['all', 'verified', 'nuance', 'disputed'] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setFilterStatus(st)}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-mono uppercase cursor-pointer transition ${
+                    filterStatus === st
+                      ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-400/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {st === 'all'
+                    ? `All (${data.claims.length})`
+                    : st === 'verified'
+                    ? '✅ Verified'
+                    : st === 'nuance'
+                    ? '⚠️ Nuance'
+                    : '❌ Disputed'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {filteredClaims.map((claim) => {
+              const statusStyle =
+                claim.status === 'verified'
+                  ? 'border-emerald-500/35 bg-emerald-950/20 text-emerald-300'
+                  : claim.status === 'nuance'
+                  ? 'border-amber-500/35 bg-amber-950/20 text-amber-300'
+                  : 'border-rose-500/35 bg-rose-950/25 text-rose-300';
+              const statusBadge =
+                claim.status === 'verified'
+                  ? '✅ Verified'
+                  : claim.status === 'nuance'
+                  ? '⚠️ Needs Nuance'
+                  : '❌ Disputed';
+
+              return (
+                <div
+                  key={claim.id}
+                  className={`p-3 rounded-xl border ${statusStyle} flex flex-col justify-between gap-2`}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-black/40">
+                        {claim.sourcePersona.toUpperCase()} • {statusBadge}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold">
+                        Confidence: {claim.confidence}%
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold text-white leading-snug">
+                      &ldquo;{claim.claim}&rdquo;
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-slate-300 border-t border-white/10 pt-1.5 leading-relaxed">
+                    {claim.verificationNote}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+// ============================================================================
+// 11. "FRANKENSTEIN" INTERACTIVE PARAGRAPH MIXER (CHERRY-PICK COMPOSER - IDEA #4)
+// ============================================================================
+export const MultiChatCherryPickPanel: React.FC<{
+  message: MultiChatMessage;
+  isSmoothing: boolean;
+  onUpdateBlocks: (msgId: string, blocks: MultiChatCherryPickBlock[]) => void;
+  onSmoothWithAI: (msg: MultiChatMessage, selectedBlocks: MultiChatCherryPickBlock[]) => void;
+  onSendToCanvas: (title: string, content: string, badge: string) => void;
+  onSaveToVault: (title: string, content: string, badge: string) => void;
+  onClose: () => void;
+}> = ({
+  message,
+  isSmoothing,
+  onUpdateBlocks,
+  onSmoothWithAI,
+  onSendToCanvas,
+  onSaveToVault,
+  onClose,
+}) => {
+  const mixer = message.cherryPickMixer;
+  const [copiedMixer, setCopiedMixer] = useState(false);
+
+  if (!mixer) return null;
+
+  const selectedBlocks = mixer.blocks.filter((b) => b.selected);
+  const compiledText =
+    mixer.smoothedOutput ||
+    selectedBlocks.map((b) => b.text).join('\n\n');
+
+  const toggleBlock = (id: string) => {
+    const next = mixer.blocks.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b));
+    onUpdateBlocks(message.id, next);
+  };
+
+  const moveBlock = (index: number, direction: -1 | 1) => {
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= mixer.blocks.length) return;
+    const copy = [...mixer.blocks];
+    const [moved] = copy.splice(index, 1);
+    copy.splice(targetIdx, 0, moved);
+    onUpdateBlocks(message.id, copy);
+  };
+
+  const handleCopy = async () => {
+    await copyToClipboard(compiledText);
+    setCopiedMixer(true);
+    setTimeout(() => setCopiedMixer(false), 1800);
+  };
+
+  return (
+    <div className="mt-3 rounded-2xl border border-fuchsia-500/40 bg-gradient-to-br from-slate-950/95 via-fuchsia-950/15 to-slate-950/95 p-4 shadow-2xl space-y-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-fuchsia-500/20 border border-fuchsia-400/40 flex items-center justify-center text-fuchsia-300">
+            <Wand2 size={15} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-fuchsia-200">
+                🧬 Cherry-Pick Paragraph Mixer
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">
+                {selectedBlocks.length} / {mixer.blocks.length} blocks active
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Toggle &amp; reorder the strongest paragraphs from NOVA, ORBIT, and COSMOS into your custom master response
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={isSmoothing || selectedBlocks.length === 0}
+            onClick={() => onSmoothWithAI(message, selectedBlocks)}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-fuchsia-500/25 hover:bg-fuchsia-500/35 text-fuchsia-200 border border-fuchsia-400/40 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+          >
+            {isSmoothing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            <span>AI Smooth Transitions</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 flex items-center gap-1 cursor-pointer"
+          >
+            {copiedMixer ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            <span>{copiedMixer ? 'Copied' : 'Copy Mix'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onSaveToVault(
+                `Cherry-Pick Mix: ${message.userPrompt.slice(0, 44)}`,
+                compiledText,
+                '🧬 Cherry-Pick Mix'
+              )
+            }
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-500/30 flex items-center gap-1 cursor-pointer"
+          >
+            <Bookmark size={12} />
+            <span>Vault</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onSendToCanvas(
+                `Cherry-Pick: ${message.userPrompt.slice(0, 42)}`,
+                compiledText,
+                '🧬 Cherry-Pick Composer'
+              )
+            }
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 flex items-center gap-1 cursor-pointer"
+          >
+            <MonitorPlay size={12} />
+            <span>Canvas</span>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Left: Block Selector & Reorder */}
+        <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+          <div className="text-[10.5px] font-mono uppercase tracking-wider text-slate-400 mb-1">
+            1. Click to toggle paragraphs • Use arrows to reorder
+          </div>
+          {mixer.blocks.map((block, idx) => {
+            const pBadge =
+              block.personaId === 'nova'
+                ? 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10'
+                : block.personaId === 'orbit'
+                ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+                : 'text-purple-300 border-purple-500/30 bg-purple-500/10';
+            return (
+              <div
+                key={block.id}
+                className={`p-2.5 rounded-xl border transition flex items-start justify-between gap-2 ${
+                  block.selected
+                    ? 'bg-slate-900/90 border-fuchsia-400/40 text-slate-100'
+                    : 'bg-black/30 border-white/5 text-slate-500 opacity-60'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleBlock(block.id)}
+                  className="flex-1 text-left space-y-1 cursor-pointer"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[9.5px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${pBadge}`}>
+                      {block.personaId.toUpperCase()}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {block.selected ? '✓ Included' : 'Click to include'}
+                    </span>
+                  </div>
+                  <p className="text-xs line-clamp-3 leading-relaxed">{block.text}</p>
+                </button>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => moveBlock(idx, -1)}
+                    disabled={idx === 0}
+                    className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 cursor-pointer"
+                    title="Move Up"
+                  >
+                    <ArrowUp size={11} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveBlock(idx, 1)}
+                    disabled={idx === mixer.blocks.length - 1}
+                    className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 cursor-pointer"
+                    title="Move Down"
+                  >
+                    <ArrowDown size={11} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Right: Live Assembled Output */}
+        <div className="p-3 rounded-xl bg-black/50 border border-white/10 flex flex-col justify-between max-h-80 overflow-y-auto">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+              <span className="text-[10.5px] font-mono font-bold uppercase text-fuchsia-300">
+                {mixer.smoothedOutput ? '✨ AI-Smoothed Master Document' : '📋 Live Assembled Preview'}
+              </span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {compiledText.split(/\s+/).filter(Boolean).length} words
+              </span>
+            </div>
+            <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
+              {compiledText || 'Select at least one paragraph block on the left to compose your custom answer.'}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 12. CROSS-EXAMINATION "HOT SEAT" MODE PANEL (IDEA #5)
+// ============================================================================
+export const MultiChatHotSeatPanel: React.FC<{
+  message: MultiChatMessage;
+  isLoading: boolean;
+  onSelectTargetAndGrill: (msg: MultiChatMessage, targetId: MultiChatPersonaId) => void;
+  onClose: () => void;
+}> = ({ message, isLoading, onSelectTargetAndGrill, onClose }) => {
+  const data = message.hotSeat;
+  const activeTarget: MultiChatPersonaId = data?.targetPersona || 'nova';
+
+  return (
+    <div className="mt-3 rounded-2xl border border-orange-500/40 bg-gradient-to-br from-slate-950/95 via-orange-950/20 to-slate-950/95 p-4 shadow-2xl space-y-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-orange-500/20 border border-orange-400/40 flex items-center justify-center text-orange-300">
+            <Flame size={15} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-orange-200">
+                🔥 Cross-Examination &ldquo;Hot Seat&rdquo; Tribunal
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-orange-500/20 text-orange-300 border border-orange-400/30">
+                2 Personas Grill 1 Persona
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Put any persona on the witness stand while the other two expose blind spots and force an under-oath defense
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {(['nova', 'orbit', 'cosmos'] as MultiChatPersonaId[]).map((pid) => (
+            <button
+              key={pid}
+              type="button"
+              disabled={isLoading}
+              onClick={() => onSelectTargetAndGrill(message, pid)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold uppercase cursor-pointer transition border ${
+                activeTarget === pid
+                  ? 'bg-orange-500/30 text-orange-200 border-orange-400/50 shadow'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10'
+              }`}
+            >
+              🔥 Grill {pid.toUpperCase()}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="py-8 flex flex-col items-center justify-center gap-2 text-orange-300">
+          <Loader2 size={22} className="animate-spin" />
+          <span className="text-xs font-mono">
+            Putting {activeTarget.toUpperCase()} in the Hot Seat under cross-examination...
+          </span>
+        </div>
+      ) : data ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {data.interrogators.map((item, idx) => (
+              <div
+                key={`${item.challengerPersona}-${idx}`}
+                className="p-3 rounded-xl bg-black/45 border border-orange-500/30 space-y-1.5"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-orange-500/20 text-orange-200">
+                    ⚔️ Interrogator: {item.challengerPersona.toUpperCase()}
+                  </span>
+                  <span className="text-[10px] font-mono text-amber-300">
+                    Blind Spot: {item.exposedBlindSpot}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-100 font-medium leading-relaxed">
+                  &ldquo;{item.sharpQuestion}&rdquo;
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-orange-950/35 via-slate-900/90 to-emerald-950/35 border border-amber-400/40 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-mono font-extrabold uppercase text-amber-300">
+                🛡️ {data.targetPersona.toUpperCase()}&apos;s Under-Oath Defense &amp; Upgrades
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                Verdict: {data.verdictBadge}
+              </span>
+            </div>
+            <div className="text-xs md:text-sm text-slate-100 whitespace-pre-wrap leading-relaxed">
+              {data.targetDefense}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+// ============================================================================
+// 13. LIVE TOKEN, LATENCY & EFFICIENCY TELEMETRY STRIP (IDEA #7)
+// ============================================================================
+export const MultiChatTurnTelemetryStrip: React.FC<{
+  message: MultiChatMessage;
+  blindMode?: boolean;
+}> = ({ message, blindMode }) => {
+  const readyResponses = message.responses.filter((r) => r.status === 'ready' && r.content.trim().length > 0);
+  if (readyResponses.length === 0) return null;
+
+  const metrics = readyResponses.map((r, idx) => {
+    const words = r.content.trim().split(/\s+/).filter(Boolean).length;
+    const estTokens = Math.max(12, Math.round(words * 1.32));
+    const latencySec = Math.max(0.4, (r.latencyMs || 1500) / 1000);
+    const tokPerSec = Math.round(estTokens / latencySec);
+    // Estimate information density by counting structured elements (headers, bullets, code/numbers)
+    const structureHits = (r.content.match(/(^#+\s|^\s*[-*•]|\d+%|\*\*)/gm) || []).length;
+    const densityScore = Math.min(99, Math.max(62, Math.round(65 + (structureHits / Math.max(1, words / 25)) * 18)));
+
+    const displayLabel =
+      blindMode && !message.blindRevealed
+        ? `CANDIDATE ${String.fromCharCode(65 + idx)}`
+        : r.personaId.toUpperCase();
+
+    return {
+      personaId: r.personaId,
+      displayLabel,
+      words,
+      estTokens,
+      latencySec: latencySec.toFixed(1),
+      latencyRaw: latencySec,
+      tokPerSec,
+      densityScore,
+    };
+  });
+
+  const fastest = [...metrics].sort((a, b) => a.latencyRaw - b.latencyRaw)[0];
+  const densest = [...metrics].sort((a, b) => b.densityScore - a.densityScore)[0];
+  const totalTokens = metrics.reduce((acc, m) => acc + m.estTokens, 0);
+
+  return (
+    <div className="mt-2.5 px-3 py-2 rounded-xl bg-slate-950/80 border border-white/10 flex flex-wrap items-center justify-between gap-2 text-[10.5px] font-mono text-slate-300">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+          <BarChart3 size={11} className="text-cyan-400" /> Telemetry:
+        </span>
+        {metrics.map((m) => (
+          <span
+            key={m.personaId}
+            className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/10 flex items-center gap-1.5"
+          >
+            <strong className="text-white">{m.displayLabel}</strong>
+            <span className="text-slate-400">{m.latencySec}s</span>
+            <span className="text-cyan-300">{m.tokPerSec} tok/s</span>
+            <span className="text-slate-400">~{m.estTokens}t</span>
+            <span className="text-emerald-300">Density {m.densityScore}%</span>
+          </span>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        {fastest && (
+          <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300">
+            ⚡ Fastest: {fastest.displayLabel} ({fastest.latencySec}s)
+          </span>
+        )}
+        {densest && (
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300">
+            💎 Highest Signal: {densest.displayLabel} ({densest.densityScore}%)
+          </span>
+        )}
+        <span className="text-slate-500">Total ~{totalTokens} tokens</span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 14. PINBOARD & CROSS-TURN INSIGHT VAULT DRAWER (IDEA #8)
+// ============================================================================
+export const MultiChatVaultDrawer: React.FC<{
+  items: MultiChatVaultItem[];
+  onRemoveItem: (id: string) => void;
+  onClearAll: () => void;
+  onSendToCanvas: (title: string, content: string, badge: string) => void;
+  onClose: () => void;
+}> = ({ items, onRemoveItem, onClearAll, onSendToCanvas, onClose }) => {
+  const [search, setSearch] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const filtered = items.filter(
+    (item) =>
+      !search.trim() ||
+      item.title.toLowerCase().includes(search.toLowerCase()) ||
+      item.content.toLowerCase().includes(search.toLowerCase()) ||
+      item.sourceLabel.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleExportAll = () => {
+    const md = [
+      `# 🗂️ NEXUS Multi-Chat Insight Vault`,
+      `Exported: ${new Date().toLocaleString()}`,
+      '',
+      ...items.map(
+        (it, idx) =>
+          `## ${idx + 1}. ${it.title} (${it.sourceLabel})\n*Saved: ${it.createdAt}*\n\n${it.content}\n\n---`
+      ),
+    ].join('\n\n');
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nexus-multichat-vault-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="mb-3 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-slate-950/95 via-amber-950/15 to-slate-950/95 p-4 shadow-2xl space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+            <Bookmark size={15} />
+          </div>
+          <div>
+            <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-amber-200">
+              🗂️ Multi-Chat Insight Vault ({items.length} Saved)
+            </span>
+            <p className="text-[11px] text-slate-400">
+              Cross-session pinboard of your favorite persona answers, verdicts, and synthesized deliverables
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter vault..."
+            className="px-2.5 py-1 rounded-lg bg-black/50 border border-white/10 text-xs text-slate-200 focus:outline-none focus:border-amber-400/50"
+          />
+          {items.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={handleExportAll}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 flex items-center gap-1 cursor-pointer"
+              >
+                <Download size={12} />
+                <span>Export .MD</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClearAll}
+                className="px-2 py-1 rounded-lg text-[11px] font-mono bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 cursor-pointer"
+              >
+                Clear
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="py-6 text-center text-xs font-mono text-slate-400">
+          {items.length === 0
+            ? 'Your Multi-Chat Vault is empty. Click the 📌 Vault button on any Persona card, Consensus Verdict, or Synthesis panel to pin insights here.'
+            : 'No saved vault items match your search filter.'}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
+          {filtered.map((item) => (
+            <div
+              key={item.id}
+              className="p-3 rounded-xl bg-black/45 border border-white/10 flex flex-col justify-between gap-2"
+            >
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    {item.sourceLabel}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">{item.createdAt}</span>
+                </div>
+                <h4 className="text-xs font-bold text-white truncate">{item.title}</h4>
+                <p className="text-xs text-slate-300 line-clamp-3 whitespace-pre-wrap leading-relaxed">
+                  {item.content}
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await copyToClipboard(item.content);
+                    setCopiedId(item.id);
+                    setTimeout(() => setCopiedId(null), 1500);
+                  }}
+                  className="px-2 py-0.5 rounded text-[10px] font-mono bg-white/5 hover:bg-white/10 text-slate-200 flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedId === item.id ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+                  <span>{copiedId === item.id ? 'Copied' : 'Copy'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSendToCanvas(item.title, item.content, item.sourceLabel)}
+                  className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 flex items-center gap-1 cursor-pointer"
+                >
+                  <MonitorPlay size={10} />
+                  <span>Canvas</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoveItem(item.id)}
+                  className="p-1 rounded text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                  title="Remove from Vault"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 

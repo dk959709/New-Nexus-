@@ -480,7 +480,7 @@ export interface MultiChatPersonaConfig {
   pinnedSkillId?: string;
 }
 
-export type MultiChatDialogueMode = 'harmony' | 'debate' | 'parallel';
+export type MultiChatDialogueMode = 'harmony' | 'debate' | 'parallel' | 'relay';
 
 export interface MultiChatWebSource {
   title: string;
@@ -515,6 +515,11 @@ export interface MultiChatBranchTurn {
   text?: string;
 }
 
+export interface MultiChatCognitiveOverride {
+  temperature: number; // 0.1 to 1.0
+  depth: 'concise' | 'balanced' | 'deep';
+}
+
 export interface MultiChatPersonaResponse {
   personaId: MultiChatPersonaId;
   name: string;
@@ -532,6 +537,7 @@ export interface MultiChatPersonaResponse {
   durationMs?: number;
   branches?: MultiChatBranchTurn[];
   stanceFlip?: MultiChatStanceFlip;
+  cognitiveOverride?: MultiChatCognitiveOverride;
 }
 
 export type MultiChatCategoryId =
@@ -782,6 +788,94 @@ export interface MultiChatChartTelemetryData {
   generatedAt: number;
 }
 
+export interface MultiChatRelayStep {
+  stepNumber: 1 | 2 | 3;
+  stageLabel: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  handoffSummary: string;
+  outputText: string;
+}
+
+export interface MultiChatRelayPipelineData {
+  pipelineTitle: string;
+  steps: MultiChatRelayStep[];
+  finalPolishedDeliverable: string;
+  generatedAt: number;
+}
+
+export interface MultiChatFactClaimItem {
+  id: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  claim: string;
+  status: 'verified' | 'nuance' | 'disputed';
+  confidenceScore: number; // 0-100
+  verificationNote: string;
+  sourceDomain?: string;
+}
+
+export interface MultiChatFactMatrixData {
+  matrixTitle: string;
+  overallReliabilityScore: number; // 0-100
+  hallucinationRisk: 'Low Risk' | 'Moderate Caution' | 'High Alert';
+  claims: MultiChatFactClaimItem[];
+  auditSummary: string;
+  generatedAt: number;
+}
+
+export interface MultiChatCherryPickBlock {
+  id: string;
+  personaId: MultiChatPersonaId;
+  personaName: string;
+  icon: string;
+  accentColor: string;
+  tagLabel: string;
+  text: string;
+  selected: boolean;
+}
+
+export interface MultiChatCherryPickData {
+  blocks: MultiChatCherryPickBlock[];
+  aiSmoothedText?: string;
+  generatedAt: number;
+}
+
+export interface MultiChatHotSeatGrillItem {
+  questionerId: MultiChatPersonaId;
+  questionerName: string;
+  questionerIcon: string;
+  questionerColor: string;
+  challengeQuestion: string;
+}
+
+export interface MultiChatHotSeatData {
+  targetPersonaId: MultiChatPersonaId;
+  targetPersonaName: string;
+  targetIcon: string;
+  targetColor: string;
+  interrogators: MultiChatHotSeatGrillItem[];
+  defenseResponse: string;
+  verdictBadge: string;
+  generatedAt: number;
+}
+
+export interface MultiChatVaultItem {
+  id: string;
+  turnId: string;
+  query: string;
+  sourceLabel: string;
+  personaId?: MultiChatPersonaId | 'consensus' | 'synthesis';
+  icon: string;
+  accentColor: string;
+  content: string;
+  savedAt: number;
+}
+
 export interface MultiChatMessage {
   id: string;
   query: string;
@@ -808,6 +902,12 @@ export interface MultiChatMessage {
   guestResponses?: MultiChatGuestSpecialistResponse[];
   attachments?: MultiChatAttachedFile[];
   chartTelemetry?: MultiChatChartTelemetryData;
+  relayPipeline?: MultiChatRelayPipelineData;
+  factMatrix?: MultiChatFactMatrixData;
+  cherryPickMixer?: MultiChatCherryPickData;
+  hotSeat?: MultiChatHotSeatData;
+  blindRevealed?: boolean;
+  forkedFromTurnId?: string;
   pinned?: boolean;
   category?: MultiChatCategoryId | string;
 }

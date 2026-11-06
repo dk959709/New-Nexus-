@@ -446,6 +446,20 @@ export const MultiChatSessionBar: React.FC<MultiChatSessionBarProps> = ({
               <Zap size={11} />
               <span>Parallel</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => onSelectDialogueMode('relay')}
+              className={`flex items-center gap-1 px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg font-medium transition-all ${
+                dialogueMode === 'relay'
+                  ? 'bg-emerald-500/25 text-emerald-200 border border-emerald-500/40'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+              title="Relay Pipeline (Chain-of-Custody): NOVA drafts blueprint → ORBIT expands with examples → COSMOS audits & polishes"
+            >
+              <span>🔗</span>
+              <span>Relay</span>
+            </button>
           </div>
         </div>
       </div>
