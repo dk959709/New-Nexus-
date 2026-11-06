@@ -1888,20 +1888,25 @@ export const MultiChatRelayPipelinePanel: React.FC<{
 }> = ({ message, isLoading, onRegenerate, onSendToCanvas, onSaveToVault, onClose }) => {
   const data = message.relayPipeline;
   const [copiedFinal, setCopiedFinal] = useState(false);
+  const queryText = message.query || message.userPrompt || 'Multi-Chat Relay';
+  const finalDeliverableText =
+    data?.finalPolishedDeliverable || data?.finalDeliverable || '';
 
   const handleCopyFinal = async () => {
     if (!data) return;
     const fullText = [
       `# 🔗 Chain-of-Custody Relay Deliverable`,
-      `Query: ${message.userPrompt}`,
+      `Query: ${queryText}`,
       '',
-      ...data.steps.map(
-        (s, idx) =>
-          `## Stage ${idx + 1}: ${s.stageLabel} (${s.personaId.toUpperCase()})\nHandoff Note: ${s.handoffNote}\n\n${s.output}`
-      ),
+      ...(data.steps || []).map((s, idx) => {
+        const pLabel = (s.personaName || s.personaId || `Agent ${idx + 1}`).toUpperCase();
+        const handoff = s.handoffSummary || s.handoffNote || '';
+        const out = s.outputText || s.output || '';
+        return `## Stage ${idx + 1}: ${s.stageLabel} (${pLabel})\nHandoff Note: ${handoff}\n\n${out}`;
+      }),
       '',
       `## 🏆 Final Polished Deliverable`,
-      data.finalDeliverable,
+      finalDeliverableText,
     ].join('\n\n');
     await copyToClipboard(fullText);
     setCopiedFinal(true);
@@ -1945,8 +1950,8 @@ export const MultiChatRelayPipelinePanel: React.FC<{
                 type="button"
                 onClick={() =>
                   onSaveToVault(
-                    `Relay Deliverable: ${message.userPrompt.slice(0, 48)}`,
-                    data.finalDeliverable,
+                    `Relay Deliverable: ${queryText.slice(0, 48)}`,
+                    finalDeliverableText,
                     '🔗 Relay Pipeline'
                   )
                 }
@@ -1959,8 +1964,8 @@ export const MultiChatRelayPipelinePanel: React.FC<{
                 type="button"
                 onClick={() =>
                   onSendToCanvas(
-                    `Relay: ${message.userPrompt.slice(0, 42)}`,
-                    data.finalDeliverable,
+                    `Relay: ${queryText.slice(0, 42)}`,
+                    finalDeliverableText,
                     '🔗 Chain-of-Custody Relay'
                   )
                 }
@@ -1998,31 +2003,35 @@ export const MultiChatRelayPipelinePanel: React.FC<{
       ) : data ? (
         <div className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-            {data.steps.map((step, idx) => {
+            {(data.steps || []).map((step, idx) => {
+              const pid = (step.personaId || 'nova').toLowerCase();
+              const pName = (step.personaName || step.personaId || `STAGE ${idx + 1}`).toUpperCase();
+              const outText = step.outputText || step.output || '';
+              const handoff = step.handoffSummary || step.handoffNote || '';
               const badgeColor =
-                step.personaId === 'nova'
+                pid === 'nova'
                   ? 'border-cyan-500/35 bg-cyan-950/20 text-cyan-200'
-                  : step.personaId === 'orbit'
+                  : pid === 'orbit'
                   ? 'border-amber-500/35 bg-amber-950/20 text-amber-200'
                   : 'border-purple-500/35 bg-purple-950/20 text-purple-200';
               return (
                 <div
-                  key={`${step.personaId}-${idx}`}
+                  key={`${pid}-${idx}`}
                   className={`p-3 rounded-xl border ${badgeColor} flex flex-col justify-between gap-2`}
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-1">
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-black/40">
-                        Stage {idx + 1} • {step.personaId.toUpperCase()}
+                        Stage {idx + 1} • {pName}
                       </span>
                       <span className="text-[10px] font-mono opacity-80">{step.stageLabel}</span>
                     </div>
                     <p className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
-                      {step.output}
+                      {outText}
                     </p>
                   </div>
                   <div className="pt-2 border-t border-white/10 text-[10.5px] font-mono text-slate-300 italic">
-                    👉 {step.handoffNote}
+                    👉 {handoff}
                   </div>
                 </div>
               );
@@ -2034,10 +2043,14 @@ export const MultiChatRelayPipelinePanel: React.FC<{
               <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
                 <Trophy size={13} /> Final Relay Deliverable (Synthesized &amp; Audited)
               </span>
-              <span className="text-[10px] font-mono text-slate-400">{data.generatedAt}</span>
+              <span className="text-[10px] font-mono text-slate-400">
+                {typeof data.generatedAt === 'number'
+                  ? new Date(data.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : data.generatedAt}
+              </span>
             </div>
             <div className="text-xs md:text-sm text-slate-100 whitespace-pre-wrap leading-relaxed">
-              {data.finalDeliverable}
+              {finalDeliverableText}
             </div>
           </div>
         </div>
@@ -2058,9 +2071,12 @@ export const MultiChatFactMatrixPanel: React.FC<{
   const data = message.factMatrix;
   const [filterStatus, setFilterStatus] = useState<'all' | 'verified' | 'nuance' | 'disputed'>('all');
 
-  const filteredClaims = (data?.claims || []).filter((c) =>
+  const claimsList = data?.claims || [];
+  const filteredClaims = claimsList.filter((c) =>
     filterStatus === 'all' ? true : c.status === filterStatus
   );
+  const trustScore = data?.overallReliabilityScore ?? data?.overallTrustScore ?? 91;
+  const summaryNote = data?.auditSummary || data?.summaryNote || '';
 
   return (
     <div className="mt-3 rounded-2xl border border-emerald-500/40 bg-gradient-to-br from-slate-950/95 via-emerald-950/15 to-slate-950/95 p-4 shadow-2xl space-y-3.5">
@@ -2076,7 +2092,7 @@ export const MultiChatFactMatrixPanel: React.FC<{
               </span>
               {data && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
-                  Trust Score: {data.overallTrustScore}%
+                  Trust Score: {trustScore}%
                 </span>
               )}
             </div>
@@ -2124,7 +2140,7 @@ export const MultiChatFactMatrixPanel: React.FC<{
       ) : data ? (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 bg-black/40 p-2.5 rounded-xl border border-white/10">
-            <p className="text-xs text-slate-300">{data.summaryNote}</p>
+            <p className="text-xs text-slate-300">{summaryNote}</p>
             <div className="flex items-center gap-1">
               {(['all', 'verified', 'nuance', 'disputed'] as const).map((st) => (
                 <button
@@ -2138,7 +2154,7 @@ export const MultiChatFactMatrixPanel: React.FC<{
                   }`}
                 >
                   {st === 'all'
-                    ? `All (${data.claims.length})`
+                    ? `All (${claimsList.length})`
                     : st === 'verified'
                     ? '✅ Verified'
                     : st === 'nuance'
@@ -2150,7 +2166,14 @@ export const MultiChatFactMatrixPanel: React.FC<{
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {filteredClaims.map((claim) => {
+            {filteredClaims.map((claim, idx) => {
+              const sourceLabel = (
+                claim.personaName ||
+                claim.personaId ||
+                claim.sourcePersona ||
+                'AGENT'
+              ).toUpperCase();
+              const confVal = claim.confidenceScore ?? claim.confidence ?? 90;
               const statusStyle =
                 claim.status === 'verified'
                   ? 'border-emerald-500/35 bg-emerald-950/20 text-emerald-300'
@@ -2166,16 +2189,16 @@ export const MultiChatFactMatrixPanel: React.FC<{
 
               return (
                 <div
-                  key={claim.id}
+                  key={claim.id || `claim-${idx}`}
                   className={`p-3 rounded-xl border ${statusStyle} flex flex-col justify-between gap-2`}
                 >
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-black/40">
-                        {claim.sourcePersona.toUpperCase()} • {statusBadge}
+                        {sourceLabel} • {statusBadge}
                       </span>
                       <span className="text-[10px] font-mono font-bold">
-                        Confidence: {claim.confidence}%
+                        Confidence: {confVal}%
                       </span>
                     </div>
                     <p className="text-xs font-semibold text-white leading-snug">
@@ -2220,20 +2243,22 @@ export const MultiChatCherryPickPanel: React.FC<{
 
   if (!mixer) return null;
 
-  const selectedBlocks = mixer.blocks.filter((b) => b.selected);
+  const queryText = message.query || message.userPrompt || 'Cherry-Pick Mix';
+  const blocksList = mixer.blocks || [];
+  const selectedBlocks = blocksList.filter((b) => b.selected);
   const compiledText =
     mixer.smoothedOutput ||
     selectedBlocks.map((b) => b.text).join('\n\n');
 
   const toggleBlock = (id: string) => {
-    const next = mixer.blocks.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b));
+    const next = blocksList.map((b) => (b.id === id ? { ...b, selected: !b.selected } : b));
     onUpdateBlocks(message.id, next);
   };
 
   const moveBlock = (index: number, direction: -1 | 1) => {
     const targetIdx = index + direction;
-    if (targetIdx < 0 || targetIdx >= mixer.blocks.length) return;
-    const copy = [...mixer.blocks];
+    if (targetIdx < 0 || targetIdx >= blocksList.length) return;
+    const copy = [...blocksList];
     const [moved] = copy.splice(index, 1);
     copy.splice(targetIdx, 0, moved);
     onUpdateBlocks(message.id, copy);
@@ -2258,7 +2283,7 @@ export const MultiChatCherryPickPanel: React.FC<{
                 🧬 Cherry-Pick Paragraph Mixer
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">
-                {selectedBlocks.length} / {mixer.blocks.length} blocks active
+                {selectedBlocks.length} / {blocksList.length} blocks active
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
@@ -2289,7 +2314,7 @@ export const MultiChatCherryPickPanel: React.FC<{
             type="button"
             onClick={() =>
               onSaveToVault(
-                `Cherry-Pick Mix: ${message.userPrompt.slice(0, 44)}`,
+                `Cherry-Pick Mix: ${queryText.slice(0, 44)}`,
                 compiledText,
                 '🧬 Cherry-Pick Mix'
               )
@@ -2303,7 +2328,7 @@ export const MultiChatCherryPickPanel: React.FC<{
             type="button"
             onClick={() =>
               onSendToCanvas(
-                `Cherry-Pick: ${message.userPrompt.slice(0, 42)}`,
+                `Cherry-Pick: ${queryText.slice(0, 42)}`,
                 compiledText,
                 '🧬 Cherry-Pick Composer'
               )
@@ -2329,16 +2354,18 @@ export const MultiChatCherryPickPanel: React.FC<{
           <div className="text-[10.5px] font-mono uppercase tracking-wider text-slate-400 mb-1">
             1. Click to toggle paragraphs • Use arrows to reorder
           </div>
-          {mixer.blocks.map((block, idx) => {
+          {blocksList.map((block, idx) => {
+            const pid = (block.personaId || 'nova').toLowerCase();
+            const pLabel = (block.personaName || block.personaId || 'AGENT').toUpperCase();
             const pBadge =
-              block.personaId === 'nova'
+              pid === 'nova'
                 ? 'text-cyan-300 border-cyan-500/30 bg-cyan-500/10'
-                : block.personaId === 'orbit'
+                : pid === 'orbit'
                 ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
                 : 'text-purple-300 border-purple-500/30 bg-purple-500/10';
             return (
               <div
-                key={block.id}
+                key={block.id || `block-${idx}`}
                 className={`p-2.5 rounded-xl border transition flex items-start justify-between gap-2 ${
                   block.selected
                     ? 'bg-slate-900/90 border-fuchsia-400/40 text-slate-100'
@@ -2352,7 +2379,7 @@ export const MultiChatCherryPickPanel: React.FC<{
                 >
                   <div className="flex items-center gap-1.5">
                     <span className={`text-[9.5px] font-mono font-bold uppercase px-1.5 py-0.5 rounded border ${pBadge}`}>
-                      {block.personaId.toUpperCase()}
+                      {pLabel}
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">
                       {block.selected ? '✓ Included' : 'Click to include'}
@@ -2373,7 +2400,7 @@ export const MultiChatCherryPickPanel: React.FC<{
                   <button
                     type="button"
                     onClick={() => moveBlock(idx, 1)}
-                    disabled={idx === mixer.blocks.length - 1}
+                    disabled={idx === blocksList.length - 1}
                     className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 disabled:opacity-30 cursor-pointer"
                     title="Move Down"
                   >
@@ -2416,7 +2443,16 @@ export const MultiChatHotSeatPanel: React.FC<{
   onClose: () => void;
 }> = ({ message, isLoading, onSelectTargetAndGrill, onClose }) => {
   const data = message.hotSeat;
-  const activeTarget: MultiChatPersonaId = data?.targetPersona || 'nova';
+  const activeTarget: MultiChatPersonaId =
+    (data?.targetPersonaId || data?.targetPersona || 'nova') as MultiChatPersonaId;
+  const targetDisplayName = (
+    data?.targetPersonaName ||
+    data?.targetPersonaId ||
+    data?.targetPersona ||
+    activeTarget ||
+    'NOVA'
+  ).toUpperCase();
+  const defenseText = data?.defenseResponse || data?.targetDefense || '';
 
   return (
     <div className="mt-3 rounded-2xl border border-orange-500/40 bg-gradient-to-br from-slate-950/95 via-orange-950/20 to-slate-950/95 p-4 shadow-2xl space-y-3.5">
@@ -2470,43 +2506,56 @@ export const MultiChatHotSeatPanel: React.FC<{
         <div className="py-8 flex flex-col items-center justify-center gap-2 text-orange-300">
           <Loader2 size={22} className="animate-spin" />
           <span className="text-xs font-mono">
-            Putting {activeTarget.toUpperCase()} in the Hot Seat under cross-examination...
+            Putting {(activeTarget || 'nova').toUpperCase()} in the Hot Seat under cross-examination...
           </span>
         </div>
       ) : data ? (
         <div className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {data.interrogators.map((item, idx) => (
-              <div
-                key={`${item.challengerPersona}-${idx}`}
-                className="p-3 rounded-xl bg-black/45 border border-orange-500/30 space-y-1.5"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-orange-500/20 text-orange-200">
-                    ⚔️ Interrogator: {item.challengerPersona.toUpperCase()}
-                  </span>
-                  <span className="text-[10px] font-mono text-amber-300">
-                    Blind Spot: {item.exposedBlindSpot}
-                  </span>
+            {(data.interrogators || []).map((item, idx) => {
+              const interrogatorLabel = (
+                item.questionerName ||
+                item.questionerId ||
+                item.challengerPersona ||
+                `Interrogator #${idx + 1}`
+              ).toUpperCase();
+              const questionText =
+                item.challengeQuestion || item.sharpQuestion || 'How does your approach hold up under edge-case stress?';
+              const blindSpotLabel =
+                item.exposedBlindSpot || 'Assumption & Stress Audit';
+
+              return (
+                <div
+                  key={`${interrogatorLabel}-${idx}`}
+                  className="p-3 rounded-xl bg-black/45 border border-orange-500/30 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-orange-500/20 text-orange-200">
+                      ⚔️ Interrogator: {interrogatorLabel}
+                    </span>
+                    <span className="text-[10px] font-mono text-amber-300">
+                      {blindSpotLabel}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-100 font-medium leading-relaxed">
+                    &ldquo;{questionText}&rdquo;
+                  </p>
                 </div>
-                <p className="text-xs text-slate-100 font-medium leading-relaxed">
-                  &ldquo;{item.sharpQuestion}&rdquo;
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="p-3.5 rounded-xl bg-gradient-to-r from-orange-950/35 via-slate-900/90 to-emerald-950/35 border border-amber-400/40 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-mono font-extrabold uppercase text-amber-300">
-                🛡️ {data.targetPersona.toUpperCase()}&apos;s Under-Oath Defense &amp; Upgrades
+                🛡️ {targetDisplayName}&apos;s Under-Oath Defense &amp; Upgrades
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
-                Verdict: {data.verdictBadge}
+                Verdict: {data.verdictBadge || 'Stance Fortified Under Oath'}
               </span>
             </div>
             <div className="text-xs md:text-sm text-slate-100 whitespace-pre-wrap leading-relaxed">
-              {data.targetDefense}
+              {defenseText}
             </div>
           </div>
         </div>
@@ -2522,25 +2571,33 @@ export const MultiChatTurnTelemetryStrip: React.FC<{
   message: MultiChatMessage;
   blindMode?: boolean;
 }> = ({ message, blindMode }) => {
-  const readyResponses = message.responses.filter((r) => r.status === 'ready' && r.content.trim().length > 0);
+  const readyResponses = (message.responses || []).filter(
+    (r) =>
+      (r.status === 'completed' || r.status === 'ready') &&
+      Boolean((r.text || r.content || '').trim()),
+  );
   if (readyResponses.length === 0) return null;
 
   const metrics = readyResponses.map((r, idx) => {
-    const words = r.content.trim().split(/\s+/).filter(Boolean).length;
+    const rawBody = (r.text || r.content || '').trim();
+    const words = rawBody.split(/\s+/).filter(Boolean).length;
     const estTokens = Math.max(12, Math.round(words * 1.32));
-    const latencySec = Math.max(0.4, (r.latencyMs || 1500) / 1000);
+    const latencySec = Math.max(0.4, (r.durationMs || r.latencyMs || 1500) / 1000);
     const tokPerSec = Math.round(estTokens / latencySec);
     // Estimate information density by counting structured elements (headers, bullets, code/numbers)
-    const structureHits = (r.content.match(/(^#+\s|^\s*[-*•]|\d+%|\*\*)/gm) || []).length;
-    const densityScore = Math.min(99, Math.max(62, Math.round(65 + (structureHits / Math.max(1, words / 25)) * 18)));
+    const structureHits = (rawBody.match(/(^#+\s|^\s*[-*•]|\d+%|\*\*)/gm) || []).length;
+    const densityScore = Math.min(
+      99,
+      Math.max(62, Math.round(65 + (structureHits / Math.max(1, words / 25)) * 18)),
+    );
 
     const displayLabel =
       blindMode && !message.blindRevealed
         ? `CANDIDATE ${String.fromCharCode(65 + idx)}`
-        : r.personaId.toUpperCase();
+        : (r.name || r.personaId || `AGENT ${idx + 1}`).toUpperCase();
 
     return {
-      personaId: r.personaId,
+      personaId: r.personaId || `p-${idx}`,
       displayLabel,
       words,
       estTokens,

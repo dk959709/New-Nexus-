@@ -1226,7 +1226,9 @@ export function MultiChatConsole({
     msg: MultiChatMessage,
     targetPersonaId?: MultiChatPersonaId,
   ) => {
-    const target = targetPersonaId || msg.hotSeat?.targetPersona || 'nova';
+    const currentTarget =
+      msg.hotSeat?.targetPersonaId || msg.hotSeat?.targetPersona || 'nova';
+    const target = targetPersonaId || currentTarget;
     if (
       !targetPersonaId &&
       expandedHotSeatMsgId === msg.id &&
@@ -1238,7 +1240,7 @@ export function MultiChatConsole({
     if (
       !targetPersonaId &&
       msg.hotSeat &&
-      msg.hotSeat.targetPersona === target
+      currentTarget === target
     ) {
       setExpandedHotSeatMsgId(msg.id);
       return;
@@ -2619,7 +2621,7 @@ export function MultiChatConsole({
     >
       {/* Sleek Compact Chat Room Top Header Bar (Mobile-Friendly 360px+) */}
       <div
-        className={`flex items-center justify-between gap-1.5 sm:gap-2.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2.5 rounded-2xl transition-all ${
+        className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-2xl transition-all ${
           isFullDark
             ? 'bg-[#09090b] border border-white/[0.08] shadow-md shadow-black'
             : isClassic
@@ -2627,8 +2629,8 @@ export function MultiChatConsole({
             : 'bg-zinc-900/90 backdrop-blur-xl border border-white/10 shadow-md shadow-black/40'
         }`}
       >
-        {/* Left: Active Personas Horizontal Strip */}
-        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar min-w-0">
+        {/* Left / Top Row on Mobile: Active Personas Horizontal Strip (NOVA, ORBIT, COSMOS always visible) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar w-full sm:w-auto min-w-0">
           <div
             className={`hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full shrink-0 border ${
               isClassic
@@ -2654,7 +2656,7 @@ export function MultiChatConsole({
           </div>
 
           {/* Persona quick chips + Live Best Answer Trophy Leaderboard */}
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {Object.values(config.personas).map((persona, pIdx) => {
               const voteCount = personaVoteCounts[persona.id] || 0;
               const maxVotes = Math.max(
@@ -2672,7 +2674,7 @@ export function MultiChatConsole({
               return (
                 <div
                   key={`header_persona_${persona.id || pIdx}_${pIdx}`}
-                  className="inline-flex items-center gap-1 px-1.5 sm:px-2.5 py-0.5 sm:py-1 rounded-xl text-[10px] sm:text-xs font-medium transition-all shrink-0"
+                  className="inline-flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl text-[11px] sm:text-xs font-medium transition-all shrink-0"
                   style={{
                     background: persona.enabled
                       ? isLeader
@@ -2683,7 +2685,7 @@ export function MultiChatConsole({
                       persona.enabled
                         ? isLeader
                           ? '#fbbf24'
-                          : persona.accentColor + '40'
+                          : persona.accentColor + '45'
                         : 'rgba(255,255,255,0.08)'
                     }`,
                     color: persona.enabled ? persona.accentColor : '#64748b',
@@ -2693,9 +2695,9 @@ export function MultiChatConsole({
                     voteCount === 1 ? '' : 's'
                   }`}
                 >
-                  <span className="text-xs">{persona.icon}</span>
-                  <span className="font-bold text-[10px] sm:text-[11px]">{persona.name}</span>
-                  <span className="text-[9.5px] font-mono opacity-75 hidden lg:inline">
+                  <span className="text-xs sm:text-sm">{persona.icon}</span>
+                  <span className="font-extrabold text-[11px] sm:text-xs tracking-tight">{persona.name}</span>
+                  <span className="text-[9.5px] font-mono opacity-80 hidden md:inline">
                     {displayBadge}
                   </span>
                   {voteCount > 0 && (
@@ -2716,8 +2718,8 @@ export function MultiChatConsole({
           </div>
         </div>
 
-        {/* Right: View Mode Toggle & Utility Controls */}
-        <div className="flex items-center gap-1 sm:gap-1.5 ml-auto shrink-0">
+        {/* Right / Row 2 on Mobile: View Mode Toggle & Utility Controls */}
+        <div className="flex items-center gap-1 sm:gap-1.5 w-full sm:w-auto sm:ml-auto overflow-x-auto no-scrollbar pt-1 sm:pt-0 border-t border-white/[0.06] sm:border-t-0 shrink-0">
           {/* Podcast Mode Button */}
           {podcastTracks.length > 0 && (
             <button
@@ -3422,7 +3424,7 @@ export function MultiChatConsole({
                           <div className="mc-laser-line" />
                           {/* Master Universal Toolbar for Combined Card */}
                           <div
-                            className={`flex items-center justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b gap-2 flex-wrap ${
+                            className={`flex flex-col sm:flex-row sm:items-center sm:justify-between px-3 sm:px-4 py-2 sm:py-2.5 border-b gap-2 ${
                               isFullDark
                                 ? 'bg-[#0d0d10] border-white/[0.07]'
                                 : isClassic
@@ -3430,8 +3432,8 @@ export function MultiChatConsole({
                                 : 'bg-zinc-900/95 border-white/[0.08]'
                             }`}
                           >
-                            {/* Left: Combined Label + Active Scenario Badge */}
-                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                            {/* Left: Combined Label + Active Scenario Badge + Agent Names */}
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap w-full sm:w-auto">
                               <div
                                 className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-mono text-[10px] sm:text-xs font-bold border ${
                                   isClassic
@@ -3454,13 +3456,17 @@ export function MultiChatConsole({
                                   <span>{getScenarioCastById(msg.scenarioId).name}</span>
                                 </span>
                               )}
-                              <span className="text-[10px] font-mono text-slate-400 hidden md:inline">
-                                NOVA • ORBIT • COSMOS
+                              <span className="text-[10px] font-mono font-bold text-slate-300 inline-flex items-center gap-1.5">
+                                <span className="text-cyan-300">NOVA</span>
+                                <span className="text-slate-600">•</span>
+                                <span className="text-amber-300">ORBIT</span>
+                                <span className="text-slate-600">•</span>
+                                <span className="text-purple-300">COSMOS</span>
                               </span>
                             </div>
 
-                            {/* Right: Universal Action Buttons (Compact on mobile) */}
-                            <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap ml-auto">
+                            {/* Right: Universal Action Buttons (Dedicated row on mobile) */}
+                            <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap w-full sm:w-auto sm:ml-auto pt-1 sm:pt-0 border-t border-white/[0.05] sm:border-t-0">
                               {/* Feature 1: +1 Rebuttal / Cross-Examination Round Button */}
                               <button
                                 type="button"
@@ -3849,15 +3855,15 @@ export function MultiChatConsole({
                                   key={`${msg.id}_resp_${resp.personaId || rIdx}_${rIdx}`}
                                   className="flex flex-col transition-colors hover:bg-white/[0.01]"
                                 >
-                                  {/* Persona Chat Header Bar */}
+                                  {/* Persona Chat Header Bar (2-Row Stacked on Mobile so Agent Name + Role Never Overlap Buttons) */}
                                   <div
-                                    className="flex items-center justify-between px-3 sm:px-5 py-2 sm:py-2.5 border-b border-white/5 gap-1.5 flex-wrap"
+                                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-3 sm:px-5 py-2.5 border-b border-white/5 gap-2"
                                     style={{ background: `${displayedAccent}08` }}
                                   >
-                                    {/* Left: Avatar + Identity */}
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {/* Row 1 on Mobile / Left on Desktop: Avatar + Agent Name + Role Badge + Timing */}
+                                    <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
                                       <div
-                                        className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl grid place-items-center text-sm sm:text-lg shrink-0 shadow-sm"
+                                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl grid place-items-center text-base sm:text-lg shrink-0 shadow-sm"
                                         style={{
                                           background: `${displayedAccent}20`,
                                           border: `1px solid ${displayedAccent}45`,
@@ -3868,7 +3874,7 @@ export function MultiChatConsole({
 
                                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                                         <span
-                                          className="font-bold text-xs sm:text-sm tracking-tight shrink-0"
+                                          className="font-extrabold text-sm sm:text-base tracking-tight shrink-0"
                                           style={{ color: displayedAccent }}
                                         >
                                           {displayedPersonaName}
@@ -3876,7 +3882,7 @@ export function MultiChatConsole({
 
                                         {!isBlindAnonymous && resp.toneBadge && (
                                           <span
-                                            className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.2 sm:py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0"
+                                            className="text-[10px] sm:text-[10.5px] font-mono px-2 py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0"
                                             style={{
                                               background: `${resp.accentColor}18`,
                                               color: resp.accentColor,
@@ -3888,20 +3894,20 @@ export function MultiChatConsole({
                                         )}
 
                                         {isBlindAnonymous && (
-                                          <span className="text-[9px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/30">
+                                          <span className="text-[9.5px] sm:text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-400/30">
                                             Blind Arena • Vote to Reveal
                                           </span>
                                         )}
 
                                         {resp.cognitiveOverride && (
-                                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                                          <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
                                             🎚️ T={resp.cognitiveOverride.temperature.toFixed(1)} • {resp.cognitiveOverride.depth}
                                           </span>
                                         )}
 
                                         {resp.durationMs && resp.status === 'completed' && (
-                                          <span className="text-[9px] sm:text-[10px] font-mono text-slate-500 flex items-center gap-0.5 whitespace-nowrap shrink-0">
-                                            <Clock size={9} />
+                                          <span className="text-[10px] font-mono text-slate-400 flex items-center gap-0.5 whitespace-nowrap shrink-0">
+                                            <Clock size={10} />
                                             {(resp.durationMs / 1000).toFixed(1)}s
                                           </span>
                                         )}
@@ -3922,8 +3928,8 @@ export function MultiChatConsole({
                                       </div>
                                     </div>
 
-                                    {/* Right: Vote Best, Audio TTS, Branch Reply & Copy Controls */}
-                                    <div className="flex items-center gap-1 shrink-0">
+                                    {/* Row 2 on Mobile / Right on Desktop: Vote Best, Audio TTS, Branch Reply & Action Controls */}
+                                    <div className="flex items-center gap-1 w-full sm:w-auto overflow-x-auto no-scrollbar pt-1.5 sm:pt-0 border-t border-white/[0.06] sm:border-t-0 shrink-0">
                                       {resp.status === 'completed' && displayText && (
                                         <>
                                           {/* Feature 2: Vote Best Persona Answer Button */}
@@ -5051,7 +5057,7 @@ export function MultiChatConsole({
                                   <span>Fact Matrix</span>
                                   {msg.factMatrix && (
                                     <span className="px-1 rounded bg-emerald-500/25 text-[9.5px] font-mono text-emerald-200">
-                                      {msg.factMatrix.overallTrustScore}%
+                                      {msg.factMatrix.overallReliabilityScore ?? msg.factMatrix.overallTrustScore ?? 91}%
                                     </span>
                                   )}
                                 </button>
@@ -5471,25 +5477,25 @@ export function MultiChatConsole({
                                   style={{ borderColor: `${resp.accentColor}35` }}
                                 >
                                   <div
-                                    className="p-2.5 sm:p-3 border-b border-white/5 flex items-center justify-between"
+                                    className="p-2.5 sm:p-3 border-b border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                                     style={{ background: `${resp.accentColor}10` }}
                                   >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto sm:flex-1">
                                       <span className="text-base shrink-0">{resp.icon}</span>
-                                      <div className="min-w-0 flex-1">
+                                      <div className="min-w-0 flex-1 flex flex-wrap items-center gap-1.5">
                                         <h4
-                                          className="text-xs font-bold leading-tight truncate"
+                                          className="text-xs font-extrabold leading-tight tracking-wide whitespace-nowrap"
                                           style={{ color: resp.accentColor }}
                                         >
                                           {resp.name}
                                         </h4>
-                                        <span className="text-[10px] font-mono text-slate-400 block truncate">
+                                        <span className="text-[10px] font-mono text-slate-400 truncate">
                                           {resp.toneBadge}
                                         </span>
                                       </div>
                                     </div>
 
-                                    <div className="flex items-center gap-1">
+                                    <div className="flex items-center flex-wrap gap-1 w-full sm:w-auto justify-start sm:justify-end">
                                       {resp.status === 'completed' && displayText && (
                                         <>
                                           <button
