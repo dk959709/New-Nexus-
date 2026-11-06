@@ -3444,6 +3444,29 @@ async function processAiChatInternal(
     };
   }
 
+  function sanitizeFallbackReason(lastError?: string, lastStatus?: number): string | undefined {
+    const parts: string[] = [];
+    if (lastStatus && typeof lastStatus === 'number') {
+      parts.push(`HTTP ${lastStatus}`);
+    }
+    if (lastError && typeof lastError === 'string') {
+      const cleaned = lastError
+        .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/gi, '[redacted]')
+        .replace(/sk-[A-Za-z0-9._~+/-]+/gi, '[redacted]')
+        .replace(/[A-Za-z0-9_-]{24,}/g, '[redacted]')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (cleaned) {
+        parts.push(cleaned);
+      }
+    }
+    if (parts.length === 0) {
+      return undefined;
+    }
+    const combined = parts.join(': ');
+    return combined.slice(0, 160).trim() || undefined;
+  }
+
   // Graceful response when AI provider is unreachable or API key missing
   if (structuredSources.length > 0) {
     return {
@@ -3455,6 +3478,7 @@ async function processAiChatInternal(
       sources: structuredSources,
       followUps: generateSmartFollowUps(trimmed, ['ALL'], structuredSources),
       selectedCategories: ['ALL'] as SourceCategory[],
+      fallbackReason: sanitizeFallbackReason(aiResult?.lastError, aiResult?.lastStatus),
     };
   }
 
@@ -3469,6 +3493,7 @@ async function processAiChatInternal(
       sources: undefined,
       followUps: generateSmartFollowUps(trimmed, ['ALL'], []),
       selectedCategories: ['ALL'] as SourceCategory[],
+      fallbackReason: sanitizeFallbackReason(aiResult?.lastError, aiResult?.lastStatus),
     };
   }
 
@@ -3493,6 +3518,7 @@ async function processAiChatInternal(
     sources: [],
     followUps: ['Explain gravity simply', 'What is quantum computing?', 'Tell me about Mars'],
     selectedCategories: ['ALL'] as SourceCategory[],
+    fallbackReason: sanitizeFallbackReason(aiResult?.lastError, aiResult?.lastStatus),
   };
 }
 
@@ -3575,6 +3601,33 @@ async function startServer() {
   );
   app.use(cors());
   app.use(express.json({ limit: '20mb' }));
+
+  // Firewall-safe base64 payload decoding middleware
+  app.use((req, res, next) => {
+    const body = req.body;
+    if (
+      body &&
+      typeof body === 'object' &&
+      !Array.isArray(body) &&
+      body.encoded === 'b64' &&
+      typeof body.data === 'string'
+    ) {
+      try {
+        const decoded = Buffer.from(body.data, 'base64').toString('utf8');
+        const parsed = JSON.parse(decoded);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          console.error('[API] invalid encoded payload');
+          return res.status(400).json({ error: 'Invalid encoded payload.' });
+        }
+        req.body = parsed;
+      } catch {
+        console.error('[API] invalid encoded payload');
+        return res.status(400).json({ error: 'Invalid encoded payload.' });
+      }
+    }
+    next();
+  });
+
   app.use(
     morgan('tiny', {
       skip: (req) => !req.url.startsWith('/api'),

@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
+import { buildActiveSkillsText, estimateTokens, getActiveSkills } from '@/lib/skills';
 import { copyToClipboard } from '@/lib/clipboard';
 import { cleanMarkdownForSpeech } from '@/lib/format';
 import { FormattedText } from '@/components/jarvis/FormattedText';
@@ -274,6 +275,118 @@ export function extractArtifactFromAnswer(answer: string): { code: string; trunc
   }
 
   return { code, truncated };
+}
+
+/**
+ * Checks if a returned model is a NEXUS built-in fallback model or empty.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function isFallbackModel(model?: string): boolean {
+  if (!model) return true;
+  const lower = model.trim().toLowerCase();
+  return !lower || lower.startsWith('nexus-');
+}
+
+function buildFallbackErrorMessage(fallbackReason?: string, retried = false): string {
+  let msg =
+    'The AI provider did not answer, so NEXUS returned its built-in backup text. Try another model in the picker or a smaller request.';
+  if (fallbackReason && fallbackReason.trim()) {
+    msg += ` Reason: ${fallbackReason.trim()}`;
+  }
+  if (retried) {
+    if (!msg.endsWith('.')) {
+      msg += '.';
+    }
+    msg += ' Tried again with a smaller output size.';
+  }
+  return msg;
+}
+
+function appendRetryNote(errorMessage: string, retried: boolean): string {
+  if (!retried) return errorMessage;
+  const trimmed = errorMessage.trim();
+  if (trimmed.endsWith('.')) {
+    return `${trimmed} Tried again with a smaller output size.`;
+  }
+  return `${trimmed}. Tried again with a smaller output size.`;
+}
+
+interface CanvasAiCallResult {
+  answer: string;
+  model: string;
+  fallbackReason?: string;
+}
+
+async function callCanvasAiWithRetry(
+  prompt: string,
+  provider: AIProviderConfig | null | undefined,
+  language: string | undefined,
+  skillsText?: string,
+  onRetry?: () => void,
+): Promise<{ result: CanvasAiCallResult; retried: boolean }> {
+  const callStartTime = Date.now();
+
+  let firstResponse: CanvasAiCallResult | null = null;
+  let firstError: unknown = null;
+
+  try {
+    firstResponse = await api.aiChat(prompt, [], '', provider, false, {
+      language: language || undefined,
+      maxTokens: CANVAS_MAX_OUTPUT_TOKENS,
+      timeoutMs: CANVAS_AI_TIMEOUT_MS,
+      skillsText: skillsText || undefined,
+    });
+  } catch (err) {
+    firstError = err;
+  }
+
+  const firstElapsed = Date.now() - callStartTime;
+  const isFailedAttempt =
+    firstError !== null || (firstResponse !== null && isFallbackModel(firstResponse.model));
+
+  if (isFailedAttempt && firstElapsed < 20000 && CANVAS_MAX_OUTPUT_TOKENS > 8000) {
+    onRetry?.();
+    try {
+      const retryResponse = await api.aiChat(prompt, [], '', provider, false, {
+        language: language || undefined,
+        maxTokens: 8000,
+        timeoutMs: CANVAS_AI_TIMEOUT_MS,
+        skillsText: skillsText || undefined,
+      });
+
+      if (isFallbackModel(retryResponse.model)) {
+        throw new Error(buildFallbackErrorMessage(retryResponse.fallbackReason, true));
+      }
+
+      return { result: retryResponse, retried: true };
+    } catch (retryErr) {
+      if (retryErr instanceof Error && retryErr.message.includes('The AI provider did not answer')) {
+        throw retryErr;
+      }
+      const rawMsg =
+        retryErr instanceof Error
+          ? retryErr.message
+          : firstError instanceof Error
+          ? firstError.message
+          : 'AI request failed.';
+      throw new Error(appendRetryNote(rawMsg, true));
+    }
+  }
+
+  // No retry was performed (either succeeded on attempt 1, or elapsed >= 20000ms)
+  if (firstError) {
+    throw firstError;
+  }
+
+  if (firstResponse && isFallbackModel(firstResponse.model)) {
+    throw new Error(buildFallbackErrorMessage(firstResponse.fallbackReason, false));
+  }
+
+  if (!firstResponse) {
+    throw new Error('AI returned an empty response.');
+  }
+
+  return { result: firstResponse, retried: false };
 }
 
 /**
@@ -989,6 +1102,38 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     };
   }, []);
 
+  // Active Skills State for Live AI Canvas Studio
+  const [activeSkillsState, setActiveSkillsState] = useState(() => {
+    const active = getActiveSkills();
+    const text = buildActiveSkillsText() || '';
+    const tokens = estimateTokens(text.length);
+    const tokensK = Math.max(0.1, Math.round((tokens / 1000) * 10) / 10);
+    return {
+      count: active.length,
+      tokensK,
+    };
+  });
+
+  useEffect(() => {
+    const syncSkills = () => {
+      const active = getActiveSkills();
+      const text = buildActiveSkillsText() || '';
+      const tokens = estimateTokens(text.length);
+      const tokensK = Math.max(0.1, Math.round((tokens / 1000) * 10) / 10);
+      setActiveSkillsState({
+        count: active.length,
+        tokensK,
+      });
+    };
+
+    window.addEventListener('nexus-skills-changed', syncSkills);
+    window.addEventListener('storage', syncSkills);
+    return () => {
+      window.removeEventListener('nexus-skills-changed', syncSkills);
+      window.removeEventListener('storage', syncSkills);
+    };
+  }, []);
+
   const effectiveCanvasProvider = useMemo<AIProviderConfig | null | undefined>(() => {
     if (canvasProviderId === 'session') {
       return activeProvider;
@@ -1634,7 +1779,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       ? 'clean, well-structured Markdown'
       : `clean, production-ready ${activeArtifact.language || 'code'}`;
 
-    const prompt = [
+    const skillsText = buildActiveSkillsText();
+    let prompt = [
       `You are the NEXUS Live AI Canvas Studio engine.`,
       `Task: ${instruction}`,
       inspectContext,
@@ -1644,17 +1790,18 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       sourceContent,
     ].join('\n');
 
+    if (skillsText && skillsText.trim()) {
+      prompt += '\n\nIf any active skill conflicts with the required output format above, the output format above always wins.';
+    }
+
     try {
-      const response = await api.aiChat(
+      const { result: response } = await callCanvasAiWithRetry(
         prompt,
-        [],
-        '',
         effectiveCanvasProvider,
-        false,
-        {
-          language: responseLanguage || undefined,
-          maxTokens: CANVAS_MAX_OUTPUT_TOKENS,
-          timeoutMs: CANVAS_AI_TIMEOUT_MS,
+        responseLanguage || undefined,
+        skillsText,
+        () => {
+          setLiveCodingStatusText('Retrying with smaller output size (8,000 tokens)...');
         },
       );
 
@@ -1763,7 +1910,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       }
     }, 90);
 
-    const prompt = [
+    const skillsText = buildActiveSkillsText();
+    let prompt = [
       `You are the NEXUS Live AI Canvas Studio engine.`,
       `User Request: ${userPrompt}`,
       isSvgRequest
@@ -1771,17 +1919,18 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         : `Output format requirement: Build a complete, self-contained, single-file HTML5 interactive web application using Tailwind CSS (<script src="https://cdn.tailwindcss.com"></script>) and vanilla JavaScript. Return ONLY the HTML code.`,
     ].join('\n');
 
+    if (skillsText && skillsText.trim()) {
+      prompt += '\n\nIf any active skill conflicts with the required output format above, the output format above always wins.';
+    }
+
     try {
-      const response = await api.aiChat(
+      const { result: response } = await callCanvasAiWithRetry(
         prompt,
-        [],
-        '',
         effectiveCanvasProvider,
-        false,
-        {
-          language: responseLanguage || undefined,
-          maxTokens: CANVAS_MAX_OUTPUT_TOKENS,
-          timeoutMs: CANVAS_AI_TIMEOUT_MS,
+        responseLanguage || undefined,
+        skillsText,
+        () => {
+          setLiveCodingStatusText('Retrying with smaller output size (8,000 tokens)...');
         },
       );
 
@@ -3420,6 +3569,19 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             {activeCanvasModelLabel}
           </span>
         </button>
+
+        {/* Active Skills Indicator Chip */}
+        {activeSkillsState.count > 0 && (
+          <div
+            className="h-9 px-2 sm:px-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 flex items-center gap-1 shrink-0 select-none"
+            title={`~${activeSkillsState.tokensK}k tokens added to each request`}
+          >
+            <Sparkles size={12} className="text-emerald-400 shrink-0" />
+            <span className="text-[11px] font-mono whitespace-nowrap">
+              Skills · {activeSkillsState.count}
+            </span>
+          </div>
+        )}
 
         <input
           type="text"

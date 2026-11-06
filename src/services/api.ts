@@ -144,6 +144,18 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+function encodeJsonBodyB64(payload: unknown): string {
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(payload));
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < jsonBytes.length; i += chunkSize) {
+    const chunk = jsonBytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  const encodedData = btoa(binary);
+  return JSON.stringify({ encoded: 'b64', data: encodedData });
+}
+
 export const api = {
   async search(
     query: string,
@@ -377,6 +389,7 @@ export const api = {
     weather?: unknown;
     searchSource?: string;
     searchNotice?: string;
+    fallbackReason?: string;
   }> {
     const rawProvider = customProvider !== undefined ? customProvider : storage.getActiveAIProvider();
     let providerToSend = rawProvider;
@@ -412,9 +425,10 @@ export const api = {
       weather?: unknown;
       searchSource?: string;
       searchNotice?: string;
+      fallbackReason?: string;
     }>('/api/ai/chat', {
       method: 'POST',
-      body: JSON.stringify({
+      body: encodeJsonBodyB64({
         message,
         history: history.slice(-4),
         memory: memory.slice(-300),
@@ -490,14 +504,6 @@ export const api = {
     error?: string;
   }> {
     const { signal, ...bodyPayload } = payload;
-    const jsonBytes = new TextEncoder().encode(JSON.stringify(bodyPayload));
-    const chunkSize = 0x8000;
-    let binary = '';
-    for (let i = 0; i < jsonBytes.length; i += chunkSize) {
-      const chunk = jsonBytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode.apply(null, Array.from(chunk));
-    }
-    const encodedData = btoa(binary);
     const res = await call<{
       ok: boolean;
       text?: string;
@@ -509,7 +515,7 @@ export const api = {
       error?: string;
     }>('/api/jarvis/agent-call', {
       method: 'POST',
-      body: JSON.stringify({ encoded: 'b64', data: encodedData }),
+      body: encodeJsonBodyB64(bodyPayload),
       signal,
     });
 
