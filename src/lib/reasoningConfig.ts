@@ -333,8 +333,13 @@ export function lookupReasoningConfig(
     return REASONING_MODEL_CONFIG[rawKey];
   }
 
-  // 3. Generic Poolside provider fallback (inference.poolside.ai)
-  if (provKey === 'poolside' || normModel.startsWith('poolside/') || normModel.includes('poolside/')) {
+  // 3. Generic Poolside provider fallback (inference.poolside.ai / laguna models)
+  if (
+    provKey === 'poolside' ||
+    normModel.startsWith('poolside/') ||
+    normModel.includes('poolside/') ||
+    normModel.includes('laguna')
+  ) {
     return {
       provider: 'poolside',
       model: (model || '').trim(),

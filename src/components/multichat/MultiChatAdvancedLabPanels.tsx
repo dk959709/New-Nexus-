@@ -40,8 +40,8 @@ import type {
   MultiChatPromptSplitPlan,
   MultiChatCherryPickBlock,
   MultiChatVaultItem,
-  CanvasArtifact,
 } from '@/types';
+import type { CanvasArtifact } from '@/components/assistant/LiveArtifactCanvas';
 
 const STRESS_TEST_PRESETS = [
   '💸 Budget cut by 80%',
@@ -1836,22 +1836,23 @@ export function sendMultiChatContentToCanvas(params: {
 </body>
 </html>`;
 
-  const artifactId = `mc-canvas-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const now = Date.now();
+  const artifactId = `mc-canvas-${now}-${Math.random().toString(36).slice(2, 7)}`;
   const newArtifact: CanvasArtifact = {
     id: artifactId,
+    messageIndex: -1,
     title: title.slice(0, 64),
-    type: 'html',
+    kind: 'html',
     language: 'html',
     content: rawHtml,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    currentVersionIndex: 0,
+    createdAt: now,
     versions: [
       {
-        id: `${artifactId}-v1`,
         versionNumber: 1,
         label: `v1 • ${sourceBadge}`,
         content: rawHtml,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now,
       },
     ],
   };

@@ -197,12 +197,58 @@ const DESIGN_THEME_PRESETS: Array<{
   },
 ];
 
+function normalizeCanvasArtifact(rawItem: Partial<CanvasArtifact> & { type?: ArtifactKind }): CanvasArtifact {
+  const content = typeof rawItem.content === 'string' ? rawItem.content : '';
+  const lower = content.trim().toLowerCase();
+  const inferredKind: ArtifactKind =
+    rawItem.kind ||
+    rawItem.type ||
+    (lower.startsWith('<!doctype html') || lower.startsWith('<html')
+      ? 'html'
+      : lower.startsWith('<svg')
+      ? 'svg'
+      : 'html');
+  const versions =
+    Array.isArray(rawItem.versions) && rawItem.versions.length > 0
+      ? rawItem.versions.map((v, idx) => ({
+          versionNumber: typeof v.versionNumber === 'number' && !Number.isNaN(v.versionNumber) ? v.versionNumber : idx + 1,
+          label: v.label || `v${idx + 1}`,
+          content: typeof v.content === 'string' ? v.content : content,
+          timestamp: typeof v.timestamp === 'number' ? v.timestamp : Date.now(),
+        }))
+      : [
+          {
+            versionNumber: 1,
+            label: 'Initial Version',
+            content,
+            timestamp: Date.now(),
+          },
+        ];
+  const rawIdx = rawItem.currentVersionIndex;
+  const safeVersionIndex =
+    typeof rawIdx === 'number' && !Number.isNaN(rawIdx)
+      ? Math.max(0, Math.min(versions.length - 1, rawIdx))
+      : versions.length - 1;
+
+  return {
+    id: rawItem.id || `art-${Date.now()}`,
+    messageIndex: typeof rawItem.messageIndex === 'number' && !Number.isNaN(rawItem.messageIndex) ? rawItem.messageIndex : -1,
+    title: rawItem.title || 'Untitled Artifact',
+    kind: inferredKind,
+    language: rawItem.language || inferredKind,
+    content: versions[safeVersionIndex]?.content ?? content,
+    versions,
+    currentVersionIndex: safeVersionIndex,
+    createdAt: typeof rawItem.createdAt === 'number' ? rawItem.createdAt : Date.now(),
+  };
+}
+
 function loadVaultArtifacts(): CanvasArtifact[] {
   try {
     const raw = localStorage.getItem(VAULT_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map((item) => normalizeCanvasArtifact(item)) : [];
   } catch {
     return [];
   }
@@ -246,7 +292,10 @@ function saveVaultArtifacts(list: CanvasArtifact[]): boolean {
  */
 // eslint-disable-next-line react-refresh/only-export-components
 export function extractArtifactFromAnswer(answer: string): { code: string; truncated: boolean } {
-  const trimmed = (answer || '').trim();
+  const withoutThink = (answer || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .trim();
+  const trimmed = withoutThink || (answer || '').trim();
   let code = trimmed;
   let truncated = false;
 
@@ -260,8 +309,18 @@ export function extractArtifactFromAnswer(answer: string): { code: string; trunc
       code = openFenceMatch[1].trim();
       truncated = true;
     } else {
-      code = trimmed;
-      truncated = false;
+      const htmlBlockMatch = trimmed.match(/(<!DOCTYPE html[\s\S]*?<\/html>|<html[\s\S]*?<\/html>)/i);
+      const svgBlockMatch = trimmed.match(/(<svg[\s\S]*?<\/svg>)/i);
+      if (htmlBlockMatch && htmlBlockMatch[1]) {
+        code = htmlBlockMatch[1].trim();
+        truncated = false;
+      } else if (svgBlockMatch && svgBlockMatch[1]) {
+        code = svgBlockMatch[1].trim();
+        truncated = false;
+      } else {
+        code = trimmed;
+        truncated = false;
+      }
     }
   }
 
@@ -318,6 +377,33 @@ interface CanvasAiCallResult {
   fallbackReason?: string;
 }
 
+function getSmartInitialCanvasMaxTokens(
+  provider: AIProviderConfig | null | undefined,
+  prompt: string,
+): number {
+  const approxPromptTokens = Math.ceil((prompt || '').length / 3.0);
+  const modelStr = (provider?.model || '').toLowerCase();
+  const urlStr = (provider?.url || '').toLowerCase();
+  const nameStr = (provider?.name || '').toLowerCase();
+
+  const isCompactContextModel =
+    modelStr.includes('laguna') ||
+    modelStr.includes('poolside') ||
+    urlStr.includes('poolside') ||
+    nameStr.includes('poolside') ||
+    urlStr.includes('groq') ||
+    urlStr.includes('huggingface') ||
+    urlStr.includes('bazaarlink') ||
+    urlStr.includes('ollama') ||
+    urlStr.includes('cloudflare');
+
+  if (isCompactContextModel) {
+    return Math.min(4000, Math.max(1200, 7200 - approxPromptTokens));
+  }
+
+  return Math.min(8000, CANVAS_MAX_OUTPUT_TOKENS);
+}
+
 async function callCanvasAiWithRetry(
   prompt: string,
   provider: AIProviderConfig | null | undefined,
@@ -325,7 +411,7 @@ async function callCanvasAiWithRetry(
   skillsText?: string,
   onRetry?: () => void,
 ): Promise<{ result: CanvasAiCallResult; retried: boolean }> {
-  const callStartTime = Date.now();
+  const initialMaxTokens = getSmartInitialCanvasMaxTokens(provider, prompt);
 
   let firstResponse: CanvasAiCallResult | null = null;
   let firstError: unknown = null;
@@ -333,54 +419,55 @@ async function callCanvasAiWithRetry(
   try {
     firstResponse = await api.aiChat(prompt, [], '', provider, false, {
       language: language || undefined,
-      maxTokens: CANVAS_MAX_OUTPUT_TOKENS,
+      maxTokens: initialMaxTokens,
       timeoutMs: CANVAS_AI_TIMEOUT_MS,
       skillsText: skillsText || undefined,
+      disableReasoning: true,
     });
   } catch (err) {
     firstError = err;
   }
 
-  const firstElapsed = Date.now() - callStartTime;
   const isFailedAttempt =
     firstError !== null || (firstResponse !== null && isFallbackModel(firstResponse.model));
 
-  if (isFailedAttempt && firstElapsed < 20000 && CANVAS_MAX_OUTPUT_TOKENS > 8000) {
+  if (isFailedAttempt) {
     onRetry?.();
-    try {
-      const retryResponse = await api.aiChat(prompt, [], '', provider, false, {
-        language: language || undefined,
-        maxTokens: 8000,
-        timeoutMs: CANVAS_AI_TIMEOUT_MS,
-        skillsText: skillsText || undefined,
-      });
+    const retryBudgets = [2048, 1024];
+    let lastRetryErr: unknown = firstError;
+    let lastFallbackReason = firstResponse?.fallbackReason;
 
-      if (isFallbackModel(retryResponse.model)) {
-        throw new Error(buildFallbackErrorMessage(retryResponse.fallbackReason, true));
-      }
+    for (const budget of retryBudgets) {
+      try {
+        const retryResponse = await api.aiChat(prompt, [], '', provider, false, {
+          language: language || undefined,
+          maxTokens: budget,
+          timeoutMs: CANVAS_AI_TIMEOUT_MS,
+          // Omit bulky skillsText on fallback retry so compact-context models have maximum token room
+          skillsText: undefined,
+          disableReasoning: true,
+        });
 
-      return { result: retryResponse, retried: true };
-    } catch (retryErr) {
-      if (retryErr instanceof Error && retryErr.message.includes('The AI provider did not answer')) {
-        throw retryErr;
+        if (!isFallbackModel(retryResponse.model) && retryResponse.answer?.trim()) {
+          return { result: retryResponse, retried: true };
+        }
+        lastFallbackReason = retryResponse.fallbackReason || lastFallbackReason;
+      } catch (retryErr) {
+        lastRetryErr = retryErr;
       }
-      const rawMsg =
-        retryErr instanceof Error
-          ? retryErr.message
-          : firstError instanceof Error
-          ? firstError.message
-          : 'AI request failed.';
-      throw new Error(appendRetryNote(rawMsg, true));
     }
-  }
 
-  // No retry was performed (either succeeded on attempt 1, or elapsed >= 20000ms)
-  if (firstError) {
-    throw firstError;
-  }
+    if (lastFallbackReason || (firstResponse && isFallbackModel(firstResponse.model))) {
+      throw new Error(buildFallbackErrorMessage(lastFallbackReason, true));
+    }
 
-  if (firstResponse && isFallbackModel(firstResponse.model)) {
-    throw new Error(buildFallbackErrorMessage(firstResponse.fallbackReason, false));
+    const rawMsg =
+      lastRetryErr instanceof Error
+        ? lastRetryErr.message
+        : firstError instanceof Error
+        ? firstError.message
+        : 'AI request failed.';
+    throw new Error(appendRetryNote(rawMsg, true));
   }
 
   if (!firstResponse) {
@@ -1143,6 +1230,10 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     if (canvasProviderId === 'existing') {
       return storage.getActiveAIProvider();
     }
+    const freshSessionProv = storage.getProviderForSession(canvasProviderId, canvasModelId);
+    if (freshSessionProv) {
+      return freshSessionProv;
+    }
     const matched = configuredProviders.find((p) => p.id === canvasProviderId);
     if (matched) {
       return {
@@ -1150,7 +1241,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         model: canvasModelId.trim() || matched.model,
       };
     }
-    return storage.getProviderForSession(canvasProviderId, canvasModelId);
+    return activeProvider || storage.getActiveAIProvider();
   }, [canvasProviderId, canvasModelId, activeProvider, configuredProviders]);
 
   const activeCanvasModelLabel = useMemo(() => {
@@ -1316,7 +1407,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
   const activeArtifact = useMemo(() => {
     if (!artifacts.length) return null;
-    return artifacts.find((a) => a.id === activeArtifactId) || artifacts[0];
+    const rawFound = artifacts.find((a) => a.id === activeArtifactId) || artifacts[0];
+    return rawFound ? normalizeCanvasArtifact(rawFound) : null;
   }, [artifacts, activeArtifactId]);
 
   const activeThemePresetObj = useMemo(
@@ -1367,7 +1459,13 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   }, []);
 
   const isRunnableWeb =
-    activeArtifact?.kind === 'html' || activeArtifact?.kind === 'react';
+    activeArtifact?.kind === 'html' ||
+    activeArtifact?.kind === 'react' ||
+    Boolean(
+      activeArtifact?.content &&
+        (activeArtifact.content.trim().toLowerCase().startsWith('<!doctype html') ||
+          activeArtifact.content.trim().toLowerCase().startsWith('<html')),
+    );
   const isSvg = activeArtifact?.kind === 'svg';
 
   const latestRuntimeError = useMemo(

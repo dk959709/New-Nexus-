@@ -379,6 +379,7 @@ export const api = {
       maxTokens?: number;
       skillsText?: string;
       timeoutMs?: number;
+      disableReasoning?: boolean;
     },
   ): Promise<{
     answer: string;
@@ -395,9 +396,12 @@ export const api = {
     let providerToSend = rawProvider;
 
     if (rawProvider) {
-      const thinkingEffort = getAssistantThinkingEffort();
+      const thinkingEffort = options?.disableReasoning ? 'default' : getAssistantThinkingEffort();
+      const baseProviderForReasoning = options?.disableReasoning
+        ? { ...rawProvider, reasoningOverride: 'force_off' as const }
+        : rawProvider;
       const { config: reasoningEnhancedConfig, spec: reasoningSpec, params: reasoningParams, desiredLevel } =
-        applyReasoningConfig(rawProvider, 'low', undefined, true, thinkingEffort);
+        applyReasoningConfig(baseProviderForReasoning, 'low', undefined, !options?.disableReasoning, thinkingEffort);
       providerToSend = reasoningEnhancedConfig;
 
       if (reasoningSpec && reasoningParams) {

@@ -1252,6 +1252,165 @@ async function executeProviderChatRequest({
           }
         }
 
+        // Universal Model Compatibility & Token Step-Down Fallback (Poolside Laguna, vLLM, Groq, OpenRouter, Together, HF, etc.)
+        // Many models (e.g. poolside/laguna-s-2.1, 4k/8k context models) work with max_tokens=512 in AI Assistant
+        // but return HTTP 400/422/500 when Live AI Canvas Studio requests max_tokens=20000 or 8000 (prompt_tokens + max_tokens > max_model_len)
+        // or when model-specific extraParams (chat_template_kwargs / reasoning_effort / reasoning) are rejected.
+        const hasExtraKeys = Boolean(outgoingExtraParams && Object.keys(outgoingExtraParams).length > 0);
+        if (
+          status === 400 ||
+          status === 422 ||
+          (status === 500 && (maxTokens > 2048 || hasExtraKeys))
+        ) {
+          const totalPromptChars = outgoingMessages.reduce(
+            (sum, m) =>
+              sum +
+              (typeof m.content === 'string'
+                ? m.content.length
+                : JSON.stringify(m.content || '').length),
+            0,
+          );
+          const approxPromptTokens = Math.ceil(totalPromptChars / 3.0);
+
+          // Parse explicit context length error if present (e.g. vLLM: "maximum context length is 8192 tokens. However, you requested 21500 tokens (1500 in the messages...)")
+          let parsedContextSafeBudget: number | null = null;
+          const ctxMatch =
+            errorMsg.match(/maximum context length is (\d+)[^\d]+(\d+)[^\d]+(\d+)\s+in the messages/i) ||
+            errorMsg.match(/context length is (\d+).*?(\d+)\s+in the (?:messages|prompt)/i);
+          if (ctxMatch) {
+            const maxCtx = parseInt(ctxMatch[1], 10);
+            const msgToks = parseInt(ctxMatch[ctxMatch.length - 1], 10);
+            if (maxCtx > msgToks + 128) {
+              parsedContextSafeBudget = Math.max(256, maxCtx - msgToks - 128);
+            }
+          } else {
+            const maxTokCeilingMatch = errorMsg.match(
+              /max(?:_completion|_new)?_tokens.*?(?:<=|less than or equal to|maximum of|at most|exceed)\s*(\d+)/i,
+            );
+            if (maxTokCeilingMatch && maxTokCeilingMatch[1]) {
+              const ceiling = parseInt(maxTokCeilingMatch[1], 10);
+              if (ceiling >= 128) {
+                parsedContextSafeBudget = ceiling;
+              }
+            }
+          }
+
+          const stepBudgets: Array<{ tokens: number; stripExtra: boolean; mergeSystem?: boolean }> = [];
+          if (parsedContextSafeBudget && parsedContextSafeBudget < maxTokens) {
+            stepBudgets.push({ tokens: parsedContextSafeBudget, stripExtra: false });
+            stepBudgets.push({ tokens: parsedContextSafeBudget, stripExtra: true });
+          }
+
+          const fit8k = Math.min(maxTokens, Math.max(1024, 7600 - approxPromptTokens), 4000);
+          if (maxTokens > fit8k) {
+            stepBudgets.push({ tokens: fit8k, stripExtra: false });
+          }
+          if (hasExtraKeys || maxTokens > fit8k) {
+            stepBudgets.push({ tokens: fit8k, stripExtra: true });
+          }
+
+          const fit4k = Math.min(maxTokens, Math.max(512, 3600 - approxPromptTokens), 2048);
+          if (fit4k < fit8k || maxTokens > 2048) {
+            stepBudgets.push({ tokens: fit4k, stripExtra: true });
+          }
+
+          if (maxTokens > 1024) {
+            stepBudgets.push({ tokens: 1024, stripExtra: true });
+          }
+          if (maxTokens > 512 || hasExtraKeys) {
+            stepBudgets.push({ tokens: 512, stripExtra: true });
+          }
+          if (outgoingMessages[0]?.role === 'system') {
+            stepBudgets.push({ tokens: Math.min(maxTokens, 1024), stripExtra: true, mergeSystem: true });
+          }
+
+          const seenStepKeys = new Set<string>();
+          for (const step of stepBudgets) {
+            const stepKey = `${step.tokens}-${step.stripExtra ? 'clean' : 'extra'}-${step.mergeSystem ? 'merged' : 'std'}`;
+            if (seenStepKeys.has(stepKey)) continue;
+            seenStepKeys.add(stepKey);
+
+            const stepMessages =
+              step.mergeSystem && outgoingMessages.length >= 2 && outgoingMessages[0].role === 'system'
+                ? [
+                    {
+                      role: 'user',
+                      content: `${outgoingMessages[0].content}\n\n${
+                        typeof outgoingMessages[1].content === 'string'
+                          ? outgoingMessages[1].content
+                          : JSON.stringify(outgoingMessages[1].content)
+                      }`,
+                    },
+                    ...outgoingMessages.slice(2),
+                  ]
+                : outgoingMessages;
+
+            const stepBody: Record<string, unknown> = {
+              model,
+              messages: stepMessages,
+              temperature,
+              max_tokens: step.tokens,
+              ...(step.stripExtra ? {} : outgoingExtraParams || {}),
+            };
+
+            console.warn(
+              `[Universal Model Fallback] Retrying "${model}" after HTTP ${status} (${errorMsg.slice(0, 120)}) with max_tokens=${step.tokens}, stripExtra=${step.stripExtra}, mergeSystem=${Boolean(step.mergeSystem)}...`,
+            );
+
+            try {
+              const fbRes = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(stepBody),
+                signal: AbortSignal.timeout(timeoutMs),
+              });
+
+              if (fbRes.ok) {
+                const fbPayload = (await fbRes.json()) as {
+                  model?: string;
+                  choices?: Array<{
+                    message?: {
+                      content?: string | Array<{ type?: string; text?: string }>;
+                      reasoning?: string;
+                      reasoning_content?: string;
+                    };
+                    text?: string;
+                  }>;
+                };
+                const fbChoice = fbPayload.choices?.[0];
+                const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } =
+                  extractReasoningAndContent(
+                    fbChoice?.message as Record<string, unknown>,
+                    fbChoice?.message?.content,
+                    undefined,
+                    model,
+                  );
+                const fbText =
+                  fbContentStr ||
+                  fbReasoningStr ||
+                  (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                  (fbChoice ? 'OK' : '');
+
+                if (fbText) {
+                  console.log(
+                    `[Universal Model Fallback] Succeeded for "${model}" with max_tokens=${step.tokens} (HTTP ${fbRes.status})!`,
+                  );
+                  return {
+                    ok: true,
+                    text: fbText,
+                    content: fbContentStr,
+                    reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
+                    model: fbPayload.model || model,
+                    status: fbRes.status,
+                  };
+                }
+              }
+            } catch (stepErr) {
+              console.warn(`[Universal Model Fallback] Step retry error for "${model}":`, stepErr);
+            }
+          }
+        }
+
         const isTransient = status === 503 || status === 502 || status === 504 || status === 429;
         if (isTransient && attempt < maxAttempts) {
           const backoff = attempt * 750; // 750ms, then 1500ms
@@ -2024,10 +2183,12 @@ async function executeAiWithProviderOrFallback({
       cooldownDuration = 3000;
     } else {
       failureCategory = `HTTP ${status}`;
-      cooldownDuration = 5000;
+      cooldownDuration = status === 400 || status === 422 ? 0 : 5000;
     }
 
-    keyCooldownMap.set(keyVal, Date.now() + cooldownDuration);
+    if (cooldownDuration > 0) {
+      keyCooldownMap.set(keyVal, Date.now() + cooldownDuration);
+    }
 
     const nextKeyItem = i < executionKeyList.length - 1 ? executionKeyList[i + 1] : null;
     const nextKeyLabel = nextKeyItem ? (nextKeyItem.label || `Key #${i + 2}`) : null;
@@ -3295,10 +3456,18 @@ async function processAiChatInternal(
   tierGuidance += `- NATURAL CITATION FORMATTING: Cite sources naturally by name/organization (e.g. "According to Anthropic's official announcement...", "Per Wikipedia...", "Reuters reports...") or a normal citation format. NEVER reference internal tier labels like "Tier 1", "Tier 2", "Tier 3", "Tier 1 sources", or "[Tier 1]" anywhere in your visible response.\n`;
 
   const modelId = activeModel ? activeModel.trim() : '';
-  const styleInstruction = isScholarRequest
+  const isCanvasStudioRequest =
+    trimmed.includes('NEXUS Live AI Canvas Studio') ||
+    trimmed.includes('Output format requirement: Return ONLY') ||
+    trimmed.includes('Output format requirement: Build a complete');
+  const styleInstruction = isCanvasStudioRequest
+    ? 'Return complete, self-contained, production-ready code following the user output format instructions with no conversational filler.'
+    : isScholarRequest
     ? 'Provide direct, insightful, factual, comprehensive, and detailed academic answers.'
     : 'Provide direct, insightful, factual, and concise answers.';
-  const identityLine = modelId
+  const identityLine = isCanvasStudioRequest
+    ? `You are the NEXUS Live AI Canvas Studio code synthesis engine powered by ${providerConfig?.name || 'AI'} (${modelId || 'AI'}). ${styleInstruction}`
+    : modelId
     ? `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. The model running this chat right now is "${modelId}". If the user asks which model you are, answer with exactly this model ID. Do not claim any other model name, size, or parameter count unless it is written in this system prompt. Ignore any model names mentioned in earlier messages of this chat, because the user may have switched models. If you are not sure, say you are not sure. The user can see your reasoning in a "Thinking" box above your answer, so if they ask about your thinking process, tell them to open that box. ${styleInstruction}`
     : `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. ${styleInstruction}`;
 
@@ -3556,12 +3725,12 @@ const customProviderSchema = z
   .passthrough();
 
 const aiChatSchema = z.object({
-  message: z.string().trim().min(1).max(16000),
+  message: z.string().trim().min(1).max(120000),
   history: z
     .array(
       z.object({
         role: z.enum(['user', 'assistant']),
-        content: z.string().max(8000),
+        content: z.string().max(16000),
       }),
     )
     .max(20)
@@ -3579,9 +3748,9 @@ const aiChatSchema = z.object({
   image: z.string().optional(),
   timezone: z.string().max(100).optional(),
   scholarMode: z.boolean().optional(),
-  maxTokens: z.number().int().min(200).max(32000).optional(),
-  skillsText: z.string().max(30000).optional(),
-  timeoutMs: z.number().int().min(5000).max(150000).optional(),
+  maxTokens: z.number().int().min(64).max(32000).optional(),
+  skillsText: z.string().max(50000).optional(),
+  timeoutMs: z.number().int().min(5000).max(180000).optional(),
 });
 
 
