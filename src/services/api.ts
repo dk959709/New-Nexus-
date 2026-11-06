@@ -366,6 +366,7 @@ export const api = {
       scholarMode?: boolean;
       maxTokens?: number;
       skillsText?: string;
+      timeoutMs?: number;
     },
   ): Promise<{
     answer: string;
@@ -429,6 +430,7 @@ export const api = {
         scholarMode: options?.scholarMode,
         maxTokens: options?.maxTokens,
         skillsText: options?.skillsText,
+        timeoutMs: options?.timeoutMs,
         timezone: (() => {
           try {
             return Intl.DateTimeFormat().resolvedOptions().timeZone;

@@ -57,6 +57,9 @@ import { cleanMarkdownForSpeech } from '@/lib/format';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import type { AIProviderConfig } from '@/types';
 
+const CANVAS_MAX_OUTPUT_TOKENS = 20000;
+const CANVAS_AI_TIMEOUT_MS = 120000;
+
 const CANVAS_MODEL_STORAGE_KEY = 'nexus_canvas_model_config_v1';
 
 function getCanvasProviderModels(provider: AIProviderConfig): Array<{ id: string; name: string }> {
@@ -203,12 +206,74 @@ function loadVaultArtifacts(): CanvasArtifact[] {
   }
 }
 
-function saveVaultArtifacts(list: CanvasArtifact[]): void {
+function saveVaultArtifacts(list: CanvasArtifact[]): boolean {
   try {
-    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(list.slice(0, 35)));
+    let prepared = list.map((item) => {
+      const versions = item.versions || [];
+      const trimmedVersions = versions.slice(-5);
+      const droppedCount = Math.max(0, versions.length - trimmedVersions.length);
+      const adjustedIndex =
+        trimmedVersions.length > 0
+          ? Math.max(
+              0,
+              Math.min(trimmedVersions.length - 1, (item.currentVersionIndex ?? 0) - droppedCount),
+            )
+          : 0;
+      return {
+        ...item,
+        versions: trimmedVersions,
+        currentVersionIndex: adjustedIndex,
+      };
+    });
+
+    let json = JSON.stringify(prepared);
+    while (json.length > 3500000 && prepared.length > 0) {
+      prepared = prepared.slice(0, -1);
+      json = JSON.stringify(prepared);
+    }
+
+    localStorage.setItem(VAULT_STORAGE_KEY, json);
+    return true;
   } catch {
-    // ignore storage quota errors
+    return false;
   }
+}
+
+/**
+ * Extracts artifact code from an AI response and detects truncation.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function extractArtifactFromAnswer(answer: string): { code: string; truncated: boolean } {
+  const trimmed = (answer || '').trim();
+  let code = trimmed;
+  let truncated = false;
+
+  const completeMatch = trimmed.match(/```[a-zA-Z0-9_-]*\r?\n([\s\S]*?)```/);
+  if (completeMatch && completeMatch[1] !== undefined) {
+    code = completeMatch[1].trim();
+    truncated = false;
+  } else {
+    const openFenceMatch = trimmed.match(/(?:^|\n)[ \t]*```[a-zA-Z0-9_-]*\r?\n([\s\S]*)$/);
+    if (openFenceMatch && openFenceMatch[1] !== undefined) {
+      code = openFenceMatch[1].trim();
+      truncated = true;
+    } else {
+      code = trimmed;
+      truncated = false;
+    }
+  }
+
+  const lower = code.toLowerCase();
+  const isHtml = lower.includes('<!doctype html') || lower.includes('<html');
+  if (isHtml && !lower.includes('</html>')) {
+    truncated = true;
+  }
+  const trimmedCode = code.trim();
+  if (trimmedCode.toLowerCase().startsWith('<svg') && !trimmedCode.toLowerCase().includes('</svg>')) {
+    truncated = true;
+  }
+
+  return { code, truncated };
 }
 
 /**
@@ -481,7 +546,7 @@ function buildRunnableSandboxHtml(
   if (artifact.kind === 'html') {
     const raw = artifact.content.trim();
     const hasTailwind = raw.includes('cdn.tailwindcss.com') || raw.includes('tailwind');
-    const tailwindTag = hasTailwind ? '' : '<script src="https://cdn.tailwindcss.com"></script>';
+    const tailwindTag = hasTailwind ? '' : '<script src="https://cdn.tailwindcss.com/3.4.17"></script>';
 
     if (raw.toLowerCase().includes('<!doctype html') || raw.toLowerCase().includes('<html')) {
       if (raw.includes('<head>')) {
@@ -495,7 +560,7 @@ function buildRunnableSandboxHtml(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
   <style>
     body { background-color: #09090b; color: #f4f4f5; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 16px; }
   </style>
@@ -518,10 +583,10 @@ function buildRunnableSandboxHtml(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
   <style>
     body { background-color: #09090b; color: #f4f4f5; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 16px; }
   </style>
@@ -698,7 +763,7 @@ const STARTER_TEMPLATES: Array<{
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
 </head>
 <body class="bg-zinc-950 text-zinc-100 p-6 font-sans">
   <div class="max-w-xl mx-auto rounded-2xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl space-y-6">
@@ -856,6 +921,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   // Feature 8: Persistent Artifact Vault
   const [vaultArtifacts, setVaultArtifacts] = useState<CanvasArtifact[]>(() => loadVaultArtifacts());
   const [savedToVaultNotice, setSavedToVaultNotice] = useState(false);
+  const [vaultError, setVaultError] = useState<string | null>(null);
 
   // Feature 10: Voice-to-Canvas Mic & Audio Walkthrough
   const [isListeningMic, setIsListeningMic] = useState(false);
@@ -869,6 +935,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [aiRefiningLabel, setAiRefiningLabel] = useState('');
   const [customAiPrompt, setCustomAiPrompt] = useState('');
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiWarning, setAiWarning] = useState<string | null>(null);
 
   // Canvas AI Provider & Model Selection State
   const [configuredProviders, setConfiguredProviders] = useState<AIProviderConfig[]>(() => {
@@ -1127,6 +1194,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   // Listen for console logs AND Visual Inspector clicks from inside the sandboxed iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
       if (!event.data || typeof event.data !== 'object') return;
       if (event.data.type === 'NEXUS_CANVAS_CONSOLE') {
         setConsoleLogs((prev) => [
@@ -1165,6 +1233,29 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     const currentCode = hasUnsavedEdits ? editorDraft : activeArtifact.content;
     return runStaticArtifactAudit(activeArtifact, currentCode);
   }, [activeArtifact, editorDraft, hasUnsavedEdits]);
+
+  const [previewSource, setPreviewSource] = useState<string>(() =>
+    hasUnsavedEdits ? editorDraft : activeArtifact?.content || '',
+  );
+
+  useEffect(() => {
+    if (!hasUnsavedEdits) {
+      setPreviewSource(activeArtifact?.content || '');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setPreviewSource(editorDraft);
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [hasUnsavedEdits, editorDraft, activeArtifact?.id, activeArtifact?.currentVersionIndex, activeArtifact?.content]);
+
+  const svgDataUrl = useMemo(() => {
+    if (!previewSource || !previewSource.includes('<svg')) return '';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(previewSource);
+  }, [previewSource]);
 
   const commitNewVersion = (
     newContent: string,
@@ -1349,10 +1440,16 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       0,
       30,
     );
-    setVaultArtifacts(next);
-    saveVaultArtifacts(next);
-    setSavedToVaultNotice(true);
-    setTimeout(() => setSavedToVaultNotice(false), 2000);
+    const success = saveVaultArtifacts(next);
+    if (success) {
+      setVaultArtifacts(next);
+      setVaultError(null);
+      setSavedToVaultNotice(true);
+      setTimeout(() => setSavedToVaultNotice(false), 2000);
+    } else {
+      setVaultError('Could not save: browser storage is full. Delete old vault items and try again.');
+      setTimeout(() => setVaultError(null), 4000);
+    }
   };
 
   const handleDeleteVaultItem = (id: string) => {
@@ -1495,6 +1592,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     setAiRefining(true);
     setAiRefiningLabel(shortLabel);
     setAiError(null);
+    setAiWarning(null);
     liveCodingSkipRef.current = false;
     setLiveCodingActive(true);
     setLiveCodingPhase('planning');
@@ -1555,20 +1653,31 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         false,
         {
           language: responseLanguage || undefined,
-          maxTokens: 4000,
+          maxTokens: CANVAS_MAX_OUTPUT_TOKENS,
+          timeoutMs: CANVAS_AI_TIMEOUT_MS,
         },
       );
 
       window.clearInterval(preTimer);
 
-      let extracted = (response.answer || '').trim();
-      const fenceMatch = extracted.match(/```(?:[a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
-      if (fenceMatch && fenceMatch[1]) {
-        extracted = fenceMatch[1].trim();
-      }
+      const { code: extracted, truncated } = extractArtifactFromAnswer(response.answer || '');
 
       if (!extracted) {
         throw new Error('AI returned an empty artifact response.');
+      }
+
+      if (truncated) {
+        window.clearInterval(preTimer);
+        setLiveCodingActive(false);
+        setEditorDraft(extracted);
+        setHasUnsavedEdits(true);
+        if (activeTab !== 'split') {
+          setActiveTab('code');
+        }
+        setAiWarning(
+          "The AI answer was cut off (token limit), so it was NOT saved as a new version. Review the code, or try a smaller change. Use 'Save edits' only if the code looks complete.",
+        );
+        return;
       }
 
       const nextKind: ArtifactKind =
@@ -1608,6 +1717,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     setAiRefining(true);
     setAiRefiningLabel(`Building: ${userPrompt.slice(0, 28)}`);
     setAiError(null);
+    setAiWarning(null);
     liveCodingSkipRef.current = false;
     setLiveCodingActive(true);
     setLiveCodingPhase('planning');
@@ -1670,19 +1780,22 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         false,
         {
           language: responseLanguage || undefined,
-          maxTokens: 4000,
+          maxTokens: CANVAS_MAX_OUTPUT_TOKENS,
+          timeoutMs: CANVAS_AI_TIMEOUT_MS,
         },
       );
 
       window.clearInterval(bootTimer);
 
-      let extracted = (response.answer || '').trim();
-      const fenceMatch = extracted.match(/```(?:[a-zA-Z0-9_-]*)\n([\s\S]*?)```/);
-      if (fenceMatch && fenceMatch[1]) {
-        extracted = fenceMatch[1].trim();
-      }
+      const { code: extracted, truncated } = extractArtifactFromAnswer(response.answer || '');
       if (!extracted) {
         throw new Error('AI returned an empty response.');
+      }
+
+      if (truncated) {
+        setAiWarning(
+          'The AI answer looks cut off, so the code may be incomplete. Try a shorter request or ask the AI to continue.',
+        );
       }
 
       // Stream the newly generated application code live into the Live Coding Terminal
@@ -1802,7 +1915,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             srcDoc={buildRunnableSandboxHtml(
               {
                 ...activeArtifact,
-                content: hasUnsavedEdits ? editorDraft : activeArtifact.content,
+                content: previewSource,
               },
               inspectMode,
               activeThemePresetObj.cssOverride,
@@ -1813,30 +1926,33 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       );
     }
     if (isSvg) {
+      const isValid = previewSource.includes('<svg');
       return (
         <div className="w-full h-full min-h-[340px] flex items-center justify-center overflow-auto p-4 rounded-xl border border-zinc-800/80 bg-[#0c0c10]">
-          <div
-            style={{
-              transform: `scale(${svgZoom / 100})`,
-              transformOrigin: 'center center',
-            }}
-            className="transition-transform duration-150 max-w-full"
-            dangerouslySetInnerHTML={{
-              __html: hasUnsavedEdits ? editorDraft : activeArtifact.content,
-            }}
-          />
+          {isValid ? (
+            <img
+              src={svgDataUrl}
+              alt={activeArtifact.title}
+              draggable={false}
+              style={{
+                transform: `scale(${svgZoom / 100})`,
+                transformOrigin: 'center center',
+              }}
+              className="transition-transform duration-150 max-w-full"
+            />
+          ) : (
+            <p className="text-xs text-zinc-400">This is not valid SVG markup.</p>
+          )}
         </div>
       );
     }
     return (
       <div className="w-full max-w-3xl mx-auto p-4 sm:p-6 rounded-xl bg-zinc-900/70 border border-zinc-800/90 text-sm text-zinc-200 leading-relaxed">
         {activeArtifact.kind === 'markdown' ? (
-          <FormattedText content={hasUnsavedEdits ? editorDraft : activeArtifact.content} />
+          <FormattedText content={previewSource} />
         ) : (
           <FormattedText
-            content={`\`\`\`${activeArtifact.language || 'text'}\n${
-              hasUnsavedEdits ? editorDraft : activeArtifact.content
-            }\n\`\`\``}
+            content={`\`\`\`${activeArtifact.language || 'text'}\n${previewSource}\n\`\`\``}
           />
         )}
       </div>
@@ -1929,24 +2045,35 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
               </button>
 
               {/* Feature 8: Save to Persistent Canvas Vault */}
-              <button
-                type="button"
-                onClick={handleSaveToVault}
-                className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1 cursor-pointer ${
-                  savedToVaultNotice
-                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                    : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-200'
-                }`}
-                title="Save artifact to persistent Canvas Vault across sessions"
-              >
-                <Bookmark
-                  size={13}
-                  className={savedToVaultNotice ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}
-                />
-                <span className="hidden xl:inline">
-                  {savedToVaultNotice ? 'Saved' : 'Vault'}
-                </span>
-              </button>
+              <div className="relative inline-flex items-center">
+                <button
+                  type="button"
+                  onClick={handleSaveToVault}
+                  className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1 cursor-pointer ${
+                    savedToVaultNotice
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                      : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-200'
+                  }`}
+                  title="Save artifact to persistent Canvas Vault across sessions"
+                >
+                  <Bookmark
+                    size={13}
+                    className={savedToVaultNotice ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}
+                  />
+                  <span className="hidden xl:inline">
+                    {savedToVaultNotice ? 'Saved' : 'Vault'}
+                  </span>
+                </button>
+                {vaultError && (
+                  <div
+                    role="alert"
+                    className="absolute right-0 top-full mt-1.5 z-50 w-60 sm:w-64 p-2 rounded-lg bg-amber-950/95 border border-amber-500/50 shadow-2xl text-[11px] text-amber-200 leading-snug flex items-start gap-1.5"
+                  >
+                    <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                    <span>{vaultError}</span>
+                  </div>
+                )}
+              </div>
 
               {/* Feature 6: High-Res PNG Snapshot */}
               <button
@@ -2543,6 +2670,22 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 type="button"
                 onClick={() => setAiError(null)}
                 className="text-rose-300 hover:text-white"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
+          {aiWarning && (
+            <div className="px-3 py-1.5 rounded-lg bg-amber-950/70 border border-amber-500/40 text-xs text-amber-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <AlertTriangle size={12} className="text-amber-400 shrink-0" />
+                <span className="truncate">{aiWarning}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiWarning(null)}
+                className="text-amber-300 hover:text-white"
               >
                 <X size={12} />
               </button>

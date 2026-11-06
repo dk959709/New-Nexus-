@@ -3007,6 +3007,7 @@ async function processAiChatInternal(
   scholarMode?: boolean,
   maxTokens?: number,
   skillsText?: string,
+  timeoutMs?: number,
 ) {
   const trimmed = message.trim();
   const isScholarRequest =
@@ -3401,9 +3402,12 @@ async function processAiChatInternal(
   console.log(`[AI Assistant Web Search] Clean history turns sent to model: ${compactHistory.length}`);
   console.log(`[AI Assistant Web Search] ========================================`);
 
-  const requestedMaxTokens = providerConfig
-    ? providerConfig.maxTokens || 512
-    : maxTokens || 512;
+  const requestedMaxTokens =
+    maxTokens && maxTokens > 0
+      ? maxTokens
+      : providerConfig
+      ? providerConfig.maxTokens || 512
+      : 512;
   const effectiveMaxTokens = isScholarRequest
     ? Math.max(requestedMaxTokens, 2000)
     : requestedMaxTokens;
@@ -3419,6 +3423,7 @@ async function processAiChatInternal(
         }
       : providerConfig,
     image,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   });
 
   if (aiResult && aiResult.text) {
@@ -3548,8 +3553,9 @@ const aiChatSchema = z.object({
   image: z.string().optional(),
   timezone: z.string().max(100).optional(),
   scholarMode: z.boolean().optional(),
-  maxTokens: z.number().int().min(200).max(4000).optional(),
+  maxTokens: z.number().int().min(200).max(32000).optional(),
   skillsText: z.string().max(30000).optional(),
+  timeoutMs: z.number().int().min(5000).max(150000).optional(),
 });
 
 
@@ -4500,6 +4506,7 @@ async function startServer() {
         parsed.data.scholarMode,
         parsed.data.maxTokens,
         parsed.data.skillsText,
+        parsed.data.timeoutMs,
       );
       return res.json({ data: result });
     } catch (err: unknown) {
