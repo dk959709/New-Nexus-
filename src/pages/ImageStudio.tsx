@@ -27,6 +27,10 @@ import {
   Filter,
   Heart,
   CheckSquare,
+  Menu,
+  Minimize2,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -1998,6 +2002,7 @@ export function ImageStudio() {
     }
     setError(null);
     playTapSound();
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 120, behavior: 'smooth' });
   };
 
@@ -2013,8 +2018,110 @@ export function ImageStudio() {
     setSeed(Math.floor(Math.random() * 1000000));
   };
 
+  // Fullscreen & Smartphone Bottom-Up Navigation Bar state
+  const [isStudioFullscreen, setIsStudioFullscreen] = useState(true);
+  const [bottomNavVisible, setBottomNavVisible] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrollTopRef = useRef(0);
+  const studioTouchStartYRef = useRef<number | null>(null);
+
+  const updateBottomNavVisibility = useCallback((visible: boolean) => {
+    setBottomNavVisible(visible);
+    window.dispatchEvent(
+      new CustomEvent('nexus-workflow-bottom-nav', {
+        detail: { visible },
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    updateBottomNavVisibility(false);
+    const onExternalNavEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ visible?: boolean }>;
+      if (typeof custom.detail?.visible === 'boolean') {
+        setBottomNavVisible(custom.detail.visible);
+      }
+    };
+    window.addEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
+    return () => {
+      window.removeEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
+      updateBottomNavVisibility(false);
+    };
+  }, [updateBottomNavVisibility]);
+
+  const handleStudioScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    const isNearBottom = distanceFromBottom <= 90;
+    const scrollingDown = scrollTop > lastScrollTopRef.current + 4;
+    const scrollingUp = scrollTop < lastScrollTopRef.current - 12;
+
+    if (isNearBottom) {
+      updateBottomNavVisibility(true);
+    } else if (scrollingUp && distanceFromBottom > 180) {
+      updateBottomNavVisibility(false);
+    } else if (scrollingDown && distanceFromBottom <= 140) {
+      updateBottomNavVisibility(true);
+    }
+
+    lastScrollTopRef.current = scrollTop;
+  }, [updateBottomNavVisibility]);
+
+  const handleStudioTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      studioTouchStartYRef.current = e.touches[0].clientY;
+    }
+  }, []);
+
+  const handleStudioTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (studioTouchStartYRef.current === null || e.touches.length === 0) return;
+      const currentY = e.touches[0].clientY;
+      const deltaY = studioTouchStartYRef.current - currentY;
+      const viewportHeight = window.innerHeight;
+      const startedNearBottomEdge = studioTouchStartYRef.current >= viewportHeight - 110;
+
+      const el = scrollContainerRef.current;
+      const isAtBottom = el
+        ? el.scrollHeight - (el.scrollTop + el.clientHeight) <= 100
+        : false;
+
+      if ((startedNearBottomEdge && deltaY > 24) || (isAtBottom && deltaY > 18)) {
+        updateBottomNavVisibility(true);
+      } else if (deltaY < -35 && !isAtBottom) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [updateBottomNavVisibility],
+  );
+
+  const handleStudioWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      if (e.deltaY > 10 && distanceFromBottom <= 120) {
+        updateBottomNavVisibility(true);
+      } else if (e.deltaY < -18 && distanceFromBottom > 180) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [updateBottomNavVisibility],
+  );
+
   return (
-    <div className="page-container image-studio-stitch-root min-h-screen bg-[#070709] text-gray-100 rounded-2xl px-3.5 sm:px-6 py-4 sm:py-6 max-w-[1160px] mx-auto pb-16 overflow-x-hidden">
+    <div
+      onTouchStart={handleStudioTouchStart}
+      onTouchMove={handleStudioTouchMove}
+      onWheel={handleStudioWheel}
+      className={`image-studio-stitch-root fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[#070709] text-gray-100 z-[950] transition-all duration-300 ${
+        isStudioFullscreen
+          ? 'left-0 w-full'
+          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
+      }`}
+    >
       {/* Hidden Backup File Input (shared across Header and Gallery Toolbar) */}
       <input
         ref={backupFileInputRef}
@@ -2025,60 +2132,71 @@ export function ImageStudio() {
         onChange={handleUploadBackup}
       />
 
-      {/* 1. HEADER */}
-      <header className="flex flex-col gap-3 pb-4 border-b border-[#191922]/80 mb-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#ff2d87] to-[#8b2cf5] p-[1px] shadow-glow-subtle shrink-0">
+      {/* 1. PINNED TOP BAR (Preserving 'Image Studio' original name) */}
+      <header className="shrink-0 flex flex-col gap-2 px-3 sm:px-5 py-2.5 bg-[#0b0b10]/95 border-b border-[#1d1d29] backdrop-blur-md z-20">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'))}
+              className="w-8 h-8 rounded-lg bg-[#17171e] hover:bg-[#22222d] border border-[#252532] flex items-center justify-center text-gray-200 transition shrink-0 cursor-pointer"
+              title="Open NEXUS Navigation Drawer"
+              aria-label="Open NEXUS Navigation Drawer"
+            >
+              <Menu size={15} />
+            </button>
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#ff2d87] to-[#8b2cf5] p-[1px] shadow-glow-subtle shrink-0">
               <div className="w-full h-full bg-[#121218] rounded-[11px] flex items-center justify-center text-[#ff2d87]">
-                <ImageIcon size={20} />
+                <ImageIcon size={16} />
               </div>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-white m-0">
+                <h1 className="text-xs sm:text-sm font-extrabold tracking-tight text-white m-0 truncate">
                   Image Studio
                 </h1>
-                <span className="px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider uppercase rounded-full bg-pink-500/15 text-pink-400 border border-pink-500/30">
+                <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-wider uppercase rounded-full bg-pink-500/15 text-pink-400 border border-pink-500/30">
                   AI VISION ENGINE
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mt-1 m-0 leading-relaxed">
-                Generate high-fidelity artwork and photorealistic visuals using configured AI image providers.
-              </p>
+              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono truncate">
+                <span>{history.length} Saved</span>
+                <span>•</span>
+                <span className="text-pink-300 truncate">{activeProvider?.name || 'AI Engine'}</span>
+              </div>
             </div>
           </div>
 
-          {/* Right Header Actions: Export, Restore, Gallery Modal Button & Settings Link */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
+          {/* Right Header Actions: Export, Restore, Gallery Modal Button, Providers Link & Fullscreen Toggle */}
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
             <button
               type="button"
               onClick={handleDownloadAllImages}
               disabled={backupExporting || backupImporting}
-              className="h-9 px-2.5 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+              className="h-8 px-2.5 rounded-lg bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-50"
               title="Export all saved generations into a JSON backup file"
             >
               {backupExporting ? (
-                <RotateCw size={14} className="animate-spin text-pink-400" />
+                <RotateCw size={13} className="animate-spin text-pink-400" />
               ) : (
-                <Download size={14} className="text-gray-300" />
+                <Download size={13} className="text-gray-300" />
               )}
-              <span className="hidden md:inline text-xs font-mono font-medium">Export</span>
+              <span className="hidden md:inline text-[11px] font-mono font-medium">Export</span>
             </button>
 
             <button
               type="button"
               onClick={() => backupFileInputRef.current?.click()}
               disabled={backupExporting || backupImporting}
-              className="h-9 px-2.5 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-50"
+              className="h-8 px-2.5 rounded-lg bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition cursor-pointer disabled:opacity-50"
               title="Restore and merge images from backup files"
             >
               {backupImporting ? (
-                <RotateCw size={14} className="animate-spin text-violet-400" />
+                <RotateCw size={13} className="animate-spin text-violet-400" />
               ) : (
-                <Upload size={14} className="text-gray-300" />
+                <Upload size={13} className="text-gray-300" />
               )}
-              <span className="hidden md:inline text-xs font-mono font-medium">Restore</span>
+              <span className="hidden md:inline text-[11px] font-mono font-medium">Restore</span>
             </button>
 
             <button
@@ -2087,11 +2205,11 @@ export function ImageStudio() {
                 playTapSound();
                 setGalleryModalOpen(true);
               }}
-              className="h-9 px-2.5 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition relative cursor-pointer"
+              className="h-8 px-2.5 rounded-lg bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition relative cursor-pointer"
               title="Open Photo Gallery"
             >
-              <ImageIcon size={15} className="text-pink-400" />
-              <span className="hidden sm:inline text-xs font-mono font-medium">Gallery</span>
+              <ImageIcon size={14} className="text-pink-400" />
+              <span className="hidden sm:inline text-[11px] font-mono font-medium">Gallery</span>
               <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold rounded-full bg-pink-500/20 text-pink-300 border border-pink-500/30">
                 {history.length}
               </span>
@@ -2099,12 +2217,21 @@ export function ImageStudio() {
 
             <Link
               to="/settings?category=ai"
-              className="h-9 px-2.5 sm:px-3 rounded-xl bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition no-underline"
+              className="h-8 px-2.5 rounded-lg bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition no-underline"
               title="Configure Image Providers"
             >
-              <Settings size={15} className="text-gray-300" />
-              <span className="hidden sm:inline text-xs font-mono font-medium">Providers</span>
+              <Settings size={14} className="text-gray-300" />
+              <span className="hidden sm:inline text-[11px] font-mono font-medium">Providers</span>
             </Link>
+
+            <button
+              type="button"
+              onClick={() => setIsStudioFullscreen((prev) => !prev)}
+              className="w-8 h-8 rounded-lg bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center text-gray-300 hover:text-white transition cursor-pointer"
+              title={isStudioFullscreen ? 'Dock with Sidebar (Desktop)' : 'Expand Full Screen'}
+            >
+              {isStudioFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
           </div>
         </div>
 
@@ -2143,8 +2270,15 @@ export function ImageStudio() {
         )}
       </header>
 
-      {/* Main Studio Layout: Mobile single-column stack, Desktop 2-column balanced grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* Main Full-Screen Scrollable Content Area */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleStudioScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden px-3.5 sm:px-6 pt-4 pb-28 scroll-smooth"
+      >
+        <div className="max-w-[1160px] mx-auto">
+          {/* Main Studio Layout: Mobile single-column stack, Desktop 2-column balanced grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* LEFT COLUMN: Controls, Providers, Prompt & Parameters */}
         <div className="lg:col-span-6 flex flex-col gap-4 min-w-0">
           {/* 2. PROVIDER / PRESET CHIPS */}
@@ -3643,6 +3777,40 @@ export function ImageStudio() {
           </section>
         </div>
       </div>
+
+          {/* Scroll-End Bottom-Up Navigation Sentinel (Icon-only pill, no text) */}
+          <div className="mt-8 pt-4 pb-6 flex flex-col items-center justify-center text-center select-none">
+            <button
+              type="button"
+              onClick={() => updateBottomNavVisibility(!bottomNavVisible)}
+              aria-label="Toggle navigation bar"
+              className="group inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#12121a]/90 hover:bg-[#1a1a26] border border-pink-500/35 text-pink-300 shadow-lg transition-all cursor-pointer"
+            >
+              <span className="w-10 h-1 rounded-full bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5]" />
+              {bottomNavVisible ? (
+                <ChevronDown size={13} className="text-pink-400 group-hover:translate-y-0.5 transition-transform" />
+              ) : (
+                <ChevronUp size={13} className="text-pink-400 group-hover:-translate-y-0.5 transition-transform" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Smartphone Home Indicator Gesture Bar (Fixed at bottom edge when nav bar is hidden) */}
+      {!bottomNavVisible && (
+        <div
+          onClick={() => updateBottomNavVisibility(true)}
+          onTouchStart={handleStudioTouchStart}
+          onTouchMove={handleStudioTouchMove}
+          className="fixed bottom-0 left-0 right-0 h-7 flex flex-col items-center justify-end pb-1.5 bg-gradient-to-t from-[#070709]/95 via-[#070709]/40 to-transparent z-[990] cursor-pointer group"
+        >
+          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#12121a]/85 border border-pink-500/35 group-hover:border-pink-400/70 transition-all shadow-md">
+            <div className="w-10 h-1 rounded-full bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5]" />
+            <ChevronUp size={11} className="text-pink-300/90" />
+          </div>
+        </div>
+      )}
 
       {/* 8a. Full Photo Gallery Overlay Modal (Stitch Dark Theme) */}
       {galleryModalOpen && (

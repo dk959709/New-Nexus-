@@ -46,6 +46,9 @@ import {
   Loader2,
   MinusCircle,
   Ban,
+  Menu,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -317,6 +320,124 @@ export function WorkflowsPage() {
     sourceId: string;
     targetId: string;
   } | null>(null);
+
+  // Fullscreen Studio & Smartphone Bottom-Up Navigation Bar State
+  const [isStudioFullscreen, setIsStudioFullscreen] = useState<boolean>(true);
+  const [bottomNavVisible, setBottomNavVisible] = useState<boolean>(false);
+  const studioScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement | null>(null);
+  const finalOutputSectionRef = useRef<HTMLElement | null>(null);
+  const traceSectionRef = useRef<HTMLElement | null>(null);
+  const lastScrollTopRef = useRef<number>(0);
+  const touchStartYRef = useRef<number | null>(null);
+  const touchStartedAtBottomEdgeRef = useRef<boolean>(false);
+  const touchStartedAtScrollEndRef = useRef<boolean>(false);
+
+  const updateBottomNavVisibility = useCallback((visible: boolean) => {
+    setBottomNavVisible(visible);
+    window.dispatchEvent(
+      new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible } }),
+    );
+  }, []);
+
+  useEffect(() => {
+    const syncFromLayout = (e: Event) => {
+      const custom = e as CustomEvent<{ visible?: boolean }>;
+      if (typeof custom.detail?.visible === 'boolean') {
+        setBottomNavVisible(custom.detail.visible);
+      }
+    };
+    window.addEventListener('nexus-workflow-bottom-nav', syncFromLayout);
+    return () => {
+      window.removeEventListener('nexus-workflow-bottom-nav', syncFromLayout);
+      window.dispatchEvent(
+        new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible: false } }),
+      );
+    };
+  }, []);
+
+  const handleStudioScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const el = e.currentTarget;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+      const isScrollable = scrollHeight > clientHeight + 20;
+
+      if (isScrollable && distanceFromBottom <= 72) {
+        if (!bottomNavVisible) {
+          updateBottomNavVisibility(true);
+        }
+      } else if (
+        bottomNavVisible &&
+        distanceFromBottom > 135 &&
+        scrollTop < lastScrollTopRef.current - 10
+      ) {
+        updateBottomNavVisibility(false);
+      }
+      lastScrollTopRef.current = scrollTop;
+    },
+    [bottomNavVisible, updateBottomNavVisibility],
+  );
+
+  const handleStudioTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    const touchY = e.touches[0]?.clientY ?? null;
+    touchStartYRef.current = touchY;
+    if (touchY !== null && typeof window !== 'undefined') {
+      touchStartedAtBottomEdgeRef.current = touchY >= window.innerHeight - 72;
+    } else {
+      touchStartedAtBottomEdgeRef.current = false;
+    }
+    const el = studioScrollRef.current;
+    if (el) {
+      const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      touchStartedAtScrollEndRef.current = dist <= 80;
+    } else {
+      touchStartedAtScrollEndRef.current = false;
+    }
+  }, []);
+
+  const handleStudioTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (touchStartYRef.current === null) return;
+      const currentY = e.touches[0]?.clientY ?? touchStartYRef.current;
+      const deltaUp = touchStartYRef.current - currentY;
+      const el = studioScrollRef.current;
+      const distFromBottom = el
+        ? el.scrollHeight - (el.scrollTop + el.clientHeight)
+        : 999;
+
+      // Swipe up from bottom edge OR pull up at the end of scroll -> slide up smartphone nav bar
+      if (
+        (touchStartedAtBottomEdgeRef.current && deltaUp >= 18) ||
+        ((touchStartedAtScrollEndRef.current || distFromBottom <= 72) && deltaUp >= 22)
+      ) {
+        if (!bottomNavVisible) {
+          updateBottomNavVisibility(true);
+        }
+        touchStartYRef.current = null;
+      } else if (bottomNavVisible && deltaUp < -28 && distFromBottom > 90) {
+        updateBottomNavVisibility(false);
+        touchStartYRef.current = null;
+      }
+    },
+    [bottomNavVisible, updateBottomNavVisibility],
+  );
+
+  const handleStudioWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const el = studioScrollRef.current;
+      if (!el) return;
+      const distFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      if (distFromBottom <= 72 && e.deltaY > 12) {
+        if (!bottomNavVisible) {
+          updateBottomNavVisibility(true);
+        }
+      } else if (bottomNavVisible && distFromBottom > 140 && e.deltaY < -14) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [bottomNavVisible, updateBottomNavVisibility],
+  );
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -1012,325 +1133,403 @@ export function WorkflowsPage() {
   return (
     <div
       data-wf-theme="cyber"
-      className="w-full max-w-[1360px] mx-auto pb-24 text-[#e4e1e7] animate-in fade-in duration-200"
+      role="region"
+      aria-label="Workflows Orchestrator"
+      onTouchStart={handleStudioTouchStart}
+      onTouchMove={handleStudioTouchMove}
+      onWheel={handleStudioWheel}
+      className={`fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[#080b12] text-[#e4e1e7] transition-all duration-200 z-[950] ${
+        isStudioFullscreen
+          ? 'left-0 w-full'
+          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
+      }`}
     >
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 right-4 sm:right-8 z-50 bg-[#1b1b1f]/95 border border-[#49effd]/40 text-[#e4e1e7] font-mono text-xs px-4 py-2.5 rounded-xl shadow-[0_12px_32px_rgba(0,0,0,0.6),0_0_16px_rgba(73,239,253,0.2)] backdrop-blur-2xl flex items-center gap-2.5 animate-in slide-in-from-top-2">
-          <Sparkles size={14} className="text-[#49effd] shrink-0" />
+        <div className="fixed top-14 right-3 sm:right-6 z-[1300] bg-[#141722]/95 border border-[#49effd]/45 text-[#e4e1e7] font-mono text-xs px-3.5 py-2 rounded-xl shadow-[0_12px_32px_rgba(0,0,0,0.65),0_0_16px_rgba(73,239,253,0.22)] backdrop-blur-2xl flex items-center gap-2 animate-in slide-in-from-top-2">
+          <Sparkles size={13} className="text-[#49effd] shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Cyber Studio Workspace Surface with Matrix Grid, Dual Laser Sweeps & Plasma Glow */}
-      <div className="wf-studio-shell relative overflow-hidden rounded-2xl sm:rounded-3xl px-4 sm:px-8 py-5 sm:py-8">
-        {/* Top & Bottom Laser Scanlines */}
+      {/* ================= ROW 1: TOP STUDIO HEADER BAR ================= */}
+      <div className="relative px-3 sm:px-4 py-2.5 border-b border-cyan-500/25 bg-[#050911]/95 backdrop-blur-xl flex items-center justify-between gap-2 shrink-0 z-30">
         <div className="mc-laser-line opacity-85" />
-        <div className="mc-laser-line-bottom opacity-60" />
 
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Open NEXUS Side Navigation Drawer */}
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'))}
+            className="p-1.5 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-cyan-300 transition-colors shrink-0"
+            title="Open NEXUS Navigation Menu"
+            aria-label="Open menu"
+          >
+            <Menu size={15} />
+          </button>
+
+          {/* Animated SVG Pipeline Studio Badge */}
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 flex items-center justify-center shrink-0 overflow-hidden">
+            <svg className="w-5 h-5" viewBox="0 0 48 48" fill="none">
+              <circle
+                cx="24"
+                cy="24"
+                r="18"
+                stroke="rgba(73,239,253,0.35)"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+                className="mc-orbit-cw"
+                style={{ transformOrigin: '24px 24px' }}
+              />
+              <path
+                d="M14 24H21M27 24H34M24 14V21M24 27V34"
+                stroke="rgba(73,239,253,0.75)"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+              <circle
+                cx="24"
+                cy="24"
+                r="4"
+                fill="#49effd"
+                className={isRunning ? 'animate-ping' : ''}
+              />
+              <circle cx="24" cy="24" r="3.5" fill="#49effd" />
+            </svg>
+          </div>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xs sm:text-sm font-bold tracking-tight wf-gradient-title truncate">
+                Workflows Orchestrator
+              </h1>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-zinc-400 font-mono">
+              <span>{workflows.length} Pipelines</span>
+              <span>·</span>
+              <span className="text-cyan-400">
+                v{activeWorkflow.nodes.length}/{ Math.max(1, activeWorkflow.nodes.length) }
+              </span>
+              <span className="hidden sm:inline">·</span>
+              <span className="hidden sm:inline">
+                {activeWorkflow.nodes.length} {activeWorkflow.nodes.length === 1 ? 'step' : 'steps'}
+              </span>
+              {isRunning && (
+                <>
+                  <span>·</span>
+                  <span className="text-[#49effd] font-bold inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] animate-ping" />
+                    Running
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Studio Controls (Matching Live AI Canvas Studio Header Buttons) */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => setShowTemplatesModal(true)}
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-fuchsia-400/50 text-fuchsia-300 transition-colors flex items-center gap-1"
+            title="Load pre-configured Pipeline Templates"
+          >
+            <Sparkles size={13} className="text-[#49effd]" />
+            <span className="hidden md:inline font-mono text-[11px]">Templates</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleClearResults}
+            disabled={isRunning}
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-amber-400/50 text-amber-300 disabled:opacity-40 transition-colors flex items-center gap-1"
+            title="Clear previous outputs & step statuses"
+          >
+            <RotateCcw size={13} className="text-amber-400" />
+            <span className="hidden lg:inline font-mono text-[11px]">Reset</span>
+          </button>
+
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="wf-run-btn-busy relative overflow-hidden px-2.5 sm:px-3.5 py-1 rounded-lg bg-[#ffb4ab]/15 hover:bg-[#ffb4ab]/25 border border-[#ffb4ab]/55 text-[#ffb4ab] font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0"
+            >
+              <Square size={11} className="fill-[#ffb4ab] text-[#ffb4ab]" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleRun}
+              className="wf-run-btn-idle relative overflow-hidden px-2.5 sm:px-3.5 py-1 rounded-lg bg-gradient-to-r from-[#49effd] via-[#22d3ee] to-[#818cf8] hover:brightness-110 text-[#041318] font-mono text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[0_0_20px_rgba(73,239,253,0.38)] active:scale-[0.98] whitespace-nowrap shrink-0"
+            >
+              <Play size={12} className="fill-[#041318]" />
+              <span>Run</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setIsStudioFullscreen((prev) => !prev)}
+            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-white transition-colors hidden md:flex"
+            title={isStudioFullscreen ? 'Show Left Sidebar' : 'Expand Studio Fullscreen'}
+          >
+            {isStudioFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+        </div>
+      </div>
+
+      {/* ================= ROW 2: WORKFLOW SELECTOR & QUICK ACTIONS SUB-TOOLBAR ================= */}
+      <div className="px-3 sm:px-4 py-2 border-b border-cyan-500/20 bg-slate-900/60 flex items-center justify-between gap-2 flex-wrap shrink-0 z-20">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
+          <Layers size={13} className="text-cyan-400 shrink-0" />
+          <select
+            value={activeWorkflow.id}
+            onChange={(e) => {
+              setActiveWorkflowId(e.target.value);
+              setSelectedNodeId(null);
+              handleClearResults();
+            }}
+            className="min-w-0 flex-1 max-w-[180px] sm:max-w-xs rounded-lg bg-zinc-950 border border-zinc-700/80 px-2.5 py-1 text-xs text-zinc-100 font-mono outline-none focus:border-cyan-500 cursor-pointer truncate"
+          >
+            {workflows.map((w, idx) => (
+              <option key={w.id} value={w.id} className="bg-[#0b0d14] text-cyan-200">
+                {idx + 1}. [DAG] {w.name} ({w.nodes.length})
+              </option>
+            ))}
+          </select>
+
+          {/* Delete Workflow (with inline confirmation) */}
+          {confirmDeleteWorkflow ? (
+            <div className="flex items-center gap-1 bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 rounded-lg px-2 py-0.5">
+              <span className="text-[10px] font-mono text-[#ffb4ab] font-bold uppercase">Del?</span>
+              <button
+                type="button"
+                onClick={handleDeleteCurrent}
+                className="px-1.5 py-0.5 rounded bg-[#ffb4ab] text-[#131317] font-mono font-bold text-[10px] uppercase"
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteWorkflow(false)}
+                className="p-0.5 rounded text-[#94a3b8] hover:text-white"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                if (workflows.length <= 1) {
+                  showToast('You cannot delete the only workflow. Create another one first.');
+                  return;
+                }
+                setConfirmDeleteWorkflow(true);
+              }}
+              className="p-1.5 rounded-lg bg-zinc-900 hover:bg-rose-950/70 border border-zinc-700/80 hover:border-rose-500/40 text-zinc-400 hover:text-rose-300 transition-colors shrink-0"
+              title="Delete current workflow"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+
+          {/* + New Workflow (like + Vault in Live AI Canvas Studio) */}
+          <button
+            type="button"
+            onClick={handleCreateNew}
+            className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 flex items-center gap-1 transition-colors shrink-0"
+            title="Create new blank workflow"
+          >
+            <Plus size={12} className="text-cyan-400" />
+            <span>New ({workflows.length})</span>
+          </button>
+
+          {/* Rename Workflow */}
+          {isRenaming ? (
+            <div className="flex items-center gap-1 bg-[#0b0d14] border border-[#49effd]/60 rounded-lg px-2 py-0.5">
+              <input
+                type="text"
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                className="bg-transparent text-cyan-200 font-mono text-xs px-1 py-0.5 focus:outline-none w-28 sm:w-36"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (renameDraft.trim()) {
+                    updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
+                  }
+                  setIsRenaming(false);
+                }}
+                className="p-1 rounded bg-[#49effd] text-[#00363b]"
+              >
+                <Check size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRenaming(false)}
+                className="p-1 rounded text-[#94a3b8] hover:text-white"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setRenameDraft(activeWorkflow.name);
+                setIsRenaming(true);
+              }}
+              className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-violet-300 flex items-center gap-1 transition-colors shrink-0"
+              title="Rename workflow"
+            >
+              <Edit2 size={11} className="text-violet-400" />
+              <span className="hidden sm:inline">Rename</span>
+            </button>
+          )}
+
+          {/* Duplicate Workflow */}
+          <button
+            type="button"
+            onClick={handleDuplicate}
+            className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-emerald-300 flex items-center gap-1 transition-colors shrink-0"
+            title="Duplicate workflow"
+          >
+            <Copy size={11} className="text-emerald-400" />
+            <span className="hidden sm:inline">Clone</span>
+          </button>
+        </div>
+
+        {/* Right: Step Count & Quick Add Step Pill */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowAddMenu((v) => !v)}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 text-purple-200 flex items-center gap-1 transition-colors shrink-0"
+            title="Add a new step to this pipeline"
+          >
+            <Plus size={12} className="text-purple-300" />
+            <span>Step</span>
+          </button>
+          <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-cyan-500/15 text-cyan-200 border border-cyan-400/40 font-semibold">
+            {activeWorkflow.nodes.length}N
+          </span>
+        </div>
+      </div>
+
+      {/* ================= ROW 3: SEGMENTED STUDIO TABS BAR (LIKE PREVIEW | SPLIT | CODE | DATA) ================= */}
+      <div className="px-3 sm:px-4 py-1.5 border-b border-zinc-800/80 bg-[#070a10]/90 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0 z-20">
+        <div className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all whitespace-nowrap ${
+              viewMode === 'list'
+                ? 'bg-zinc-800 text-white shadow-sm border border-cyan-500/35'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Layers size={12} className={viewMode === 'list' ? 'text-cyan-400' : ''} />
+            <span>Pipeline</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('canvas')}
+            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all whitespace-nowrap ${
+              viewMode === 'canvas'
+                ? 'bg-zinc-800 text-white shadow-sm border border-cyan-500/35'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <GitBranch size={12} className={viewMode === 'canvas' ? 'text-cyan-400' : ''} />
+            <span>Canvas</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              finalOutputSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="px-3 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-all whitespace-nowrap"
+          >
+            <Sparkles size={12} className="text-emerald-400" />
+            <span>Output</span>
+            {lastExecutedOutput && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              traceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="px-3 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-all whitespace-nowrap"
+          >
+            <CheckCircle2 size={12} className="text-amber-400" />
+            <span>Trace</span>
+            <span className="text-[10px] font-mono text-emerald-400">{runLogs.length}</span>
+          </button>
+        </div>
+
+        {/* Right Contextual Studio Action */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {viewMode === 'canvas' ? (
+            <button
+              type="button"
+              onClick={handleTidyLayout}
+              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-cyan-300 font-mono text-[11px] flex items-center gap-1 whitespace-nowrap"
+            >
+              <Sparkles size={11} />
+              <span>Tidy Graph</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                const allCollapsed = activeWorkflow.nodes.every((n) => collapsedSettings[n.id]);
+                const next: Record<string, boolean> = {};
+                for (const n of activeWorkflow.nodes) {
+                  next[n.id] = !allCollapsed;
+                }
+                setCollapsedSettings(next);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-white font-mono text-[11px] flex items-center gap-1 whitespace-nowrap"
+            >
+              <ChevronDown size={12} />
+              <span>
+                {activeWorkflow.nodes.every((n) => collapsedSettings[n.id])
+                  ? 'Expand Steps'
+                  : 'Compact Steps'}
+              </span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ================= MAIN FULL-SCREEN SCROLLABLE STUDIO WORKSPACE ================= */}
+      <div
+        ref={studioScrollRef}
+        onScroll={handleStudioScroll}
+        className="wf-studio-shell relative flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 pt-3 pb-28 border-0 rounded-none"
+      >
         {/* Static Background Grid + Dual Radial Plasma Glows (pointer-events: none) */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 wf-cyber-matrix-grid opacity-75"
+          className="pointer-events-none fixed inset-0 wf-cyber-matrix-grid opacity-65 z-0"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-28 left-1/3 -translate-x-1/2 w-[560px] h-[260px] rounded-full bg-[#49effd]/[0.07] blur-[95px]"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-28 right-1/4 w-[480px] h-[240px] rounded-full bg-indigo-500/[0.07] blur-[95px]"
+          className="pointer-events-none fixed -top-28 left-1/3 -translate-x-1/2 w-[560px] h-[260px] rounded-full bg-[#49effd]/[0.06] blur-[95px] z-0"
         />
 
-        <div className="relative z-10">
-          {/* Top Studio Header */}
-          <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-5 pb-6 border-b border-white/[0.08]">
-            <div className="flex items-start sm:items-center gap-4 min-w-0">
-              {/* Animated SVG Pipeline Orchestration Core */}
-              <div className="relative hidden sm:flex items-center justify-center w-14 h-14 rounded-2xl bg-[#0b0d14]/90 border border-[#49effd]/30 shadow-[0_0_28px_rgba(73,239,253,0.16),inset_0_1px_0_rgba(255,255,255,0.12)] shrink-0 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-[#49effd]/12 via-transparent to-indigo-500/15 pointer-events-none" />
-                <svg className="w-11 h-11" viewBox="0 0 48 48" fill="none">
-                  <circle
-                    cx="24"
-                    cy="24"
-                    r="19"
-                    stroke="rgba(73,239,253,0.28)"
-                    strokeWidth="1.2"
-                    strokeDasharray="4 3"
-                    className="mc-orbit-cw"
-                    style={{ transformOrigin: '24px 24px' }}
-                  />
-                  <circle
-                    cx="24"
-                    cy="24"
-                    r="13"
-                    stroke="rgba(129,140,248,0.35)"
-                    strokeWidth="1.2"
-                    strokeDasharray="3 4"
-                    className="mc-orbit-ccw"
-                    style={{ transformOrigin: '24px 24px' }}
-                  />
-                  <path
-                    d="M14 24H21M27 24H34M24 14V21M24 27V34"
-                    stroke="rgba(73,239,253,0.65)"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                  <circle
-                    cx="24"
-                    cy="24"
-                    r="4"
-                    fill="#49effd"
-                    className={isRunning ? 'animate-ping' : ''}
-                  />
-                  <circle cx="24" cy="24" r="3.5" fill="#49effd" />
-                  <circle cx="14" cy="24" r="2" fill="#818cf8" />
-                  <circle cx="34" cy="24" r="2" fill="#34d399" />
-                </svg>
-              </div>
-
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-[0.14em] flex-wrap">
-                  <span className="text-[#49effd] font-bold">Automation Studio</span>
-                  <span aria-hidden="true" className="text-white/25">/</span>
-                  <span className="text-fuchsia-300 font-bold">DAG Pipelines</span>
-                  <span aria-hidden="true" className="text-white/25">·</span>
-                  <span className="tabular-nums text-amber-300 font-bold">
-                    {activeWorkflow.nodes.length} {activeWorkflow.nodes.length === 1 ? 'node' : 'nodes'}
-                  </span>
-                  {hasBranches && (
-                    <>
-                      <span aria-hidden="true" className="text-white/25">·</span>
-                      <span className="text-emerald-300 font-bold">
-                        Branching Graph
-                      </span>
-                    </>
-                  )}
-                  {isRunning && (
-                    <>
-                      <span aria-hidden="true" className="text-white/25">·</span>
-                      <span className="inline-flex items-center gap-1.5 text-[#49effd] font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] animate-ping" />
-                        Executing
-                      </span>
-                    </>
-                  )}
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-extrabold wf-gradient-title tracking-tight leading-tight">
-                  Workflows Orchestrator
-                </h1>
-                <p className="text-xs sm:text-[13px] wf-rainbow-subtext max-w-2xl leading-relaxed font-medium">
-                  Chain multi-step AI synthesis, live web search, academic literature, and conditional logic into automated execution graphs.
-                </p>
-              </div>
-            </div>
-
-            {/* Primary Execution Controls */}
-            <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-              <button
-                type="button"
-                onClick={() => setShowTemplatesModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-[#141722]/90 hover:bg-[#1c2030] border border-white/10 hover:border-fuchsia-400/50 text-fuchsia-300 hover:text-fuchsia-200 font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_4px_14px_rgba(0,0,0,0.35)] active:scale-[0.98]"
-              >
-                <Sparkles size={13} className="text-[#49effd]" />
-                <span>Templates</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleClearResults}
-                disabled={isRunning}
-                className="px-3.5 py-2 rounded-xl bg-[#141722]/90 hover:bg-[#1c2030] border border-white/10 hover:border-amber-400/45 text-amber-300 hover:text-amber-200 font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 disabled:opacity-40 whitespace-nowrap shrink-0 active:scale-[0.98]"
-                title="Clear previous outputs & step statuses"
-              >
-                <RotateCcw size={13} className="text-amber-400" />
-                <span>Reset State</span>
-              </button>
-
-              {isRunning ? (
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  className="wf-run-btn-busy relative overflow-hidden px-4 sm:px-5 py-2 rounded-xl bg-[#ffb4ab]/15 hover:bg-[#ffb4ab]/25 border border-[#ffb4ab]/55 text-[#ffb4ab] font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap shrink-0 shadow-[0_0_24px_rgba(255,180,171,0.25)] active:scale-[0.98]"
-                >
-                  <Square size={12} className="fill-[#ffb4ab] text-[#ffb4ab]" />
-                  <span>Stop Run</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleRun}
-                  className="wf-run-btn-idle relative overflow-hidden px-4 sm:px-5 py-2 rounded-xl bg-gradient-to-r from-[#49effd] via-[#22d3ee] to-[#818cf8] hover:brightness-110 text-[#041318] font-mono text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-2 shadow-[0_0_28px_rgba(73,239,253,0.42)] active:scale-[0.98] whitespace-nowrap shrink-0"
-                >
-                  <Play size={13} className="fill-[#041318]" />
-                  <span>Run Pipeline</span>
-                </button>
-              )}
-            </div>
-          </header>
-
-          {/* Cyber Workspace Bar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 py-4 border-b border-white/[0.08]">
-            {/* Left: Workflow Selector & Inline Actions */}
-            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-              <div className="relative min-w-[190px] sm:min-w-[240px] flex-1 sm:flex-initial">
-                <select
-                  value={activeWorkflow.id}
-                  onChange={(e) => {
-                    setActiveWorkflowId(e.target.value);
-                    setSelectedNodeId(null);
-                    handleClearResults();
-                  }}
-                  className="wf-field-box w-full appearance-none font-mono font-bold text-xs text-cyan-300 rounded-xl pl-3.5 pr-9 py-2 focus:outline-none cursor-pointer truncate"
-                >
-                  {workflows.map((w) => (
-                    <option key={w.id} value={w.id} className="bg-[#0b0d14] text-cyan-200">
-                      {w.name} ({w.nodes.length} steps)
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#49effd] pointer-events-none"
-                />
-              </div>
-
-              <div className="h-4 w-[1px] bg-white/10 mx-1 hidden sm:block" />
-
-              {/* New Workflow */}
-              <button
-                type="button"
-                onClick={handleCreateNew}
-                className="px-2.5 py-2 rounded-xl bg-[#141722]/90 hover:bg-[#1c2030] border border-white/10 hover:border-[#49effd]/40 text-cyan-300 hover:text-cyan-200 font-mono text-[11px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
-                title="Create new blank workflow"
-              >
-                <Plus size={13} className="text-[#49effd]" />
-                <span className="hidden md:inline">New</span>
-              </button>
-
-              {/* Rename Workflow */}
-              {isRenaming ? (
-                <div className="flex items-center gap-1 bg-[#0b0d14] border border-[#49effd]/60 rounded-xl px-2 py-1 shadow-[0_0_16px_rgba(73,239,253,0.2)]">
-                  <input
-                    type="text"
-                    value={renameDraft}
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    className="bg-transparent text-cyan-200 font-mono text-xs px-1.5 py-0.5 focus:outline-none w-32 sm:w-40"
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (renameDraft.trim()) {
-                        updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
-                      }
-                      setIsRenaming(false);
-                    }}
-                    className="p-1 rounded-lg bg-[#49effd] text-[#00363b] hover:bg-[#00f0ff]"
-                  >
-                    <Check size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsRenaming(false)}
-                    className="p-1 rounded-lg text-[#94a3b8] hover:text-[#f1f5f9]"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenameDraft(activeWorkflow.name);
-                    setIsRenaming(true);
-                  }}
-                  className="px-2.5 py-2 rounded-xl bg-[#141722]/90 hover:bg-[#1c2030] border border-white/10 hover:border-violet-400/40 text-violet-300 hover:text-violet-200 font-mono text-[11px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
-                  title="Rename workflow"
-                >
-                  <Edit2 size={12} className="text-violet-400" />
-                  <span className="hidden md:inline">Rename</span>
-                </button>
-              )}
-
-              {/* Duplicate */}
-              <button
-                type="button"
-                onClick={handleDuplicate}
-                className="px-2.5 py-2 rounded-xl bg-[#141722]/90 hover:bg-[#1c2030] border border-white/10 hover:border-emerald-400/40 text-emerald-300 hover:text-emerald-200 font-mono text-[11px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
-                title="Duplicate workflow"
-              >
-                <Copy size={12} className="text-emerald-400" />
-                <span className="hidden md:inline">Duplicate</span>
-              </button>
-
-              {/* Delete (with inline confirmation instead of window.confirm) */}
-              {confirmDeleteWorkflow ? (
-                <div className="flex items-center gap-1.5 bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 rounded-xl px-2.5 py-1">
-                  <span className="text-[11px] font-mono text-[#ffb4ab] font-bold uppercase">Delete?</span>
-                  <button
-                    type="button"
-                    onClick={handleDeleteCurrent}
-                    className="px-2 py-0.5 rounded-lg bg-[#ffb4ab] hover:brightness-110 text-[#131317] font-mono font-bold text-[10px] uppercase"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDeleteWorkflow(false)}
-                    className="p-1 rounded text-[#94a3b8] hover:text-[#f1f5f9]"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (workflows.length <= 1) {
-                      showToast('You cannot delete the only workflow. Create another one first.');
-                      return;
-                    }
-                    setConfirmDeleteWorkflow(true);
-                  }}
-                  className="px-2.5 py-2 rounded-xl bg-[#141722]/90 hover:bg-[#ffb4ab]/15 border border-white/10 hover:border-[#ffb4ab]/40 text-rose-300 hover:text-[#ffb4ab] font-mono text-[11px] font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-[0.98]"
-                  title="Delete current workflow"
-                >
-                  <Trash2 size={12} className="text-rose-400" />
-                  <span className="hidden md:inline">Delete</span>
-                </button>
-              )}
-            </div>
-
-            {/* Right: Segmented Mode Switch (List | Canvas) */}
-            <div className="flex items-center self-end sm:self-auto bg-[#0b0d14] border border-white/10 p-1 rounded-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={`px-3.5 py-1.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                  viewMode === 'list'
-                    ? 'bg-gradient-to-r from-[#49effd]/20 to-indigo-500/20 text-[#49effd] border border-[#49effd]/45 shadow-[0_0_16px_rgba(73,239,253,0.22)]'
-                    : 'text-violet-300/80 hover:text-violet-200 border border-transparent'
-                }`}
-              >
-                <Layers size={13} />
-                <span>Pipeline List</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('canvas')}
-                className={`px-3.5 py-1.5 rounded-lg font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                  viewMode === 'canvas'
-                    ? 'bg-gradient-to-r from-[#49effd]/20 to-indigo-500/20 text-[#49effd] border border-[#49effd]/45 shadow-[0_0_16px_rgba(73,239,253,0.22)]'
-                    : 'text-fuchsia-300/80 hover:text-fuchsia-200 border border-transparent'
-                }`}
-              >
-                <GitBranch size={13} />
-                <span>Graph Canvas</span>
-              </button>
-            </div>
-          </div>
-
+        <div className="relative z-10 max-w-[1380px] mx-auto">
           {/* Main Workspace Area */}
         {viewMode === 'list' ? (
           /* ================= CYBER PIPELINE LIST VIEW ================= */
@@ -1740,7 +1939,7 @@ export function WorkflowsPage() {
           </div>
         ) : (
           /* ================= CYBER GRAPH CANVAS VIEW ================= */
-          <div className="relative w-full h-[660px] overflow-hidden bg-[#0e0e12] border border-[#2a292e] rounded-2xl mt-5 shadow-[0_20px_50px_rgba(0,0,0,0.65)]">
+          <div className="relative w-full h-[calc(100dvh-185px)] min-h-[460px] overflow-hidden bg-[#0e0e12] border border-[#2a292e] rounded-2xl mt-2 shadow-[0_20px_50px_rgba(0,0,0,0.65)]">
             <WorkflowCanvas
               nodes={activeWorkflow.nodes}
               edges={activeWorkflow.edges}
@@ -2037,7 +2236,10 @@ export function WorkflowsPage() {
         )}
 
         {/* ================= CYBER FINAL PIPELINE OUTPUT SECTION ================= */}
-        <section className="pt-8 pb-6 border-t border-white/[0.08] mt-8 space-y-4">
+        <section
+          ref={finalOutputSectionRef}
+          className="pt-8 pb-6 border-t border-white/[0.08] mt-8 space-y-4"
+        >
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-[#49effd] shadow-[0_0_10px_#49effd]" />
@@ -2108,23 +2310,26 @@ export function WorkflowsPage() {
           ) : (
             <div className="wf-cyber-card rounded-2xl py-5 px-5 text-xs font-mono wf-rainbow-subtext">
               No pipeline output recorded in this session yet. Click{' '}
-              <span className="text-[#49effd] font-bold uppercase">Run Pipeline</span> to execute steps.
+              <span className="text-[#49effd] font-bold uppercase">Run</span> to execute steps.
             </div>
           )}
         </section>
 
         {/* ================= CYBER EXECUTION LOG STREAM ================= */}
-        {runLogs.length > 0 && (
-          <section className="pt-6 border-t border-white/[0.08] space-y-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] shadow-[0_0_8px_#49effd]" />
-                <span className="font-bold wf-gradient-title">Execution Trace</span>
-                <span aria-hidden="true" className="text-white/20">·</span>
-                <span className="tabular-nums text-amber-300 font-bold">
-                  {runLogs.length} events
-                </span>
-              </div>
+        <section
+          ref={traceSectionRef}
+          className="pt-6 border-t border-white/[0.08] space-y-3"
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] shadow-[0_0_8px_#49effd]" />
+              <span className="font-bold wf-gradient-title">Execution Trace</span>
+              <span aria-hidden="true" className="text-white/20">·</span>
+              <span className="tabular-nums text-amber-300 font-bold">
+                {runLogs.length} events
+              </span>
+            </div>
+            {runLogs.length > 0 && (
               <button
                 type="button"
                 onClick={() => setRunLogs([])}
@@ -2132,8 +2337,10 @@ export function WorkflowsPage() {
               >
                 Clear Trace
               </button>
-            </div>
+            )}
+          </div>
 
+          {runLogs.length > 0 ? (
             <div className="wf-cyber-card rounded-2xl overflow-hidden divide-y divide-white/[0.06] max-h-60 overflow-y-auto">
               {runLogs.map((log) => (
                 <div
@@ -2161,14 +2368,48 @@ export function WorkflowsPage() {
                 </div>
               ))}
             </div>
-          </section>
-        )}
+          ) : (
+            <div className="wf-cyber-card rounded-xl py-3.5 px-4 text-xs font-mono text-zinc-400">
+              No trace events logged yet.
+            </div>
+          )}
+        </section>
+
+        {/* Scroll-End Sentinel & Smartphone Bottom-Up Navigation Trigger Zone */}
+        <div
+          ref={bottomSentinelRef}
+          className="pt-8 pb-6 flex flex-col items-center justify-center gap-2"
+        >
+          <button
+            type="button"
+            onClick={() => updateBottomNavVisibility(!bottomNavVisible)}
+            aria-label="Toggle navigation bar"
+            className="px-4 py-1.5 rounded-full bg-zinc-900/90 hover:bg-zinc-800 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5 shadow-[0_0_16px_rgba(73,239,253,0.14)] transition-all"
+          >
+            <span className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400" />
+            {bottomNavVisible ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+          </button>
+        </div>
         </div>
       </div>
 
+      {/* Smartphone Home Indicator Gesture Bar (Pinned at Bottom Edge when Nav is Hidden) */}
+      {!bottomNavVisible && (
+        <button
+          type="button"
+          onClick={() => updateBottomNavVisibility(true)}
+          aria-label="Show navigation bar"
+          title="Swipe up or tap to open navigation bar"
+          className="fixed bottom-1.5 left-1/2 -translate-x-1/2 z-[1210] px-4 py-1.5 rounded-full bg-[#090d16]/85 hover:bg-[#111827] border border-cyan-400/35 backdrop-blur-md flex items-center gap-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.75),0_0_12px_rgba(73,239,253,0.2)] transition-all active:scale-95"
+        >
+          <span className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400" />
+          <ChevronUp size={11} className="text-cyan-300" />
+        </button>
+      )}
+
       {/* ================= CYBER TEMPLATES MODAL ================= */}
       {showTemplatesModal && (
-        <div className="wf-modal-backdrop fixed inset-0 z-50 bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="wf-cyber-card wf-modal-panel rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-5 backdrop-blur-2xl">
             <div className="flex items-center justify-between border-b border-[#2a292e] pb-4">
               <div>

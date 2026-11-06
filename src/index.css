@@ -4941,6 +4941,128 @@ button:active .stitch-dice-icon {
     inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
+/* Fullscreen Live Studio Mode for Workflows Page & Smartphone Slide-Up Bottom Nav */
+.app-shell.workflows-fullscreen-mode .mobile-header {
+  display: none !important;
+}
+
+.app-shell.workflows-fullscreen-mode main {
+  min-height: 100dvh;
+}
+
+.app-shell.workflows-fullscreen-mode .page-content {
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+.app-shell.workflows-fullscreen-mode .menu-overlay {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 1240 !important;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  border: 0;
+}
+
+.app-shell.workflows-fullscreen-mode aside.open {
+  display: flex !important;
+  z-index: 1250 !important;
+  width: 240px;
+}
+
+.bottom-nav.bottom-nav--workflow-smart {
+  display: flex !important;
+  position: fixed;
+  z-index: 1220;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  justify-content: space-between;
+  align-items: center;
+  overflow: visible;
+  padding: 15px max(6px, env(safe-area-inset-right, 0px)) calc(9px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+  border-top: 1px solid rgba(73, 239, 253, 0.38);
+  background: rgba(7, 13, 21, 0.96);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow: 0 -14px 42px rgba(0, 0, 0, 0.85), 0 -2px 20px rgba(73, 239, 253, 0.18);
+  transform: translateY(calc(100% + 28px)) translateZ(0);
+  -webkit-transform: translateY(calc(100% + 28px)) translateZ(0);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.24s ease;
+}
+
+.bottom-nav.bottom-nav--workflow-smart.bottom-nav--workflow-visible {
+  transform: translateY(0) translateZ(0);
+  -webkit-transform: translateY(0) translateZ(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.bottom-nav.bottom-nav--workflow-smart a {
+  flex: 1 1 0px;
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  position: relative;
+  padding: 4px 1px;
+  border-radius: 8px;
+  text-align: center;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+
+.bottom-nav.bottom-nav--workflow-smart a small {
+  display: block;
+  font-size: 9px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.bottom-nav.bottom-nav--workflow-smart a.active {
+  color: #5ef5e4;
+}
+
+.workflow-nav-dismiss-pill {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 12px;
+  border: 0;
+  background: transparent;
+  color: rgba(73, 239, 253, 0.8);
+  cursor: pointer;
+}
+
+.workflow-nav-dismiss-pill-bar {
+  width: 34px;
+  height: 3.5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(73, 239, 253, 0.65), rgba(129, 140, 248, 0.75));
+  box-shadow: 0 0 10px rgba(73, 239, 253, 0.45);
+}
+
 /* Professional Glassmorphic Step & Output Box */
 .wf-cyber-card {
   position: relative;

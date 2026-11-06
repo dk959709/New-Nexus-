@@ -22,6 +22,12 @@ import {
   Sliders,
   Play,
   Zap,
+  Menu,
+  Maximize2,
+  Minimize2,
+  ChevronUp,
+  ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { LoadingMessage } from '@/components';
@@ -83,6 +89,100 @@ export function TelegramPage() {
   const [chatLoading, setChatLoading] = useState(false);
 
   const isMountedRef = useRef(true);
+
+  // Fullscreen & Smartphone Bottom-Up Navigation Bar state
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [bottomNavVisible, setBottomNavVisible] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrollTopRef = useRef(0);
+  const touchStartYRef = useRef<number | null>(null);
+
+  const updateBottomNavVisibility = useCallback((visible: boolean) => {
+    setBottomNavVisible(visible);
+    window.dispatchEvent(
+      new CustomEvent('nexus-workflow-bottom-nav', {
+        detail: { visible },
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    // Hide bottom nav initially when entering full-screen Telegram studio mode
+    updateBottomNavVisibility(false);
+    const onExternalNavEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ visible?: boolean }>;
+      if (typeof custom.detail?.visible === 'boolean') {
+        setBottomNavVisible(custom.detail.visible);
+      }
+    };
+    window.addEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
+    return () => {
+      window.removeEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
+      updateBottomNavVisibility(false);
+    };
+  }, [updateBottomNavVisibility]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    const isNearBottom = distanceFromBottom <= 90;
+    const scrollingDown = scrollTop > lastScrollTopRef.current + 4;
+    const scrollingUp = scrollTop < lastScrollTopRef.current - 12;
+
+    if (isNearBottom) {
+      updateBottomNavVisibility(true);
+    } else if (scrollingUp && distanceFromBottom > 180) {
+      updateBottomNavVisibility(false);
+    } else if (scrollingDown && distanceFromBottom <= 140) {
+      updateBottomNavVisibility(true);
+    }
+
+    lastScrollTopRef.current = scrollTop;
+  }, [updateBottomNavVisibility]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      touchStartYRef.current = e.touches[0].clientY;
+    }
+  }, []);
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (touchStartYRef.current === null || e.touches.length === 0) return;
+      const currentY = e.touches[0].clientY;
+      const deltaY = touchStartYRef.current - currentY; // positive = finger moving UP (bottom-up gesture)
+      const viewportHeight = window.innerHeight;
+      const startedNearBottomEdge = touchStartYRef.current >= viewportHeight - 110;
+
+      const el = scrollContainerRef.current;
+      const isAtBottom = el
+        ? el.scrollHeight - (el.scrollTop + el.clientHeight) <= 100
+        : false;
+
+      if ((startedNearBottomEdge && deltaY > 24) || (isAtBottom && deltaY > 18)) {
+        updateBottomNavVisibility(true);
+      } else if (deltaY < -35 && !isAtBottom) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [updateBottomNavVisibility],
+  );
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      if (e.deltaY > 10 && distanceFromBottom <= 120) {
+        updateBottomNavVisibility(true);
+      } else if (e.deltaY < -18 && distanceFromBottom > 180) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [updateBottomNavVisibility],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -350,22 +450,101 @@ export function TelegramPage() {
   };
 
   return (
-    <>
-      <div className="page-intro" id="telegram-intro">
-        <span className="eyebrow">INTEGRATIONS</span>
-        <h1>Telegram Bot</h1>
-        <p>
-          Manage your Telegram bot integration with real-time connection telemetry, registered command list,
-          scheduled briefings, proactive condition alerts, and live activity logs.
-        </p>
-      </div>
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onWheel={handleWheel}
+      className={`fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[#071016] text-slate-100 z-[950] transition-all duration-300 ${
+        isFullscreen
+          ? 'left-0 w-full'
+          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
+      }`}
+    >
+      {/* Top Bar (Preserving 'Telegram Bot' original name) */}
+      <header className="shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 py-2.5 bg-slate-900/95 border-b border-slate-800/90 backdrop-blur-md z-20">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'))}
+            className="w-8 h-8 rounded-lg bg-slate-800/90 hover:bg-slate-700/80 border border-slate-700/70 flex items-center justify-center text-slate-200 transition-all shrink-0"
+            title="Open NEXUS Navigation Drawer"
+            aria-label="Open NEXUS Navigation Drawer"
+          >
+            <Menu size={15} />
+          </button>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500/25 to-cyan-500/20 border border-teal-500/40 flex items-center justify-center text-teal-300 shrink-0 shadow-sm">
+            <Send size={15} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-xs sm:text-sm font-bold text-white truncate">
+                Telegram Bot
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold border ${
+                  connected
+                    ? 'bg-teal-500/15 border-teal-500/35 text-teal-300'
+                    : 'bg-slate-800/90 border-slate-700/70 text-slate-400'
+                }`}
+              >
+                {connected ? `@${botInfo?.username || 'connected'}` : 'Disconnected'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 truncate">
+              <span>{activities.length} Activity Events</span>
+              <span>•</span>
+              <span className="text-teal-300 font-medium">
+                {connected ? 'Live Polling Active' : 'Ready to Connect'}
+              </span>
+            </div>
+          </div>
+        </div>
 
-      {statusLoading ? (
-        <LoadingMessage label="Checking bot connection status..." />
-      ) : (
-        <div style={{ display: 'grid', gap: '22px', maxWidth: '840px' }}>
-          {/* Feature 2: Live Connection Status Indicator Badge */}
-          <TelegramStatusBadge
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => refreshStatusAndActivity(true)}
+            disabled={isPolling}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800/80 border border-slate-700/70 text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
+            title="Refresh Telegram status & activity"
+          >
+            <RefreshCw size={13} className={isPolling ? 'animate-spin text-teal-300' : ''} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((prev) => !prev)}
+            className="w-8 h-8 rounded-lg bg-slate-800/80 border border-slate-700/70 text-slate-300 hover:text-white hover:bg-slate-700/70 flex items-center justify-center transition-all"
+            title={isFullscreen ? 'Dock with Sidebar (Desktop)' : 'Expand Full Screen'}
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Full-Screen Scrollable Content Area */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-8 pt-5 pb-28 scroll-smooth"
+      >
+        <div className="max-w-[920px] mx-auto">
+          <div className="page-intro" id="telegram-intro" style={{ marginBottom: '18px' }}>
+            <span className="eyebrow">INTEGRATIONS</span>
+            <h1>Telegram Bot</h1>
+            <p>
+              Manage your Telegram bot integration with real-time connection telemetry, registered command list,
+              scheduled briefings, proactive condition alerts, and live activity logs.
+            </p>
+          </div>
+
+          {statusLoading ? (
+            <LoadingMessage label="Checking bot connection status..." />
+          ) : (
+            <div style={{ display: 'grid', gap: '22px', maxWidth: '840px' }}>
+              {/* Feature 2: Live Connection Status Indicator Badge */}
+              <TelegramStatusBadge
             connected={connected}
             botInfo={botInfo}
             lastPolledAt={lastPolledAt}
@@ -1811,6 +1990,41 @@ export function TelegramPage() {
         </div>
       )}
 
+          {/* Scroll-End Bottom-Up Navigation Sentinel (Icon-only pill, no text) */}
+          <div className="mt-8 pt-4 pb-6 flex flex-col items-center justify-center text-center select-none">
+            <button
+              type="button"
+              onClick={() => updateBottomNavVisibility(!bottomNavVisible)}
+              aria-label="Toggle navigation bar"
+              className="group inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-teal-500/30 text-teal-300 shadow-lg transition-all"
+            >
+              <span className="w-10 h-1 rounded-full bg-teal-400/80 group-hover:bg-teal-300 transition-all" />
+              {bottomNavVisible ? (
+                <ChevronDown size={13} className="text-teal-400 group-hover:translate-y-0.5 transition-transform" />
+              ) : (
+                <ChevronUp size={13} className="text-teal-400 group-hover:-translate-y-0.5 transition-transform" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Smartphone Home Indicator Gesture Bar (Fixed at bottom edge when nav bar is hidden) */}
+      {!bottomNavVisible && (
+        <div
+          onClick={() => updateBottomNavVisibility(true)}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          className="fixed bottom-0 left-0 right-0 h-7 flex flex-col items-center justify-end pb-1.5 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent z-[990] cursor-pointer group"
+          title="Swipe up or tap to reveal navigation bar"
+        >
+          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-900/80 border border-slate-700/60 group-hover:border-teal-400/60 transition-all shadow-md">
+            <div className="w-10 h-1 rounded-full bg-slate-400/80 group-hover:bg-teal-300 transition-all" />
+            <ChevronUp size={11} className="text-teal-300/90" />
+          </div>
+        </div>
+      )}
+
       {/* Disconnect Confirmation Modal */}
       {showDisconnectModal && (
         <div
@@ -1919,6 +2133,6 @@ export function TelegramPage() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

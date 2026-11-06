@@ -1,6 +1,7 @@
 import {
   Bookmark,
   Bot,
+  ChevronDown,
   CloudSun,
   Home,
   Image,
@@ -19,8 +20,8 @@ import {
   Sparkles,
   Workflow,
 } from 'lucide-react';
-import { NavLink, Outlet } from 'react-router-dom';
-import { useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
 import { playTapSound } from '@/lib/audio';
 
@@ -45,6 +46,37 @@ const navItems = [
 export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settings] = useSettings();
+  const location = useLocation();
+  const isWorkflowsPage =
+    location.pathname.startsWith('/workflows') ||
+    location.pathname.startsWith('/telegram') ||
+    location.pathname.startsWith('/image-studio');
+  const [workflowNavVisible, setWorkflowNavVisible] = useState(false);
+  const navTouchStartYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setWorkflowNavVisible(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const handleNavVisibility = (e: Event) => {
+      const custom = e as CustomEvent<{ visible?: boolean; toggle?: boolean }>;
+      if (custom.detail?.toggle) {
+        setWorkflowNavVisible((prev) => !prev);
+      } else if (typeof custom.detail?.visible === 'boolean') {
+        setWorkflowNavVisible(custom.detail.visible);
+      }
+    };
+    const handleToggleMenu = () => {
+      setMenuOpen((prev) => !prev);
+    };
+    window.addEventListener('nexus-workflow-bottom-nav', handleNavVisibility);
+    window.addEventListener('nexus-toggle-side-menu', handleToggleMenu);
+    return () => {
+      window.removeEventListener('nexus-workflow-bottom-nav', handleNavVisibility);
+      window.removeEventListener('nexus-toggle-side-menu', handleToggleMenu);
+    };
+  }, []);
 
   const handleNavClick = () => {
     setMenuOpen(false);
@@ -59,7 +91,7 @@ export function Layout() {
     .filter((item): item is (typeof navItems)[number] => item !== undefined);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isWorkflowsPage ? 'workflows-fullscreen-mode' : ''}`}>
       <aside className={menuOpen ? 'open' : ''} style={{ overflowY: 'auto' }}>
         <div className="brand">
           <span><Radio size={17} /></span>
@@ -131,7 +163,42 @@ export function Layout() {
         </div>
       </main>
 
-      <nav className="bottom-nav" aria-label="Mobile navigation">
+      <nav
+        className={`bottom-nav ${isWorkflowsPage ? 'bottom-nav--workflow-smart' : ''} ${
+          isWorkflowsPage && workflowNavVisible ? 'bottom-nav--workflow-visible' : ''
+        }`}
+        aria-label="Mobile navigation"
+        onTouchStart={(e) => {
+          navTouchStartYRef.current = e.touches[0]?.clientY ?? null;
+        }}
+        onTouchMove={(e) => {
+          if (!isWorkflowsPage || navTouchStartYRef.current === null) return;
+          const deltaDown = (e.touches[0]?.clientY ?? 0) - navTouchStartYRef.current;
+          if (deltaDown > 22) {
+            setWorkflowNavVisible(false);
+            window.dispatchEvent(
+              new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible: false } }),
+            );
+            navTouchStartYRef.current = null;
+          }
+        }}
+      >
+        {isWorkflowsPage && (
+          <button
+            type="button"
+            onClick={() => {
+              setWorkflowNavVisible(false);
+              window.dispatchEvent(
+                new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible: false } }),
+              );
+            }}
+            className="workflow-nav-dismiss-pill"
+            aria-label="Toggle navigation bar"
+          >
+            <span className="workflow-nav-dismiss-pill-bar" />
+            <ChevronDown size={11} />
+          </button>
+        )}
         {bottomNavItems.map(({ to, label, icon: Icon }) => {
           const shortLabel =
             to === '/'
