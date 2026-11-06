@@ -30,7 +30,6 @@ import {
   Menu,
   Minimize2,
   ChevronUp,
-  ChevronDown,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -3778,22 +3777,6 @@ export function ImageStudio() {
         </div>
       </div>
 
-          {/* Scroll-End Bottom-Up Navigation Sentinel (Icon-only pill, no text) */}
-          <div className="mt-8 pt-4 pb-6 flex flex-col items-center justify-center text-center select-none">
-            <button
-              type="button"
-              onClick={() => updateBottomNavVisibility(!bottomNavVisible)}
-              aria-label="Toggle navigation bar"
-              className="group inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#12121a]/90 hover:bg-[#1a1a26] border border-pink-500/35 text-pink-300 shadow-lg transition-all cursor-pointer"
-            >
-              <span className="w-10 h-1 rounded-full bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5]" />
-              {bottomNavVisible ? (
-                <ChevronDown size={13} className="text-pink-400 group-hover:translate-y-0.5 transition-transform" />
-              ) : (
-                <ChevronUp size={13} className="text-pink-400 group-hover:-translate-y-0.5 transition-transform" />
-              )}
-            </button>
-          </div>
         </div>
       </div>
 

@@ -2375,21 +2375,8 @@ export function WorkflowsPage() {
           )}
         </section>
 
-        {/* Scroll-End Sentinel & Smartphone Bottom-Up Navigation Trigger Zone */}
-        <div
-          ref={bottomSentinelRef}
-          className="pt-8 pb-6 flex flex-col items-center justify-center gap-2"
-        >
-          <button
-            type="button"
-            onClick={() => updateBottomNavVisibility(!bottomNavVisible)}
-            aria-label="Toggle navigation bar"
-            className="px-4 py-1.5 rounded-full bg-zinc-900/90 hover:bg-zinc-800 border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5 shadow-[0_0_16px_rgba(73,239,253,0.14)] transition-all"
-          >
-            <span className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400" />
-            {bottomNavVisible ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
-          </button>
-        </div>
+        {/* Invisible Scroll-End Sentinel for Bottom-Up Navigation Trigger */}
+        <div ref={bottomSentinelRef} className="h-2 w-full pointer-events-none" aria-hidden="true" />
         </div>
       </div>
 

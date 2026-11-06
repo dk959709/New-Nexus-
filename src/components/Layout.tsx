@@ -50,7 +50,9 @@ export function Layout() {
   const isWorkflowsPage =
     location.pathname.startsWith('/workflows') ||
     location.pathname.startsWith('/telegram') ||
-    location.pathname.startsWith('/image-studio');
+    location.pathname.startsWith('/image-studio') ||
+    location.pathname.startsWith('/parallax') ||
+    location.pathname.startsWith('/multi-chat');
   const [workflowNavVisible, setWorkflowNavVisible] = useState(false);
   const navTouchStartYRef = useRef<number | null>(null);
 

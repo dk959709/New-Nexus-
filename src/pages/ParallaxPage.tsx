@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Square,
   Settings2,
@@ -13,6 +13,9 @@ import {
   X,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
   MessageSquarePlus,
   AudioLines,
   Copy,
@@ -1103,11 +1106,113 @@ export const ParallaxPage: React.FC = () => {
       ? 'bg-[#16171c] border border-zinc-800/90 shadow-[0_10px_36px_rgba(0,0,0,0.65)]'
       : 'bg-[#121418] border border-[#26292e] shadow-[0_10px_40px_rgba(0,0,0,0.85)]';
 
+  // Fullscreen & Smartphone Bottom-Up Navigation Bar state
+  const [isParallaxFullscreen, setIsParallaxFullscreen] = useState(true);
+  const [bottomNavVisible, setBottomNavVisible] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastScrollTopRef = useRef(0);
+  const parallaxTouchStartYRef = useRef<number | null>(null);
+
+  const updateBottomNavVisibility = useCallback((visible: boolean) => {
+    setBottomNavVisible(visible);
+    window.dispatchEvent(
+      new CustomEvent('nexus-workflow-bottom-nav', {
+        detail: { visible },
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    updateBottomNavVisibility(false);
+    const onExternalNavEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ visible?: boolean }>;
+      if (typeof custom.detail?.visible === 'boolean') {
+        setBottomNavVisible(custom.detail.visible);
+      }
+    };
+    window.addEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
+    return () => {
+      window.removeEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
+      updateBottomNavVisibility(false);
+    };
+  }, [updateBottomNavVisibility]);
+
+  const handleParallaxScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
+    const isNearBottom = distanceFromBottom <= 90;
+    const scrollingDown = scrollTop > lastScrollTopRef.current + 4;
+    const scrollingUp = scrollTop < lastScrollTopRef.current - 12;
+
+    if (isNearBottom) {
+      updateBottomNavVisibility(true);
+    } else if (scrollingUp && distanceFromBottom > 180) {
+      updateBottomNavVisibility(false);
+    } else if (scrollingDown && distanceFromBottom <= 140) {
+      updateBottomNavVisibility(true);
+    }
+
+    lastScrollTopRef.current = scrollTop;
+  }, [updateBottomNavVisibility]);
+
+  const handleParallaxTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length > 0) {
+      parallaxTouchStartYRef.current = e.touches[0].clientY;
+    }
+  }, []);
+
+  const handleParallaxTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      if (parallaxTouchStartYRef.current === null || e.touches.length === 0) return;
+      const currentY = e.touches[0].clientY;
+      const deltaY = parallaxTouchStartYRef.current - currentY;
+      const viewportHeight = window.innerHeight;
+      const startedNearBottomEdge = parallaxTouchStartYRef.current >= viewportHeight - 110;
+
+      const el = scrollContainerRef.current;
+      const isAtBottom = el
+        ? el.scrollHeight - (el.scrollTop + el.clientHeight) <= 100
+        : false;
+
+      if ((startedNearBottomEdge && deltaY > 24) || (isAtBottom && deltaY > 18)) {
+        updateBottomNavVisibility(true);
+      } else if (deltaY < -35 && !isAtBottom) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [updateBottomNavVisibility],
+  );
+
+  const handleParallaxWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+      if (e.deltaY > 10 && distanceFromBottom <= 120) {
+        updateBottomNavVisibility(true);
+      } else if (e.deltaY < -18 && distanceFromBottom > 180) {
+        updateBottomNavVisibility(false);
+      }
+    },
+    [updateBottomNavVisibility],
+  );
+
   return (
     <div
       id="parallax-page-wrapper"
+      ref={scrollContainerRef}
+      onScroll={handleParallaxScroll}
+      onTouchStart={handleParallaxTouchStart}
+      onTouchMove={handleParallaxTouchMove}
+      onWheel={handleParallaxWheel}
       data-theme={theme}
-      className={`min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-8 py-2 overflow-x-hidden font-sans select-none transition-colors duration-200 ${wrapperThemeClass}`}
+      className={`fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] overflow-y-auto overflow-x-hidden px-3 sm:px-6 lg:px-8 pt-2 pb-24 font-sans select-none transition-all duration-300 z-[950] scroll-smooth ${
+        isParallaxFullscreen
+          ? 'left-0 w-full'
+          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
+      } ${wrapperThemeClass}`}
     >
       {/* Scoped overrides to neutralize legacy global @media (max-width: 640px) !important rules on #parallax-input-container & #parallax-topic-input */}
       <style>{`
@@ -1454,6 +1559,14 @@ export const ParallaxPage: React.FC = () => {
             >
               {playingAudioKey ? <Volume2 size={14} strokeWidth={2} /> : <VolumeX size={14} strokeWidth={2} />}
             </button>
+            <button
+              type="button"
+              onClick={() => setIsParallaxFullscreen((prev) => !prev)}
+              title={isParallaxFullscreen ? 'Dock with Sidebar (Desktop)' : 'Expand Full Screen'}
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${floatingPillHoverClass}`}
+            >
+              {isParallaxFullscreen ? <Minimize2 size={13} strokeWidth={2} /> : <Maximize2 size={13} strokeWidth={2} />}
+            </button>
           </div>
         </header>
 
@@ -1604,6 +1717,18 @@ export const ParallaxPage: React.FC = () => {
                   >
                     <Archive size={14} />
                     <span>Saved Swarms ({sessions.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMenuDrawerOpen(false);
+                      window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'));
+                    }}
+                    className="w-full px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 text-cyan-300 hover:bg-cyan-500/10 transition-colors cursor-pointer"
+                  >
+                    <Menu size={14} />
+                    <span>NEXUS Main Navigation</span>
                   </button>
                 </div>
 
@@ -3806,6 +3931,21 @@ export const ParallaxPage: React.FC = () => {
             <UserPlus size={12} />
             <span>Inject Directive</span>
           </button>
+        )}
+
+        {/* Smartphone Home Indicator Gesture Bar (Fixed at bottom edge when nav bar is hidden) */}
+        {!bottomNavVisible && (
+          <div
+            onClick={() => updateBottomNavVisibility(true)}
+            onTouchStart={handleParallaxTouchStart}
+            onTouchMove={handleParallaxTouchMove}
+            className="fixed bottom-0 left-0 right-0 h-7 flex flex-col items-center justify-end pb-1.5 bg-gradient-to-t from-[#04060b]/95 via-[#04060b]/40 to-transparent z-[990] cursor-pointer group"
+          >
+            <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#0b1220]/85 border border-cyan-500/35 group-hover:border-cyan-400/70 transition-all shadow-md">
+              <div className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-violet-400 to-emerald-400" />
+              <ChevronUp size={11} className="text-cyan-300/90" />
+            </div>
+          </div>
         )}
 
         {/* Human Operator Directive Injection Modal */}

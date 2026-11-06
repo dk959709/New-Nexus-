@@ -26,7 +26,6 @@ import {
   Maximize2,
   Minimize2,
   ChevronUp,
-  ChevronDown,
   RefreshCw,
 } from 'lucide-react';
 import { api } from '@/services/api';
@@ -1990,22 +1989,6 @@ export function TelegramPage() {
         </div>
       )}
 
-          {/* Scroll-End Bottom-Up Navigation Sentinel (Icon-only pill, no text) */}
-          <div className="mt-8 pt-4 pb-6 flex flex-col items-center justify-center text-center select-none">
-            <button
-              type="button"
-              onClick={() => updateBottomNavVisibility(!bottomNavVisible)}
-              aria-label="Toggle navigation bar"
-              className="group inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-teal-500/30 text-teal-300 shadow-lg transition-all"
-            >
-              <span className="w-10 h-1 rounded-full bg-teal-400/80 group-hover:bg-teal-300 transition-all" />
-              {bottomNavVisible ? (
-                <ChevronDown size={13} className="text-teal-400 group-hover:translate-y-0.5 transition-transform" />
-              ) : (
-                <ChevronUp size={13} className="text-teal-400 group-hover:-translate-y-0.5 transition-transform" />
-              )}
-            </button>
-          </div>
         </div>
       </div>
 
