@@ -1749,6 +1749,29 @@ export interface WorkflowRunOptions {
   previousOutputs?: Record<string, WorkflowOutput>;
 }
 
+export interface WorkflowRunStepRecord {
+  nodeId: string;
+  label: string;
+  type: WorkflowNodeType;
+  status: WorkflowStepStatus;
+  outputSummary: string;
+  error?: string;
+  durationMs: number;
+}
+
+export type WorkflowRunStatus = 'success' | 'error' | 'stopped';
+
+export interface WorkflowRunRecord {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  status: WorkflowRunStatus;
+  startedAt: number;
+  durationMs: number;
+  steps: WorkflowRunStepRecord[];
+  finalOutput?: string;
+}
+
 export interface Skill {
   id: string;
   name: string;

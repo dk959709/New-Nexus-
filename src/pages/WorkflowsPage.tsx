@@ -8,6 +8,9 @@ import type {
   WorkflowOutput,
   AIProviderConfig,
   Skill,
+  WorkflowRunRecord,
+  WorkflowRunStepRecord,
+  WorkflowRunStatus,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { estimateTokens } from '@/lib/skills';
@@ -49,6 +52,8 @@ import {
   MinusCircle,
   Ban,
   Snowflake,
+  Clock,
+  History,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -311,6 +316,9 @@ export function WorkflowsPage() {
   const [confirmDeleteWorkflow, setConfirmDeleteWorkflow] = useState<boolean>(false);
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState<boolean>(false);
+  const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [runHistory, setRunHistory] = useState<WorkflowRunRecord[]>([]);
+  const [selectedRunDetail, setSelectedRunDetail] = useState<WorkflowRunRecord | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const inspectorOutputRef = useRef<HTMLDivElement | null>(null);
 
@@ -330,6 +338,16 @@ export function WorkflowsPage() {
       setToastMessage((current) => (current === msg ? null : current));
     }, 3200);
   }, []);
+
+  // Load workflow run history when active workflow changes
+  useEffect(() => {
+    if (activeWorkflow?.id) {
+      setRunHistory(storage.getWorkflowRunHistory(activeWorkflow.id));
+    } else {
+      setRunHistory([]);
+    }
+    setSelectedRunDetail(null);
+  }, [activeWorkflow?.id]);
 
   // Debounced auto-save to localStorage (400ms)
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -540,6 +558,14 @@ export function WorkflowsPage() {
 
     setIsRunning(true);
     stopRequestedRef.current = false;
+    const runStartTime = Date.now();
+    let localFinalNodeId: string | null = null;
+    const localOutputs: Record<string, WorkflowOutput> = { ...(startFromNodeId ? stepOutputs : {}) };
+    const localStatuses: Record<string, WorkflowStepStatus> = { ...(startFromNodeId ? stepStatuses : {}) };
+    const localSummaries: Record<string, string> = { ...(startFromNodeId ? stepOutputSummaries : {}) };
+    const localErrors: Record<string, string> = { ...(startFromNodeId ? stepErrors : {}) };
+    const localDurations: Record<string, number> = { ...(startFromNodeId ? stepDurations : {}) };
+    let executionErrorOccurred = false;
 
     if (!startFromNodeId) {
       handleClearResults();
@@ -603,6 +629,7 @@ export function WorkflowsPage() {
           shouldStop: () => stopRequestedRef.current,
           onStatus: (nodeId, status, output, errorText) => {
             setStepStatuses((prev) => ({ ...prev, [nodeId]: status }));
+            localStatuses[nodeId] = status;
 
             if (status === 'running') {
               const now = Date.now();
@@ -612,23 +639,33 @@ export function WorkflowsPage() {
 
             if (output) {
               setStepOutputs((prev) => ({ ...prev, [nodeId]: output }));
+              localOutputs[nodeId] = output;
+              const summary = getOutputSummary(output);
               setStepOutputSummaries((prev) => ({
                 ...prev,
-                [nodeId]: getOutputSummary(output),
+                [nodeId]: summary,
               }));
+              localSummaries[nodeId] = summary;
               if (status === 'done') {
                 setLastExecutedNodeId(nodeId);
+                localFinalNodeId = nodeId;
               }
             }
 
             if (errorText) {
               setStepErrors((prev) => ({ ...prev, [nodeId]: errorText }));
+              localErrors[nodeId] = errorText;
+              executionErrorOccurred = true;
             }
 
             if (status === 'done' || status === 'error') {
               const startT = stepStartTimesRef.current[nodeId] || Date.now();
               const duration = Math.max(0, Date.now() - startT);
               setStepDurations((prev) => ({ ...prev, [nodeId]: duration }));
+              localDurations[nodeId] = duration;
+              if (status === 'error') {
+                executionErrorOccurred = true;
+              }
               const targetNode = nodeMap.get(nodeId);
               if (targetNode) {
                 setRunLogs((prev) => [
@@ -658,10 +695,48 @@ export function WorkflowsPage() {
           : undefined,
       );
     } catch (err: unknown) {
+      executionErrorOccurred = true;
       console.error('Workflow execution error:', err);
       showToast(`Workflow error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsRunning(false);
+
+      // Determine final run status
+      const runStatus: WorkflowRunStatus = stopRequestedRef.current
+        ? 'stopped'
+        : executionErrorOccurred
+        ? 'error'
+        : 'success';
+
+      const durationMs = Math.max(0, Date.now() - runStartTime);
+
+      // Collect step records
+      const stepRecords: WorkflowRunStepRecord[] = activeWorkflow.nodes.map((node) => ({
+        nodeId: node.id,
+        label: node.label,
+        type: node.type,
+        status: localStatuses[node.id] || 'idle',
+        outputSummary: localSummaries[node.id] || (localOutputs[node.id] ? getOutputSummary(localOutputs[node.id]) : ''),
+        error: localErrors[node.id],
+        durationMs: localDurations[node.id] || 0,
+      }));
+
+      const finalOutObj = localFinalNodeId ? localOutputs[localFinalNodeId] : null;
+      const finalOutputVal = finalOutObj?.value || undefined;
+
+      const record: WorkflowRunRecord = {
+        id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        workflowId: activeWorkflow.id,
+        workflowName: activeWorkflow.name,
+        status: runStatus,
+        startedAt: runStartTime,
+        durationMs,
+        steps: stepRecords,
+        finalOutput: finalOutputVal,
+      };
+
+      storage.saveWorkflowRun(record);
+      setRunHistory(storage.getWorkflowRunHistory(activeWorkflow.id));
     }
   };
 
@@ -1219,6 +1294,21 @@ export function WorkflowsPage() {
 
         {/* Right Studio Controls (Matching Live AI Canvas Studio Header Buttons) */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => setShowHistoryModal(true)}
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-cyan-400/50 text-cyan-300 transition-colors flex items-center gap-1"
+            title="View Workflow Run History"
+          >
+            <History size={13} className="text-cyan-400" />
+            <span className="hidden md:inline font-mono text-[11px]">History</span>
+            {runHistory.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                {runHistory.length}
+              </span>
+            )}
+          </button>
+
           <button
             type="button"
             onClick={() => setShowTemplatesModal(true)}
@@ -2393,6 +2483,262 @@ export function WorkflowsPage() {
         </section>
         </div>
       </div>
+
+      {/* ================= CYBER RUN HISTORY MODAL ================= */}
+      {showHistoryModal && (
+        <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="wf-cyber-card wf-modal-panel rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-4 backdrop-blur-2xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#2a292e] pb-3 shrink-0">
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2 truncate">
+                  <History size={16} className="text-[#49effd] shrink-0" />
+                  <span>Run History · {activeWorkflow.name}</span>
+                </h3>
+                <p className="text-xs wf-rainbow-subtext mt-0.5">
+                  Last 20 runs recorded for this workflow pipeline.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {runHistory.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      storage.clearWorkflowRunHistory(activeWorkflow.id);
+                      setRunHistory([]);
+                      setSelectedRunDetail(null);
+                      showToast('Run history cleared');
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors flex items-center gap-1"
+                    title="Clear history for this workflow"
+                  >
+                    <Trash2 size={12} />
+                    <span className="hidden sm:inline">Clear</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHistoryModal(false);
+                    setSelectedRunDetail(null);
+                  }}
+                  className="p-1.5 rounded-lg bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7] transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {runHistory.length === 0 ? (
+                <div className="py-12 text-center text-zinc-400 font-mono text-xs">
+                  <Clock size={28} className="mx-auto mb-2.5 text-zinc-600 opacity-60" />
+                  <p>No runs recorded for this workflow yet.</p>
+                  <p className="text-[11px] text-zinc-500 mt-1">
+                    Execute the pipeline to record your first run history.
+                  </p>
+                </div>
+              ) : selectedRunDetail ? (
+                /* Detail View of a Single Run */
+                <div className="space-y-4 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0b0d14] border border-[#2a292e]">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRunDetail(null)}
+                        className="px-2 py-1 rounded-lg text-xs font-mono bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 transition-colors"
+                      >
+                        ← Back to List
+                      </button>
+                      <span className="text-xs font-mono text-zinc-400">
+                        {new Date(selectedRunDetail.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${
+                          selectedRunDetail.status === 'success'
+                            ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
+                            : selectedRunDetail.status === 'error'
+                            ? 'bg-[#ffb4ab]/15 border border-[#ffb4ab]/40 text-[#ffb4ab]'
+                            : 'bg-amber-500/15 border border-amber-500/40 text-amber-300'
+                        }`}
+                      >
+                        {selectedRunDetail.status === 'success' && <CheckCircle2 size={10} />}
+                        {selectedRunDetail.status === 'error' && <AlertCircle size={10} />}
+                        {selectedRunDetail.status === 'stopped' && <Square size={10} />}
+                        <span>{selectedRunDetail.status}</span>
+                      </span>
+
+                      <span className="text-xs font-mono font-bold text-emerald-300">
+                        {(selectedRunDetail.durationMs / 1000).toFixed(1)}s
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Step Breakdown */}
+                  <div>
+                    <h4 className="text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider mb-2">
+                      Step Telemetry ({selectedRunDetail.steps.length} steps)
+                    </h4>
+                    <div className="space-y-2">
+                      {selectedRunDetail.steps.map((st, idx) => (
+                        <div
+                          key={`${st.nodeId}-${idx}`}
+                          className="p-3 rounded-xl bg-[#0e0e12] border border-[#2a292e] flex flex-col gap-1.5"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[10px] font-mono text-zinc-500">#{idx + 1}</span>
+                              <span className="text-xs font-bold text-cyan-200 truncate">{st.label}</span>
+                              <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-fuchsia-300 border border-zinc-700">
+                                {st.type}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span
+                                className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${
+                                  st.status === 'done'
+                                    ? 'text-emerald-300 bg-emerald-500/10'
+                                    : st.status === 'error'
+                                    ? 'text-[#ffb4ab] bg-rose-500/10'
+                                    : st.status === 'skipped'
+                                    ? 'text-zinc-400 bg-zinc-800'
+                                    : 'text-zinc-500'
+                                }`}
+                              >
+                                {st.status}
+                              </span>
+                              <span className="text-xs font-mono text-emerald-400">
+                                {st.durationMs > 0 ? `${st.durationMs}ms` : '—'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {st.outputSummary && (
+                            <p className="text-[11px] font-mono text-zinc-300 bg-[#080b12] rounded px-2 py-1 border border-zinc-800/80 truncate">
+                              Summary: {st.outputSummary}
+                            </p>
+                          )}
+
+                          {st.error && (
+                            <p className="text-[11px] font-mono text-rose-300 bg-rose-950/20 rounded px-2 py-1 border border-rose-900/40">
+                              Error: {st.error}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Final Output if available */}
+                  {selectedRunDetail.finalOutput && (
+                    <div className="space-y-1.5">
+                      <h4 className="text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider">
+                        Final Output
+                      </h4>
+                      <pre className="p-3 rounded-xl bg-[#080b12] border border-cyan-500/25 text-cyan-100 font-mono text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto leading-relaxed">
+                        {selectedRunDetail.finalOutput}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+                    <button
+                      type="button"
+                      disabled={isRunning}
+                      onClick={() => {
+                        setShowHistoryModal(false);
+                        setSelectedRunDetail(null);
+                        handleRun();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(73,239,253,0.3)] disabled:opacity-40"
+                    >
+                      <Play size={12} className="fill-[#00363b]" />
+                      <span>Re-run Workflow</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Run List (Newest first) */
+                <div className="space-y-2">
+                  {runHistory.map((run, idx) => (
+                    <div
+                      key={run.id || idx}
+                      onClick={() => setSelectedRunDetail(run)}
+                      className="p-3.5 rounded-xl bg-[#0e0e12] hover:bg-[#1b1b1f] border border-[#2a292e] hover:border-[#49effd]/40 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                    >
+                      <div className="min-w-0 space-y-1 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${
+                              run.status === 'success'
+                                ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
+                                : run.status === 'error'
+                                ? 'bg-[#ffb4ab]/15 border border-[#ffb4ab]/40 text-[#ffb4ab]'
+                                : 'bg-amber-500/15 border border-amber-500/40 text-amber-300'
+                            }`}
+                          >
+                            {run.status === 'success' && <CheckCircle2 size={10} />}
+                            {run.status === 'error' && <AlertCircle size={10} />}
+                            {run.status === 'stopped' && <Square size={10} />}
+                            <span>{run.status}</span>
+                          </span>
+
+                          <span className="text-xs font-mono text-zinc-300">
+                            {new Date(run.startedAt).toLocaleString()}
+                          </span>
+
+                          <span className="text-xs font-mono font-bold text-emerald-300 ml-auto sm:ml-0">
+                            {(run.durationMs / 1000).toFixed(1)}s
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+                          <span>{run.steps?.length || 0} steps</span>
+                          {run.finalOutput && (
+                            <>
+                              <span>·</span>
+                              <span className="truncate max-w-[280px] text-zinc-500">
+                                {run.finalOutput.slice(0, 60)}...
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        <button
+                          type="button"
+                          disabled={isRunning}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowHistoryModal(false);
+                            handleRun();
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 font-mono text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
+                          title="Run this workflow again"
+                        >
+                          <Play size={10} className="fill-cyan-300" />
+                          <span>Re-run</span>
+                        </button>
+
+                        <span className="text-zinc-500 group-hover:text-cyan-300 transition-colors text-xs font-mono">
+                          View details →
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= CYBER TEMPLATES MODAL ================= */}
       {showTemplatesModal && (

@@ -25,6 +25,7 @@ import type {
   ParallaxGenesisSlot,
   CommanderConfig,
   Workflow,
+  WorkflowRunRecord,
   Skill,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
@@ -129,6 +130,7 @@ const KEYS = {
   parallaxWebSearchUrl: 'nexus-parallax-web-search-url',
   parallaxWebSearchKey: 'nexus-parallax-web-search-key',
   commanderConfig: 'nexus-ai-commander-config-v1',
+  workflowRunHistory: 'nexus-workflow-run-history-v1',
 } as const;
 
 export const DEFAULT_PARALLAX_AGENTS: Record<string, ParallaxAgentConfig> = {
@@ -1744,6 +1746,37 @@ export const storage = {
       }
     } catch (e) {
       console.error('Failed to save workflows to storage', e);
+    }
+  },
+
+  getWorkflowRunHistory(workflowId: string): WorkflowRunRecord[] {
+    try {
+      const all = read<Record<string, WorkflowRunRecord[]>>(KEYS.workflowRunHistory, {});
+      return Array.isArray(all[workflowId]) ? all[workflowId] : [];
+    } catch {
+      return [];
+    }
+  },
+
+  saveWorkflowRun(record: WorkflowRunRecord): void {
+    try {
+      const all = read<Record<string, WorkflowRunRecord[]>>(KEYS.workflowRunHistory, {});
+      const list = Array.isArray(all[record.workflowId]) ? all[record.workflowId] : [];
+      list.unshift(record);
+      all[record.workflowId] = list.slice(0, 20);
+      write(KEYS.workflowRunHistory, all);
+    } catch (e) {
+      console.error('Failed to save workflow run history', e);
+    }
+  },
+
+  clearWorkflowRunHistory(workflowId: string): void {
+    try {
+      const all = read<Record<string, WorkflowRunRecord[]>>(KEYS.workflowRunHistory, {});
+      delete all[workflowId];
+      write(KEYS.workflowRunHistory, all);
+    } catch {
+      // ignore
     }
   },
 
