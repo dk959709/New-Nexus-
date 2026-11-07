@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageSquare, Sliders, Palette, Menu, Maximize2, Minimize2, ChevronUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MessageSquare, Sliders, Palette } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { MultiChatConsole } from '@/components/multichat/MultiChatConsole';
 import { MultiChatSettings } from '@/components/multichat/MultiChatSettings';
@@ -9,99 +9,6 @@ export function MultiChatPage() {
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
   const [config, setConfig] = useState<MultiChatSystemConfig>(() => storage.getMultiChatConfig());
   const [theme, setTheme] = useState<MultiChatTheme>(() => storage.getMultiChatTheme());
-
-  // Fullscreen & Smartphone Bottom-Up Navigation Bar state
-  const [isFullscreen, setIsFullscreen] = useState(true);
-  const [bottomNavVisible, setBottomNavVisible] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const lastScrollTopRef = useRef(0);
-  const touchStartYRef = useRef<number | null>(null);
-
-  const updateBottomNavVisibility = useCallback((visible: boolean) => {
-    setBottomNavVisible(visible);
-    window.dispatchEvent(
-      new CustomEvent('nexus-workflow-bottom-nav', {
-        detail: { visible },
-      }),
-    );
-  }, []);
-
-  useEffect(() => {
-    updateBottomNavVisibility(false);
-    const onExternalNavEvent = (e: Event) => {
-      const custom = e as CustomEvent<{ visible?: boolean }>;
-      if (typeof custom.detail?.visible === 'boolean') {
-        setBottomNavVisible(custom.detail.visible);
-      }
-    };
-    window.addEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
-    return () => {
-      window.removeEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
-      updateBottomNavVisibility(false);
-    };
-  }, [updateBottomNavVisibility]);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-    const isNearBottom = distanceFromBottom <= 90;
-    const scrollingDown = scrollTop > lastScrollTopRef.current + 4;
-    const scrollingUp = scrollTop < lastScrollTopRef.current - 12;
-
-    if (isNearBottom) {
-      updateBottomNavVisibility(true);
-    } else if (scrollingUp && distanceFromBottom > 180) {
-      updateBottomNavVisibility(false);
-    } else if (scrollingDown && distanceFromBottom <= 140) {
-      updateBottomNavVisibility(true);
-    }
-
-    lastScrollTopRef.current = scrollTop;
-  }, [updateBottomNavVisibility]);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length > 0) {
-      touchStartYRef.current = e.touches[0].clientY;
-    }
-  }, []);
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (touchStartYRef.current === null || e.touches.length === 0) return;
-      const currentY = e.touches[0].clientY;
-      const deltaY = touchStartYRef.current - currentY;
-      const viewportHeight = window.innerHeight;
-      const startedNearBottomEdge = touchStartYRef.current >= viewportHeight - 110;
-
-      const el = scrollContainerRef.current;
-      const isAtBottom = el
-        ? el.scrollHeight - (el.scrollTop + el.clientHeight) <= 100
-        : false;
-
-      if ((startedNearBottomEdge && deltaY > 24) || (isAtBottom && deltaY > 18)) {
-        updateBottomNavVisibility(true);
-      } else if (deltaY < -35 && !isAtBottom) {
-        updateBottomNavVisibility(false);
-      }
-    },
-    [updateBottomNavVisibility],
-  );
-
-  const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
-      const el = scrollContainerRef.current;
-      if (!el) return;
-      const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
-      if (e.deltaY > 10 && distanceFromBottom <= 120) {
-        updateBottomNavVisibility(true);
-      } else if (e.deltaY < -18 && distanceFromBottom > 180) {
-        updateBottomNavVisibility(false);
-      }
-    },
-    [updateBottomNavVisibility],
-  );
 
   // Keep state synchronized with storage whenever switching views or when storage updates
   useEffect(() => {
@@ -135,17 +42,8 @@ export function MultiChatPage() {
 
   return (
     <div
-      ref={scrollContainerRef}
-      onScroll={handleScroll}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onWheel={handleWheel}
       data-theme={theme}
-      className={`fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] flex flex-col font-sans px-2.5 sm:px-6 md:px-8 pt-2.5 sm:pt-3.5 pb-24 transition-all duration-300 z-[950] overflow-y-auto overflow-x-hidden scroll-smooth ${
-        isFullscreen
-          ? 'left-0 w-full'
-          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
-      } ${
+      className={`relative min-h-screen flex flex-col font-sans -mx-4 sm:-mx-6 md:-mx-8 -mt-4 sm:-mt-6 px-2.5 sm:px-6 md:px-8 pt-2.5 sm:pt-3.5 pb-14 transition-colors duration-300 overflow-x-hidden ${
         theme === 'classic'
           ? 'theme-classic bg-[#050a12] text-[#e2e8f0] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0b233f] via-[#061222] to-[#03070e]'
           : theme === 'fulldark'
@@ -193,7 +91,7 @@ export function MultiChatPage() {
       <div className="relative z-10 w-full max-w-5xl mx-auto flex flex-col flex-1 gap-2.5 sm:gap-3.5 pb-4">
         {/* Compact Mobile-Friendly Multi Chat Top Header with Animated Laser & Tri-Core Graphic */}
         <header
-          className={`sticky top-1 z-30 overflow-hidden flex items-center justify-between gap-2 px-3 py-2 rounded-2xl transition-all flex-wrap ${
+          className={`relative z-10 overflow-hidden flex items-center justify-between gap-2 px-3 py-2 rounded-2xl transition-all flex-wrap ${
             theme === 'classic'
               ? 'border border-cyan-500/30 bg-slate-950/85 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.5),0_0_20px_rgba(6,182,212,0.12)]'
               : theme === 'fulldark'
@@ -204,24 +102,8 @@ export function MultiChatPage() {
           {/* Animated Top Laser Sweep */}
           <div className="mc-laser-line" />
 
-          {/* Left: Menu Drawer Button + Animated Tri-Core Neural Emblem & Brand Identity */}
+          {/* Left: Animated Tri-Core Neural Emblem & Brand Identity */}
           <div className="flex items-center gap-2 min-w-0">
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'))}
-              className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center border transition-all cursor-pointer ${
-                theme === 'classic'
-                  ? 'bg-slate-900/90 hover:bg-slate-800 border-cyan-500/30 text-cyan-200'
-                  : theme === 'fulldark'
-                  ? 'bg-[#141418] hover:bg-[#1e1e24] border-white/15 text-zinc-200'
-                  : 'bg-zinc-950/90 hover:bg-zinc-800 border-indigo-500/30 text-indigo-200'
-              }`}
-              title="Open NEXUS Navigation Drawer"
-              aria-label="Open NEXUS Navigation Drawer"
-            >
-              <Menu size={15} />
-            </button>
-
             <div
               className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl shrink-0 grid place-items-center border overflow-hidden ${
                 theme === 'classic'
@@ -286,7 +168,7 @@ export function MultiChatPage() {
             </div>
           </div>
 
-          {/* Right: 3-Theme Switcher + Console/Settings Tabs + Fullscreen Toggle */}
+          {/* Right: 3-Theme Switcher + Console/Settings Tabs */}
           <div className="flex items-center gap-1.5 sm:gap-2 ml-auto flex-wrap">
             {/* Quick 3-Theme Segmented Pill (Minimal / Classic / Full Dark) */}
             <div
@@ -373,21 +255,6 @@ export function MultiChatPage() {
                 <span>Agents</span>
               </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((prev) => !prev)}
-              className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-all cursor-pointer ${
-                theme === 'classic'
-                  ? 'bg-slate-950/85 border-cyan-500/25 text-cyan-200 hover:bg-slate-800'
-                  : theme === 'fulldark'
-                  ? 'bg-[#141417] border-white/10 text-zinc-200 hover:bg-[#1e1e24]'
-                  : 'bg-zinc-950/80 border-white/10 text-indigo-200 hover:bg-zinc-800'
-              }`}
-              title={isFullscreen ? 'Dock with Sidebar (Desktop)' : 'Expand Full Screen'}
-            >
-              {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            </button>
           </div>
         </header>
 
@@ -407,21 +274,6 @@ export function MultiChatPage() {
           />
         )}
       </div>
-
-      {/* Single Smartphone Home Indicator Gesture Bar (Fixed at bottom edge when nav bar is hidden) */}
-      {!bottomNavVisible && (
-        <div
-          onClick={() => updateBottomNavVisibility(true)}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          className="fixed bottom-0 left-0 right-0 h-7 flex flex-col items-center justify-end pb-1.5 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-[990] cursor-pointer group"
-        >
-          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-950/85 border border-cyan-500/35 group-hover:border-cyan-400/70 transition-all shadow-md">
-            <div className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-purple-400" />
-            <ChevronUp size={11} className="text-cyan-300/90" />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

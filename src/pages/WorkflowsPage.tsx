@@ -48,9 +48,6 @@ import {
   Loader2,
   MinusCircle,
   Ban,
-  Menu,
-  Maximize2,
-  Minimize2,
   Snowflake,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
@@ -324,123 +321,8 @@ export function WorkflowsPage() {
     targetId: string;
   } | null>(null);
 
-  // Fullscreen Studio & Smartphone Bottom-Up Navigation Bar State
-  const [isStudioFullscreen, setIsStudioFullscreen] = useState<boolean>(true);
-  const [bottomNavVisible, setBottomNavVisible] = useState<boolean>(false);
-  const studioScrollRef = useRef<HTMLDivElement | null>(null);
-  const bottomSentinelRef = useRef<HTMLDivElement | null>(null);
   const finalOutputSectionRef = useRef<HTMLElement | null>(null);
   const traceSectionRef = useRef<HTMLElement | null>(null);
-  const lastScrollTopRef = useRef<number>(0);
-  const touchStartYRef = useRef<number | null>(null);
-  const touchStartedAtBottomEdgeRef = useRef<boolean>(false);
-  const touchStartedAtScrollEndRef = useRef<boolean>(false);
-
-  const updateBottomNavVisibility = useCallback((visible: boolean) => {
-    setBottomNavVisible(visible);
-    window.dispatchEvent(
-      new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible } }),
-    );
-  }, []);
-
-  useEffect(() => {
-    const syncFromLayout = (e: Event) => {
-      const custom = e as CustomEvent<{ visible?: boolean }>;
-      if (typeof custom.detail?.visible === 'boolean') {
-        setBottomNavVisible(custom.detail.visible);
-      }
-    };
-    window.addEventListener('nexus-workflow-bottom-nav', syncFromLayout);
-    return () => {
-      window.removeEventListener('nexus-workflow-bottom-nav', syncFromLayout);
-      window.dispatchEvent(
-        new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible: false } }),
-      );
-    };
-  }, []);
-
-  const handleStudioScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      const el = e.currentTarget;
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-      const isScrollable = scrollHeight > clientHeight + 20;
-
-      if (isScrollable && distanceFromBottom <= 72) {
-        if (!bottomNavVisible) {
-          updateBottomNavVisibility(true);
-        }
-      } else if (
-        bottomNavVisible &&
-        distanceFromBottom > 135 &&
-        scrollTop < lastScrollTopRef.current - 10
-      ) {
-        updateBottomNavVisibility(false);
-      }
-      lastScrollTopRef.current = scrollTop;
-    },
-    [bottomNavVisible, updateBottomNavVisibility],
-  );
-
-  const handleStudioTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    const touchY = e.touches[0]?.clientY ?? null;
-    touchStartYRef.current = touchY;
-    if (touchY !== null && typeof window !== 'undefined') {
-      touchStartedAtBottomEdgeRef.current = touchY >= window.innerHeight - 72;
-    } else {
-      touchStartedAtBottomEdgeRef.current = false;
-    }
-    const el = studioScrollRef.current;
-    if (el) {
-      const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
-      touchStartedAtScrollEndRef.current = dist <= 80;
-    } else {
-      touchStartedAtScrollEndRef.current = false;
-    }
-  }, []);
-
-  const handleStudioTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (touchStartYRef.current === null) return;
-      const currentY = e.touches[0]?.clientY ?? touchStartYRef.current;
-      const deltaUp = touchStartYRef.current - currentY;
-      const el = studioScrollRef.current;
-      const distFromBottom = el
-        ? el.scrollHeight - (el.scrollTop + el.clientHeight)
-        : 999;
-
-      // Swipe up from bottom edge OR pull up at the end of scroll -> slide up smartphone nav bar
-      if (
-        (touchStartedAtBottomEdgeRef.current && deltaUp >= 18) ||
-        ((touchStartedAtScrollEndRef.current || distFromBottom <= 72) && deltaUp >= 22)
-      ) {
-        if (!bottomNavVisible) {
-          updateBottomNavVisibility(true);
-        }
-        touchStartYRef.current = null;
-      } else if (bottomNavVisible && deltaUp < -28 && distFromBottom > 90) {
-        updateBottomNavVisibility(false);
-        touchStartYRef.current = null;
-      }
-    },
-    [bottomNavVisible, updateBottomNavVisibility],
-  );
-
-  const handleStudioWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
-      const el = studioScrollRef.current;
-      if (!el) return;
-      const distFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
-      if (distFromBottom <= 72 && e.deltaY > 12) {
-        if (!bottomNavVisible) {
-          updateBottomNavVisibility(true);
-        }
-      } else if (bottomNavVisible && distFromBottom > 140 && e.deltaY < -14) {
-        updateBottomNavVisibility(false);
-      }
-    },
-    [bottomNavVisible, updateBottomNavVisibility],
-  );
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -1261,14 +1143,7 @@ export function WorkflowsPage() {
       data-wf-theme="cyber"
       role="region"
       aria-label="Workflows Orchestrator"
-      onTouchStart={handleStudioTouchStart}
-      onTouchMove={handleStudioTouchMove}
-      onWheel={handleStudioWheel}
-      className={`fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[#080b12] text-[#e4e1e7] transition-all duration-200 z-[950] ${
-        isStudioFullscreen
-          ? 'left-0 w-full'
-          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
-      }`}
+      className="relative min-h-screen -mx-4 sm:-mx-6 md:-mx-8 -mt-4 sm:-mt-6 bg-[#080b12] text-[#e4e1e7] pb-16 overflow-x-hidden"
     >
       {/* Toast Notification */}
       {toastMessage && (
@@ -1279,21 +1154,10 @@ export function WorkflowsPage() {
       )}
 
       {/* ================= ROW 1: TOP STUDIO HEADER BAR ================= */}
-      <div className="relative px-3 sm:px-4 py-2.5 border-b border-cyan-500/25 bg-[#050911]/95 backdrop-blur-xl flex items-center justify-between gap-2 shrink-0 z-30">
+      <div className="relative px-3 sm:px-4 py-2.5 border-b border-cyan-500/25 bg-[#050911]/95 backdrop-blur-xl flex items-center justify-between gap-2 z-10">
         <div className="mc-laser-line opacity-85" />
 
         <div className="flex items-center gap-2 min-w-0">
-          {/* Open NEXUS Side Navigation Drawer */}
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'))}
-            className="p-1.5 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-cyan-300 transition-colors shrink-0"
-            title="Open NEXUS Navigation Menu"
-            aria-label="Open menu"
-          >
-            <Menu size={15} />
-          </button>
-
           {/* Animated SVG Pipeline Studio Badge */}
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 flex items-center justify-center shrink-0 overflow-hidden">
             <svg className="w-5 h-5" viewBox="0 0 48 48" fill="none">
@@ -1395,15 +1259,6 @@ export function WorkflowsPage() {
               <span>Run</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => setIsStudioFullscreen((prev) => !prev)}
-            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-white transition-colors hidden md:flex"
-            title={isStudioFullscreen ? 'Show Left Sidebar' : 'Expand Studio Fullscreen'}
-          >
-            {isStudioFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
         </div>
       </div>
 
@@ -1639,12 +1494,8 @@ export function WorkflowsPage() {
         </div>
       </div>
 
-      {/* ================= MAIN FULL-SCREEN SCROLLABLE STUDIO WORKSPACE ================= */}
-      <div
-        ref={studioScrollRef}
-        onScroll={handleStudioScroll}
-        className="wf-studio-shell relative flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 pt-3 pb-28 border-0 rounded-none"
-      >
+      {/* ================= MAIN STUDIO WORKSPACE ================= */}
+      <div className="wf-studio-shell relative px-3 sm:px-6 pt-3 pb-12 border-0 rounded-none">
         {/* Static Background Grid + Dual Radial Plasma Glows (pointer-events: none) */}
         <div
           aria-hidden="true"
@@ -2540,25 +2391,8 @@ export function WorkflowsPage() {
             </div>
           )}
         </section>
-
-        {/* Invisible Scroll-End Sentinel for Bottom-Up Navigation Trigger */}
-        <div ref={bottomSentinelRef} className="h-2 w-full pointer-events-none" aria-hidden="true" />
         </div>
       </div>
-
-      {/* Smartphone Home Indicator Gesture Bar (Pinned at Bottom Edge when Nav is Hidden) */}
-      {!bottomNavVisible && (
-        <button
-          type="button"
-          onClick={() => updateBottomNavVisibility(true)}
-          aria-label="Show navigation bar"
-          title="Swipe up or tap to open navigation bar"
-          className="fixed bottom-1.5 left-1/2 -translate-x-1/2 z-[1210] px-4 py-1.5 rounded-full bg-[#090d16]/85 hover:bg-[#111827] border border-cyan-400/35 backdrop-blur-md flex items-center gap-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.75),0_0_12px_rgba(73,239,253,0.2)] transition-all active:scale-95"
-        >
-          <span className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400" />
-          <ChevronUp size={11} className="text-cyan-300" />
-        </button>
-      )}
 
       {/* ================= CYBER TEMPLATES MODAL ================= */}
       {showTemplatesModal && (

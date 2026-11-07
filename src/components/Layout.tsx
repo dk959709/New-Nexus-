@@ -2,6 +2,7 @@ import {
   Bookmark,
   Bot,
   ChevronDown,
+  ChevronUp,
   CloudSun,
   Home,
   Image,
@@ -52,12 +53,17 @@ export function Layout() {
     location.pathname.startsWith('/telegram') ||
     location.pathname.startsWith('/image-studio') ||
     location.pathname.startsWith('/parallax') ||
-    location.pathname.startsWith('/multi-chat');
+    location.pathname.startsWith('/multi-chat') ||
+    location.pathname.startsWith('/jarvis') ||
+    location.pathname.startsWith('/assistant');
   const [workflowNavVisible, setWorkflowNavVisible] = useState(false);
   const navTouchStartYRef = useRef<number | null>(null);
+  const pageTouchStartYRef = useRef<number | null>(null);
+  const lastScrollTopRef = useRef(0);
 
   useEffect(() => {
     setWorkflowNavVisible(false);
+    lastScrollTopRef.current = 0;
   }, [location.pathname]);
 
   useEffect(() => {
@@ -79,6 +85,85 @@ export function Layout() {
       window.removeEventListener('nexus-toggle-side-menu', handleToggleMenu);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isWorkflowsPage) return;
+
+    const getWindowDistanceFromBottom = () => {
+      const docEl = document.documentElement;
+      const body = document.body;
+      const scrollTop = window.scrollY || docEl.scrollTop || body.scrollTop || 0;
+      const scrollHeight = Math.max(docEl.scrollHeight, body.scrollHeight);
+      const clientHeight = window.innerHeight || docEl.clientHeight;
+      return {
+        scrollTop,
+        scrollHeight,
+        clientHeight,
+        distanceFromBottom: scrollHeight - (scrollTop + clientHeight),
+      };
+    };
+
+    const handleWindowScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight, distanceFromBottom } =
+        getWindowDistanceFromBottom();
+      if (scrollHeight <= clientHeight + 24) return;
+
+      const isNearBottom = distanceFromBottom <= 90;
+      const scrollingDown = scrollTop > lastScrollTopRef.current + 3;
+      const scrollingUp = scrollTop < lastScrollTopRef.current - 12;
+
+      if (isNearBottom) {
+        setWorkflowNavVisible(true);
+      } else if (scrollingUp && distanceFromBottom > 170) {
+        setWorkflowNavVisible(false);
+      } else if (scrollingDown && distanceFromBottom <= 140) {
+        setWorkflowNavVisible(true);
+      }
+      lastScrollTopRef.current = scrollTop;
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        pageTouchStartYRef.current = e.touches[0].clientY;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (pageTouchStartYRef.current === null || e.touches.length === 0) return;
+      const currentY = e.touches[0].clientY;
+      const deltaUp = pageTouchStartYRef.current - currentY;
+      const startedNearBottomEdge = pageTouchStartYRef.current >= window.innerHeight - 110;
+      const { distanceFromBottom } = getWindowDistanceFromBottom();
+      const isAtBottom = distanceFromBottom <= 105;
+
+      if ((startedNearBottomEdge && deltaUp > 22) || (isAtBottom && deltaUp > 18)) {
+        setWorkflowNavVisible(true);
+      } else if (deltaUp < -34 && !isAtBottom) {
+        setWorkflowNavVisible(false);
+      }
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      const { distanceFromBottom } = getWindowDistanceFromBottom();
+      if (e.deltaY > 10 && distanceFromBottom <= 125) {
+        setWorkflowNavVisible(true);
+      } else if (e.deltaY < -18 && distanceFromBottom > 175) {
+        setWorkflowNavVisible(false);
+      }
+    };
+
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('wheel', handleWheel, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleWindowScroll);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('wheel', handleWheel);
+    };
+  }, [isWorkflowsPage]);
 
   const handleNavClick = () => {
     setMenuOpen(false);
@@ -164,6 +249,35 @@ export function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {isWorkflowsPage && !workflowNavVisible && (
+        <div
+          onClick={() => {
+            setWorkflowNavVisible(true);
+            window.dispatchEvent(
+              new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible: true } }),
+            );
+          }}
+          className="fixed bottom-0 left-0 right-0 h-7 flex flex-col items-center justify-end pb-1.5 bg-gradient-to-t from-black/85 via-black/35 to-transparent z-[1210] cursor-pointer group"
+          role="button"
+          tabIndex={0}
+          aria-label="Show navigation bar"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setWorkflowNavVisible(true);
+              window.dispatchEvent(
+                new CustomEvent('nexus-workflow-bottom-nav', { detail: { visible: true } }),
+              );
+            }
+          }}
+        >
+          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#090d16]/90 border border-cyan-500/35 group-hover:border-cyan-400/70 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.75)]">
+            <div className="w-10 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-sky-400 to-indigo-400" />
+            <ChevronUp size={11} className="text-cyan-300/90" />
+          </div>
+        </div>
+      )}
 
       <nav
         className={`bottom-nav ${isWorkflowsPage ? 'bottom-nav--workflow-smart' : ''} ${

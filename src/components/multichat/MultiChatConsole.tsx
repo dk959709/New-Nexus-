@@ -2946,9 +2946,9 @@ export function MultiChatConsole({
         theme={activeTheme}
       />
 
-      {/* FEATURE 3: PODCAST MODE FLOATING STUDIO PLAYER */}
+      {/* FEATURE 3: PODCAST MODE STUDIO PLAYER */}
       {isPodcastActive && currentPodcastTrack && (
-        <div className="sticky top-2 z-40 p-2.5 sm:p-3.5 rounded-2xl bg-gradient-to-r from-slate-950 via-indigo-950/90 to-slate-950 border border-indigo-500/40 shadow-2xl shadow-indigo-950/50 backdrop-blur-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="relative z-20 p-2.5 sm:p-3.5 rounded-2xl bg-gradient-to-r from-slate-950 via-indigo-950/90 to-slate-950 border border-indigo-500/40 shadow-2xl shadow-indigo-950/50 backdrop-blur-2xl animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
             {/* Track Info */}
             <div className="flex items-center gap-2.5 min-w-0">
@@ -5780,7 +5780,7 @@ export function MultiChatConsole({
       </div>
 
       {/* REDESIGNED AI ASSISTANT-STYLE MULTI CHAT INPUT DOCK */}
-      <div className="sticky bottom-2 sm:bottom-3 z-30 flex flex-col gap-1.5 pt-1">
+      <div className="relative z-20 flex flex-col gap-1.5 pt-1">
         {/* Quick Prompts Floating Drawer */}
         {showQuickPrompts && (
           <div

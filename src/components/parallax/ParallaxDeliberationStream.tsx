@@ -316,10 +316,10 @@ export const ParallaxDeliberationStream: React.FC<ParallaxDeliberationStreamProp
       ref={streamContainerRef}
       className="relative py-2 min-w-0 select-text"
     >
-      {/* Compact Sticky Live Chat Header & Filter Bar */}
+      {/* Compact Live Chat Header & Filter Bar */}
       <div
         id="parallax-feed-toolbar"
-        className="sticky top-0 z-30 bg-[#080c14]/90 backdrop-blur-xl border-b border-white/[0.07] py-2.5 px-2.5 sm:px-3.5 rounded-t-xl mb-3"
+        className="relative z-20 bg-[#080c14]/90 backdrop-blur-xl border-b border-white/[0.07] py-2.5 px-2.5 sm:px-3.5 rounded-t-xl mb-3"
       >
         <div className="flex items-center justify-between flex-wrap gap-2">
           {/* Left: Live Chat Status & Turn Count */}

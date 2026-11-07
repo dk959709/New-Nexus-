@@ -4941,22 +4941,7 @@ button:active .stitch-dice-icon {
     inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
-/* Fullscreen Live Studio Mode for Workflows Page & Smartphone Slide-Up Bottom Nav */
-.app-shell.workflows-fullscreen-mode .mobile-header {
-  display: none !important;
-}
-
-.app-shell.workflows-fullscreen-mode main {
-  min-height: 100dvh;
-}
-
-.app-shell.workflows-fullscreen-mode .page-content {
-  padding: 0 !important;
-  max-width: 100% !important;
-  width: 100% !important;
-  margin: 0 !important;
-}
-
+/* Smartphone Slide-Up Bottom Nav Mode */
 .app-shell.workflows-fullscreen-mode .menu-overlay {
   display: block;
   position: fixed;

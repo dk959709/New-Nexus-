@@ -27,9 +27,6 @@ import {
   Filter,
   Heart,
   CheckSquare,
-  Menu,
-  Minimize2,
-  ChevronUp,
 } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
@@ -2001,7 +1998,6 @@ export function ImageStudio() {
     }
     setError(null);
     playTapSound();
-    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 120, behavior: 'smooth' });
   };
 
@@ -2017,110 +2013,8 @@ export function ImageStudio() {
     setSeed(Math.floor(Math.random() * 1000000));
   };
 
-  // Fullscreen & Smartphone Bottom-Up Navigation Bar state
-  const [isStudioFullscreen, setIsStudioFullscreen] = useState(true);
-  const [bottomNavVisible, setBottomNavVisible] = useState(false);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const lastScrollTopRef = useRef(0);
-  const studioTouchStartYRef = useRef<number | null>(null);
-
-  const updateBottomNavVisibility = useCallback((visible: boolean) => {
-    setBottomNavVisible(visible);
-    window.dispatchEvent(
-      new CustomEvent('nexus-workflow-bottom-nav', {
-        detail: { visible },
-      }),
-    );
-  }, []);
-
-  useEffect(() => {
-    updateBottomNavVisibility(false);
-    const onExternalNavEvent = (e: Event) => {
-      const custom = e as CustomEvent<{ visible?: boolean }>;
-      if (typeof custom.detail?.visible === 'boolean') {
-        setBottomNavVisible(custom.detail.visible);
-      }
-    };
-    window.addEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
-    return () => {
-      window.removeEventListener('nexus-workflow-bottom-nav', onExternalNavEvent);
-      updateBottomNavVisibility(false);
-    };
-  }, [updateBottomNavVisibility]);
-
-  const handleStudioScroll = useCallback(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight);
-    const isNearBottom = distanceFromBottom <= 90;
-    const scrollingDown = scrollTop > lastScrollTopRef.current + 4;
-    const scrollingUp = scrollTop < lastScrollTopRef.current - 12;
-
-    if (isNearBottom) {
-      updateBottomNavVisibility(true);
-    } else if (scrollingUp && distanceFromBottom > 180) {
-      updateBottomNavVisibility(false);
-    } else if (scrollingDown && distanceFromBottom <= 140) {
-      updateBottomNavVisibility(true);
-    }
-
-    lastScrollTopRef.current = scrollTop;
-  }, [updateBottomNavVisibility]);
-
-  const handleStudioTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    if (e.touches.length > 0) {
-      studioTouchStartYRef.current = e.touches[0].clientY;
-    }
-  }, []);
-
-  const handleStudioTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (studioTouchStartYRef.current === null || e.touches.length === 0) return;
-      const currentY = e.touches[0].clientY;
-      const deltaY = studioTouchStartYRef.current - currentY;
-      const viewportHeight = window.innerHeight;
-      const startedNearBottomEdge = studioTouchStartYRef.current >= viewportHeight - 110;
-
-      const el = scrollContainerRef.current;
-      const isAtBottom = el
-        ? el.scrollHeight - (el.scrollTop + el.clientHeight) <= 100
-        : false;
-
-      if ((startedNearBottomEdge && deltaY > 24) || (isAtBottom && deltaY > 18)) {
-        updateBottomNavVisibility(true);
-      } else if (deltaY < -35 && !isAtBottom) {
-        updateBottomNavVisibility(false);
-      }
-    },
-    [updateBottomNavVisibility],
-  );
-
-  const handleStudioWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
-      const el = scrollContainerRef.current;
-      if (!el) return;
-      const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
-      if (e.deltaY > 10 && distanceFromBottom <= 120) {
-        updateBottomNavVisibility(true);
-      } else if (e.deltaY < -18 && distanceFromBottom > 180) {
-        updateBottomNavVisibility(false);
-      }
-    },
-    [updateBottomNavVisibility],
-  );
-
   return (
-    <div
-      onTouchStart={handleStudioTouchStart}
-      onTouchMove={handleStudioTouchMove}
-      onWheel={handleStudioWheel}
-      className={`image-studio-stitch-root fixed top-0 right-0 bottom-0 h-[100dvh] max-h-[100dvh] flex flex-col overflow-hidden bg-[#070709] text-gray-100 z-[950] transition-all duration-300 ${
-        isStudioFullscreen
-          ? 'left-0 w-full'
-          : 'left-0 md:left-[240px] w-full md:w-[calc(100%-240px)]'
-      }`}
-    >
+    <div className="image-studio-stitch-root min-h-screen bg-[#070709] text-gray-100 -mx-4 sm:-mx-6 md:-mx-8 -mt-4 sm:-mt-6 px-3.5 sm:px-6 pt-4 pb-16 overflow-x-hidden">
       {/* Hidden Backup File Input (shared across Header and Gallery Toolbar) */}
       <input
         ref={backupFileInputRef}
@@ -2131,24 +2025,16 @@ export function ImageStudio() {
         onChange={handleUploadBackup}
       />
 
-      {/* 1. PINNED TOP BAR (Preserving 'Image Studio' original name) */}
-      <header className="shrink-0 flex flex-col gap-2 px-3 sm:px-5 py-2.5 bg-[#0b0b10]/95 border-b border-[#1d1d29] backdrop-blur-md z-20">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent('nexus-toggle-side-menu'))}
-              className="w-8 h-8 rounded-lg bg-[#17171e] hover:bg-[#22222d] border border-[#252532] flex items-center justify-center text-gray-200 transition shrink-0 cursor-pointer"
-              title="Open NEXUS Navigation Drawer"
-              aria-label="Open NEXUS Navigation Drawer"
-            >
-              <Menu size={15} />
-            </button>
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#ff2d87] to-[#8b2cf5] p-[1px] shadow-glow-subtle shrink-0">
-              <div className="w-full h-full bg-[#121218] rounded-[11px] flex items-center justify-center text-[#ff2d87]">
-                <ImageIcon size={16} />
+      <div className="max-w-[1160px] mx-auto">
+        {/* 1. TOP BAR (Preserving 'Image Studio' original name) */}
+        <header className="mb-5 flex flex-col gap-2 pb-3.5 border-b border-[#1d1d29]">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#ff2d87] to-[#8b2cf5] p-[1px] shadow-glow-subtle shrink-0">
+                <div className="w-full h-full bg-[#121218] rounded-[11px] flex items-center justify-center text-[#ff2d87]">
+                  <ImageIcon size={16} />
+                </div>
               </div>
-            </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-xs sm:text-sm font-extrabold tracking-tight text-white m-0 truncate">
@@ -2222,15 +2108,6 @@ export function ImageStudio() {
               <Settings size={14} className="text-gray-300" />
               <span className="hidden sm:inline text-[11px] font-mono font-medium">Providers</span>
             </Link>
-
-            <button
-              type="button"
-              onClick={() => setIsStudioFullscreen((prev) => !prev)}
-              className="w-8 h-8 rounded-lg bg-[#17171e] border border-[#252532] hover:border-pink-500/40 flex items-center justify-center text-gray-300 hover:text-white transition cursor-pointer"
-              title={isStudioFullscreen ? 'Dock with Sidebar (Desktop)' : 'Expand Full Screen'}
-            >
-              {isStudioFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
           </div>
         </div>
 
@@ -2269,15 +2146,8 @@ export function ImageStudio() {
         )}
       </header>
 
-      {/* Main Full-Screen Scrollable Content Area */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleStudioScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-3.5 sm:px-6 pt-4 pb-28 scroll-smooth"
-      >
-        <div className="max-w-[1160px] mx-auto">
-          {/* Main Studio Layout: Mobile single-column stack, Desktop 2-column balanced grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* Main Studio Layout: Mobile single-column stack, Desktop 2-column balanced grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* LEFT COLUMN: Controls, Providers, Prompt & Parameters */}
         <div className="lg:col-span-6 flex flex-col gap-4 min-w-0">
           {/* 2. PROVIDER / PRESET CHIPS */}
@@ -3776,24 +3646,7 @@ export function ImageStudio() {
           </section>
         </div>
       </div>
-
-        </div>
       </div>
-
-      {/* Smartphone Home Indicator Gesture Bar (Fixed at bottom edge when nav bar is hidden) */}
-      {!bottomNavVisible && (
-        <div
-          onClick={() => updateBottomNavVisibility(true)}
-          onTouchStart={handleStudioTouchStart}
-          onTouchMove={handleStudioTouchMove}
-          className="fixed bottom-0 left-0 right-0 h-7 flex flex-col items-center justify-end pb-1.5 bg-gradient-to-t from-[#070709]/95 via-[#070709]/40 to-transparent z-[990] cursor-pointer group"
-        >
-          <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#12121a]/85 border border-pink-500/35 group-hover:border-pink-400/70 transition-all shadow-md">
-            <div className="w-10 h-1 rounded-full bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5]" />
-            <ChevronUp size={11} className="text-pink-300/90" />
-          </div>
-        </div>
-      )}
 
       {/* 8a. Full Photo Gallery Overlay Modal (Stitch Dark Theme) */}
       {galleryModalOpen && (

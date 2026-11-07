@@ -1780,11 +1780,11 @@ export function JarvisChat({
       )}
 
       {/* ========================================================= */}
-      {/* 5. STICKY BOTTOM COMPOSER (STITCH + PARALLAX REPLICA)      */}
+      {/* 5. BOTTOM COMPOSER (STITCH + PARALLAX REPLICA)             */}
       {/* ========================================================= */}
       <div
         id="jarvis-input-container"
-        className="jarvis-bottom-console-card sticky bottom-1.5 z-30 w-full bg-gradient-to-t from-[var(--j-bg)] via-[var(--j-bg)]/95 to-transparent pt-3 pb-1"
+        className="jarvis-bottom-console-card relative z-20 w-full bg-gradient-to-t from-[var(--j-bg)] via-[var(--j-bg)]/95 to-transparent pt-3 pb-1"
       >
         <form
           onSubmit={(e) => {
