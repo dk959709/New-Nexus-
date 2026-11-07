@@ -1449,7 +1449,9 @@ export function MultiChatConsole({
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+    if (inputText) {
+      el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    }
   }, [inputText]);
 
   // Stop active speech or audio
@@ -5948,7 +5950,7 @@ export function MultiChatConsole({
           }}
         />
 
-        {/* POWERFUL ANIMATED GLOWING BORDER INPUT BOX (Minimal / Classic / Full Dark) */}
+        {/* AI ASSISTANT-STYLE MOBILE-FRIENDLY MULTI CHAT INPUT BOX (All features preserved) */}
         <div
           data-generating={isGenerating ? 'true' : 'false'}
           onDragOver={(e) => {
@@ -5964,12 +5966,12 @@ export function MultiChatConsole({
             setIsDraggingFiles(false);
             handleFilesSelected(e.dataTransfer.files);
           }}
-          className={`mc-glow-input-wrap ${
-            isFullDark
-              ? 'theme-fulldark-glow'
-              : isMinimal
-              ? 'theme-minimal-glow'
-              : ''
+          className={`mc-glow-input-wrap mc-no-border-glow ${
+            isMinimal
+              ? 'theme-minimal-glow !rounded-[17.5px]'
+              : isFullDark
+              ? 'theme-fulldark-glow !rounded-[29.5px]'
+              : '!rounded-[17.5px]'
           } ${isDraggingFiles ? 'ring-2 ring-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.45)]' : ''}`}
         >
           <form
@@ -5977,32 +5979,119 @@ export function MultiChatConsole({
               e.preventDefault();
               handleSend();
             }}
-            className={`relative overflow-hidden flex flex-col transition-all duration-200 px-3 sm:px-4 pt-2.5 pb-2 ${
-              isFullDark
-                ? 'bg-[#0b0b0e]/95 rounded-[24.5px]'
-                : isClassic
-                ? 'bg-slate-950/95 backdrop-blur-2xl rounded-[20.5px]'
-                : 'bg-zinc-950/95 backdrop-blur-2xl rounded-[20.5px]'
+            className={`relative transition-all ${
+              isClassic
+                ? 'rounded-2xl bg-slate-950 p-2.5 flex flex-col gap-2'
+                : isFullDark
+                ? 'rounded-[28px] bg-[#121215] p-3 flex flex-col gap-2'
+                : 'rounded-2xl bg-[#16161a] p-2.5 flex flex-col gap-2'
             }`}
           >
-            {/* Animated Top Laser Sweep Beam inside Input */}
-            <div className="mc-laser-line" />
+            {/* Decorative Graphics & Dual Laser Animation Layer (matches AI Assistant input box) */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 rounded-[inherit] overflow-hidden z-0"
+            >
+              <div className="mc-laser-line" />
+              <div className="mc-laser-line-bottom" />
 
-            {/* Subtle Cybernetic Corner Reticles */}
-            <div className="pointer-events-none absolute top-1.5 left-2 w-2 h-2 border-t border-l border-cyan-400/50 rounded-tl-sm" />
-            <div className="pointer-events-none absolute top-1.5 right-2 w-2 h-2 border-t border-r border-purple-400/50 rounded-tr-sm" />
-            <div className="pointer-events-none absolute bottom-1.5 left-2 w-2 h-2 border-b border-l border-cyan-400/40 rounded-bl-sm" />
-            <div className="pointer-events-none absolute bottom-1.5 right-2 w-2 h-2 border-b border-r border-purple-400/40 rounded-br-sm" />
+              <svg
+                className="absolute top-1.5 left-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M1 6V2C1 1.44772 1.44772 1 2 1H6"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <svg
+                className="absolute top-1.5 right-1.5 w-3.5 h-3.5 text-violet-400/45"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M15 6V2C15 1.44772 14.5523 1 14 1H10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <svg
+                className="absolute bottom-1.5 left-1.5 w-3.5 h-3.5 text-emerald-400/40"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M1 10V14C1 14.5523 1.44772 15 2 15H6"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <svg
+                className="absolute bottom-1.5 right-1.5 w-3.5 h-3.5 text-cyan-400/45"
+                viewBox="0 0 16 16"
+                fill="none"
+              >
+                <path
+                  d="M15 10V14C15 14.5523 14.5523 15 14 15H10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
 
-            {/* Ambient Interior Glow Orbs */}
-            <div className="pointer-events-none absolute -top-12 -left-10 w-36 h-36 rounded-full bg-cyan-500/10 blur-2xl" />
-            <div className="pointer-events-none absolute -bottom-12 -right-10 w-36 h-36 rounded-full bg-purple-500/10 blur-2xl" />
-
-            {/* Row 1: Compact Single-Line Scrollable @Persona Target + Quick Modifier Strip */}
-            <div className="relative z-10 flex items-center justify-between gap-2 pb-2 mb-1.5 border-b border-white/[0.07] overflow-x-auto no-scrollbar">
-              {/* Direct @Persona Target Pills */}
+            {/* Row 1: Compact Mobile-Friendly Scrollable @Persona Target + Quick Modifier Strip */}
+            <div
+              className={`relative z-10 flex items-center justify-between gap-1.5 pb-1.5 border-b overflow-x-auto no-scrollbar min-w-0 ${
+                isClassic
+                  ? 'border-cyan-500/20'
+                  : isFullDark
+                  ? 'border-[#2e2e2e]'
+                  : 'border-zinc-800/60'
+              }`}
+            >
+              {/* Compact Tri-Orb Neural Indicator + Direct @Persona Target Pills */}
               <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[10px] font-mono text-zinc-400 flex items-center gap-0.5 mr-0.5">
+                <div
+                  className={`w-5 h-5 rounded-md shrink-0 grid place-items-center border transition-all mr-0.5 ${
+                    isGenerating || inputText.trim().length > 0 || attachedFiles.length > 0
+                      ? 'bg-cyan-500/15 border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
+                      : 'bg-white/[0.03] border-white/10'
+                  }`}
+                  title="Tri-Mind Neural Input Core"
+                >
+                  <svg
+                    viewBox="0 0 28 28"
+                    className={`w-3.5 h-3.5 ${
+                      isGenerating
+                        ? 'mc-orbit-fast'
+                        : inputText.trim().length > 0
+                        ? 'mc-orbit-cw'
+                        : ''
+                    }`}
+                  >
+                    <circle
+                      cx="14"
+                      cy="14"
+                      r="10"
+                      fill="none"
+                      stroke="rgba(56,189,248,0.4)"
+                      strokeWidth="1.2"
+                      strokeDasharray="3 3"
+                    />
+                    <circle cx="14" cy="4" r="2.2" fill="#38bdf8" />
+                    <circle cx="22.6" cy="19" r="2.2" fill="#f59e0b" />
+                    <circle cx="5.4" cy="19" r="2.2" fill="#c084fc" />
+                    <circle cx="14" cy="14" r="2.5" fill="#ffffff" className="animate-pulse" />
+                  </svg>
+                </div>
+
+                <span className="text-[10px] font-mono text-zinc-400 flex items-center gap-0.5">
                   <AtSign size={10} className={isClassic ? 'text-cyan-400' : 'text-indigo-400'} />
                 </span>
                 {enabledPersonas.map((p, pIdx) => {
@@ -6012,7 +6101,7 @@ export function MultiChatConsole({
                       key={`direct_target_${p.id || pIdx}_${pIdx}`}
                       type="button"
                       onClick={() => handleToggleDirectPersona(p.id)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold transition-all shrink-0 cursor-pointer hover:scale-105"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10.5px] font-semibold transition-all shrink-0 cursor-pointer active:scale-95"
                       style={{
                         background: isDirectlyTargeted
                           ? `${p.accentColor}30`
@@ -6021,7 +6110,7 @@ export function MultiChatConsole({
                         border: `1px solid ${
                           isDirectlyTargeted ? p.accentColor : 'rgba(255,255,255,0.1)'
                         }`,
-                        boxShadow: isDirectlyTargeted ? `0 0 12px ${p.accentColor}40` : 'none',
+                        boxShadow: isDirectlyTargeted ? `0 0 10px ${p.accentColor}35` : 'none',
                         opacity: directTargetIds.length === 0 || isDirectlyTargeted ? 1 : 0.45,
                       }}
                       title={`Target @${p.name} directly`}
@@ -6047,9 +6136,9 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={handleTogglePromptSplitter}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 transition-all border shrink-0 cursor-pointer ${
+                  className={`px-2 py-0.5 rounded-lg text-[10.5px] font-medium flex items-center gap-1 transition-all border shrink-0 cursor-pointer ${
                     showPromptSplitter
-                      ? 'bg-violet-500/25 text-violet-200 border-violet-400/60 shadow-[0_0_12px_rgba(139,92,246,0.3)]'
+                      ? 'bg-violet-500/20 text-violet-200 border-violet-400/50 shadow-[0_0_10px_rgba(139,92,246,0.25)]'
                       : 'bg-white/[0.04] hover:bg-violet-500/15 text-zinc-300 hover:text-violet-200 border-white/[0.08] hover:border-violet-400/40'
                   }`}
                   title="Smart Prompt Splitter: Deconstruct your prompt into 3 specialized sub-missions for @NOVA, @ORBIT & @COSMOS before sending"
@@ -6060,7 +6149,7 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Deep Analysis]:')}
-                  className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-cyan-500/15 border border-white/[0.08] hover:border-cyan-400/40 text-[10px] text-zinc-300 hover:text-cyan-200 transition-all whitespace-nowrap shrink-0"
+                  className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-cyan-500/15 border border-white/[0.08] hover:border-cyan-400/40 text-[10.5px] text-zinc-300 hover:text-cyan-200 transition-all whitespace-nowrap shrink-0"
                   title="Prefix query with Deep Analysis"
                 >
                   🔬 Deep
@@ -6068,7 +6157,7 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Fast Summary]:')}
-                  className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-amber-500/15 border border-white/[0.08] hover:border-amber-400/40 text-[10px] text-zinc-300 hover:text-amber-200 transition-all whitespace-nowrap shrink-0"
+                  className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-amber-500/15 border border-white/[0.08] hover:border-amber-400/40 text-[10.5px] text-zinc-300 hover:text-amber-200 transition-all whitespace-nowrap shrink-0"
                   title="Prefix query with Fast Summary"
                 >
                   ⚡ Fast
@@ -6076,7 +6165,7 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={() => applyQueryModifier('[Compare & Contrast]:')}
-                  className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-purple-500/15 border border-white/[0.08] hover:border-purple-400/40 text-[10px] text-zinc-300 hover:text-purple-200 transition-all whitespace-nowrap shrink-0 hidden sm:inline-flex"
+                  className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-purple-500/15 border border-white/[0.08] hover:border-purple-400/40 text-[10.5px] text-zinc-300 hover:text-purple-200 transition-all whitespace-nowrap shrink-0"
                   title="Prefix query with Compare & Contrast"
                 >
                   ⚖️ Compare
@@ -6084,11 +6173,11 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={() => setShowQuickPrompts(!showQuickPrompts)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 transition-all border shrink-0 ${
+                  className={`px-2 py-0.5 rounded-lg text-[10.5px] font-medium flex items-center gap-1 transition-all border shrink-0 ${
                     showQuickPrompts
                       ? isClassic
-                        ? 'bg-cyan-500/25 text-cyan-200 border-cyan-400/50 shadow-[0_0_12px_rgba(6,182,212,0.3)]'
-                        : 'bg-indigo-500/25 text-indigo-200 border-indigo-400/50 shadow-[0_0_12px_rgba(99,102,241,0.3)]'
+                        ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.25)]'
+                        : 'bg-indigo-500/20 text-indigo-200 border-indigo-400/50 shadow-[0_0_10px_rgba(99,102,241,0.25)]'
                       : 'bg-white/[0.04] text-zinc-300 hover:text-white border-white/[0.08]'
                   }`}
                 >
@@ -6098,9 +6187,9 @@ export function MultiChatConsole({
               </div>
             </div>
 
-            {/* Attached Files Strip inside Input Dock */}
+            {/* Attached Files Strip inside Input Box */}
             {attachedFiles.length > 0 && (
-              <div className="relative z-10 flex items-center gap-1.5 flex-wrap pb-2 mb-1.5 border-b border-white/[0.06]">
+              <div className="relative z-10 flex items-center gap-1.5 flex-wrap pb-1">
                 <span className="text-[10px] font-mono text-cyan-300 font-bold flex items-center gap-1">
                   <Paperclip size={10} />
                   Attached ({attachedFiles.length}/5):
@@ -6111,7 +6200,7 @@ export function MultiChatConsole({
                     className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-400/40 text-[10.5px] font-mono text-cyan-100"
                   >
                     <FileText size={10} className="text-cyan-400 shrink-0" />
-                    <span className="truncate max-w-[150px]">{file.name}</span>
+                    <span className="truncate max-w-[140px] sm:max-w-[200px]">{file.name}</span>
                     <span className="text-[9px] text-cyan-300/70">
                       {(file.sizeBytes / 1024).toFixed(1)}KB
                     </span>
@@ -6128,85 +6217,69 @@ export function MultiChatConsole({
               </div>
             )}
 
-            {/* Row 2: Animated Tri-Orb Graphic + Auto-Resizing Textarea */}
-            <div className="relative z-10 flex items-center gap-2.5 w-full">
-              {/* Interactive Animated Tri-Orb Neural Indicator */}
-              <div
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl shrink-0 grid place-items-center border transition-all ${
-                  isGenerating || inputText.trim().length > 0 || attachedFiles.length > 0
-                    ? 'bg-cyan-500/15 border-cyan-400/50 shadow-[0_0_14px_rgba(6,182,212,0.35)]'
-                    : 'bg-white/[0.03] border-white/10'
+            {/* Row 2: Full-Width Auto-Resizing Textarea matching AI Assistant Input Box & Text Size */}
+            <div className="relative z-10 flex items-start w-full">
+              <textarea
+                ref={inputRef}
+                rows={1}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  isDraggingFiles
+                    ? 'Drop code, CSV, JSON, or markdown files here for NOVA, ORBIT & COSMOS...'
+                    : directTargetIds.length > 0
+                    ? `Message ${directTargetIds.map((id) => '@' + id.toUpperCase()).join(', ')}...`
+                    : 'Ask NOVA, ORBIT & COSMOS anything...'
+                }
+                disabled={isGenerating}
+                className={`w-full bg-transparent text-[14.5px] font-medium leading-relaxed resize-none outline-none px-2 pt-1 pb-1 ai-user-query-input ${
+                  inputText ? 'pr-8' : 'pr-2'
+                } min-h-[44px] max-h-[180px] ${
+                  isClassic
+                    ? 'text-white placeholder-cyan-300/40'
+                    : isFullDark
+                    ? 'text-[#ececec] placeholder-[#737373]'
+                    : 'text-zinc-100 placeholder-zinc-500'
                 }`}
-                title="Tri-Mind Neural Input Core"
-              >
-                <svg
-                  viewBox="0 0 28 28"
-                  className={`w-5 h-5 ${
-                    isGenerating
-                      ? 'mc-orbit-fast'
-                      : inputText.trim().length > 0
-                      ? 'mc-orbit-cw'
-                      : ''
-                  }`}
+              />
+              {inputText && (
+                <button
+                  type="button"
+                  onClick={() => setInputText('')}
+                  className="absolute right-1 top-1.5 p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
+                  title="Clear input"
+                  aria-label="Clear input"
                 >
-                  <circle
-                    cx="14"
-                    cy="14"
-                    r="10"
-                    fill="none"
-                    stroke="rgba(56,189,248,0.4)"
-                    strokeWidth="1.2"
-                    strokeDasharray="3 3"
-                  />
-                  <circle cx="14" cy="4" r="2.2" fill="#38bdf8" />
-                  <circle cx="22.6" cy="19" r="2.2" fill="#f59e0b" />
-                  <circle cx="5.4" cy="19" r="2.2" fill="#c084fc" />
-                  <circle cx="14" cy="14" r="2.5" fill="#ffffff" className="animate-pulse" />
-                </svg>
-              </div>
-
-              <div className="relative flex-1 min-w-0 flex items-center">
-                <textarea
-                  ref={inputRef}
-                  rows={1}
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    isDraggingFiles
-                      ? 'Drop code, CSV, JSON, or markdown files here for NOVA, ORBIT & COSMOS...'
-                      : directTargetIds.length > 0
-                      ? `Message ${directTargetIds.map((id) => '@' + id.toUpperCase()).join(', ')}...`
-                      : 'Ask NOVA, ORBIT & COSMOS anything, or drop files to inspect...'
-                  }
-                  disabled={isGenerating}
-                  className="w-full bg-transparent border-0 text-white placeholder-zinc-500 text-sm sm:text-[15px] focus:outline-none resize-none leading-relaxed min-h-[38px] max-h-[150px] py-1 pr-7 font-sans"
-                />
-                {inputText && (
-                  <button
-                    type="button"
-                    onClick={() => setInputText('')}
-                    className="absolute right-0 top-1.5 p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
-                    title="Clear input"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
+                  <X size={14} />
+                </button>
+              )}
             </div>
 
-            {/* Row 3: Bottom Controls Bar (Attach File, Doc Lens, Web Lens, Mode, Domain, Glowing Send Reactor Button) */}
-            <div className="relative z-10 flex items-center justify-between gap-1.5 pt-1.5 mt-1 border-t border-white/[0.07]">
-              {/* Left Quick Tools */}
-              <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar min-w-0">
-                {/* Feature 3 (New): Multi-File / Code / CSV Attach Button */}
+            {/* Row 3: Bottom Controls inside input box (matches AI Assistant bottom toolbar & Send button) */}
+            <div
+              className={`relative z-10 flex items-center justify-between pt-1 border-t gap-1.5 min-w-0 ${
+                isClassic
+                  ? 'border-cyan-500/20'
+                  : isFullDark
+                  ? 'border-[#2e2e2e]'
+                  : 'border-zinc-800/60'
+              }`}
+            >
+              {/* Left Quick Tools (scrollable on mobile just like AI Assistant) */}
+              <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar min-w-0 flex-1 py-0.5">
+                {/* Attach File Button */}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 cursor-pointer ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 cursor-pointer ${
                     attachedFiles.length > 0
-                      ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 font-medium shadow-[0_0_10px_rgba(6,182,212,0.15)]'
+                      : isClassic
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : isFullDark
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title="Attach or drag-and-drop Code, CSV, JSON, Markdown, SQL or Text files for all 3 personas to inspect"
                 >
@@ -6223,40 +6296,44 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={toggleDocLens}
-                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                     docLensEnabled
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/45 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
-                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 font-medium shadow-[0_0_10px_rgba(245,158,11,0.15)]'
+                      : isClassic
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : isFullDark
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title="Toggle Document Lens RAG"
                 >
                   <BookOpen size={12} className={docLensEnabled ? 'text-amber-400' : 'text-zinc-400'} />
                   <span>Docs</span>
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      docLensEnabled ? 'bg-amber-400 animate-ping' : 'bg-zinc-600'
-                    }`}
-                  />
+                  {docLensEnabled && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+                  )}
                 </button>
 
                 {/* Web Lens Toggle */}
                 <button
                   type="button"
                   onClick={toggleWebLens}
-                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                     webLensEnabled
-                      ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/45 shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35 font-medium shadow-[0_0_10px_rgba(6,182,212,0.15)]'
+                      : isClassic
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : isFullDark
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title="Toggle Live Web Search Grounding"
                 >
                   <Globe size={12} className={webLensEnabled ? 'text-cyan-400' : 'text-zinc-400'} />
                   <span>Web</span>
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      webLensEnabled ? 'bg-cyan-400 animate-ping' : 'bg-zinc-600'
-                    }`}
-                  />
+                  {webLensEnabled && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.8)]" />
+                  )}
                 </button>
 
                 {/* Quick Dialogue Mode Cycle Button */}
@@ -6267,7 +6344,13 @@ export function MultiChatConsole({
                     const next = modes[(modes.indexOf(dialogueMode) + 1) % modes.length];
                     handleSelectDialogueMode(next);
                   }}
-                  className="px-2 py-1 rounded-lg border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] text-[11px] font-medium text-zinc-300 flex items-center gap-1 transition-all shrink-0"
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
+                    isClassic
+                      ? 'text-cyan-300/80 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : isFullDark
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-300 border-transparent hover:text-white hover:bg-zinc-800/60'
+                  }`}
                   title="Click to cycle Dialogue Mode (Harmony / Debate / Parallel)"
                 >
                   <span>
@@ -6280,32 +6363,40 @@ export function MultiChatConsole({
                 <button
                   type="button"
                   onClick={() => setShowCategoryStrip((prev) => !prev)}
-                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                     showCategoryStrip || selectedCategory !== 'general'
                       ? isClassic
-                        ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35'
-                        : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/35'
-                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                        ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35 font-medium'
+                        : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/35 font-medium'
+                      : isClassic
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : isFullDark
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title="Toggle Domain Focus Bar"
                 >
                   <span>🎯</span>
-                  <span className="capitalize hidden xs:inline">{selectedCategory}</span>
+                  <span className="capitalize">{selectedCategory}</span>
                 </button>
 
-                {/* Feature 3: Roleplay Scenario Casting Toggle */}
+                {/* Roleplay Scenario Casting Toggle */}
                 <button
                   type="button"
                   onClick={() => setShowScenarioStrip((prev) => !prev)}
-                  className={`px-2 py-1 rounded-lg border text-[11px] font-medium flex items-center gap-1 transition-all shrink-0 ${
+                  className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                     showScenarioStrip || selectedScenario !== 'standard'
-                      ? 'bg-purple-500/20 text-purple-200 border-purple-400/50 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
-                      : 'bg-white/[0.03] border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-purple-500/15 text-purple-300 border-purple-500/40 font-medium shadow-[0_0_10px_rgba(168,85,247,0.15)]'
+                      : isClassic
+                      ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
+                      : isFullDark
+                      ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
+                      : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title="Cast NOVA, ORBIT & COSMOS into specialized roleplay scenarios (Startup Pitch Tank, Code Review, War Room, Socratic Trial)"
                 >
                   <Drama size={12} className="text-purple-400" />
-                  <span className="hidden xs:inline">
+                  <span>
                     {selectedScenario === 'standard'
                       ? 'Role Cast'
                       : getScenarioCastById(selectedScenario).name}
@@ -6313,41 +6404,40 @@ export function MultiChatConsole({
                 </button>
 
                 {charCount > 0 && (
-                  <span className="text-[10px] font-mono text-cyan-300/80 px-1.5 hidden sm:inline shrink-0">
+                  <span className="text-[10px] font-mono text-cyan-300/80 px-1.5 shrink-0">
                     {charCount}c · {wordCount}w
                   </span>
                 )}
               </div>
 
-              {/* Right: High-Energy Glowing Send Reactor Button */}
-              <button
-                type="submit"
-                disabled={isGenerating || (!inputText.trim() && attachedFiles.length === 0)}
-                className={`relative h-8 sm:h-9 px-3 sm:px-4 rounded-full flex items-center justify-center gap-1.5 font-extrabold text-xs tracking-wide transition-all shrink-0 ${
-                  isGenerating || (!inputText.trim() && attachedFiles.length === 0)
-                    ? isFullDark
-                      ? 'bg-[#222226] text-zinc-600 cursor-not-allowed'
-                      : 'bg-white/5 text-zinc-600 cursor-not-allowed'
-                    : isFullDark
-                    ? 'bg-white text-black hover:bg-zinc-100 shadow-[0_0_20px_rgba(255,255,255,0.45)] active:scale-95 cursor-pointer'
-                    : isClassic
-                    ? 'bg-gradient-to-r from-cyan-400 via-sky-400 to-teal-300 text-slate-950 shadow-[0_0_22px_rgba(6,182,212,0.6)] hover:shadow-[0_0_30px_rgba(6,182,212,0.85)] active:scale-95 cursor-pointer'
-                    : 'bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-500 text-white shadow-[0_0_22px_rgba(99,102,241,0.55)] hover:shadow-[0_0_30px_rgba(139,92,246,0.8)] active:scale-95 cursor-pointer'
-                }`}
-                title="Broadcast to Multi Chat (Enter)"
-              >
-                {isGenerating ? (
-                  <>
+              {/* Right: Circular Send Button matching AI Assistant */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="submit"
+                  disabled={isGenerating || (!inputText.trim() && attachedFiles.length === 0)}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                    (inputText.trim() || attachedFiles.length > 0) && !isGenerating
+                      ? isClassic
+                        ? 'bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-950 hover:from-cyan-300 hover:to-blue-500 shadow-[0_0_18px_rgba(6,182,212,0.75)] cursor-pointer scale-105'
+                        : isFullDark
+                        ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_16px_rgba(255,255,255,0.55)] cursor-pointer scale-105'
+                        : 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-500 text-white hover:brightness-110 cursor-pointer shadow-[0_0_18px_rgba(99,102,241,0.65)] scale-105'
+                      : isClassic
+                      ? 'bg-cyan-950/40 text-cyan-700 cursor-not-allowed opacity-50 border border-cyan-500/10'
+                      : isFullDark
+                      ? 'bg-[#333333] text-[#737373] cursor-not-allowed opacity-50'
+                      : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'
+                  }`}
+                  title="Broadcast to Multi Chat (Enter)"
+                  aria-label="Send message"
+                >
+                  {isGenerating ? (
                     <Loader2 size={14} className="animate-spin" />
-                    <span className="hidden sm:inline font-mono text-[11px]">Syncing...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="hidden sm:inline">Send</span>
-                    <Send size={13} className="translate-x-[0.5px]" />
-                  </>
-                )}
-              </button>
+                  ) : (
+                    <Send size={14} className="translate-x-px" />
+                  )}
+                </button>
+              </div>
             </div>
           </form>
         </div>

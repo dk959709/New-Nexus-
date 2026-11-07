@@ -67,6 +67,7 @@ export interface WebFetchResult {
   title: string;
   description: string;
   headings: string[];
+  links?: Array<{ text: string; url: string }>;
   textContent: string;
   length: number;
   rawTotalLength?: number;

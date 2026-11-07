@@ -177,6 +177,10 @@ type Message = {
   commanderTopic?: string;
   commanderStatus?: 'running' | 'completed' | 'aborted' | 'error';
   commanderSavedState?: CommanderFeedSavedState;
+  webFetcherOptions?: string[];
+  webFetcherArticleRef?: { url: string; question: string };
+  webFetcherDomainSearchRef?: { domain: string; topic: string };
+  webFetcherCanBackToList?: boolean;
 };
 
 // Helper: Clean user's message into a concise search topic for Wikimedia Commons
@@ -290,10 +294,10 @@ function checkIsOfficialDomain(url: string, query: string): boolean {
 }
 
 const NAV_BOILERPLATE_REGEX =
-  /\b(?:skip to (?:main )?content|toggle navigation|main menu|open menu|close menu|contact sales|talk to sales|request a demo|book a demo|schedule a demo|log\s*in|sign\s*in|sign\s*up|try claude|get started(?: for free)?|download app)\b/gi;
+  /(?:skip\s*to\s*(?:main\s*)?content|toggle\s*navigation|main\s*menu|open\s*menu|close\s*menu|contact\s*sales|talk\s*to\s*sales|request\s*a\s*demo|book\s*a\s*demo|schedule\s*a\s*demo|log\s*in|sign\s*in|sign\s*up|try\s*claude|get\s*started(?:\s*for\s*free)?|download\s*app|claude\s*partner\s*network|partner\s*network|claude\s*academy|customer\s*stories|service\s*partners|powered\s*by\s*claude|help\s*(?:and|&)\s*security|trust\s*(?:and|&)\s*security|trust\s*center|resources\s*overview|overview\s*articles|articles\s*webinars|case\s*studies|all\s*rights\s*reserved|privacy\s*policy|terms\s*of\s*service|cookie\s*(?:policy|settings))/gi;
 
 const NAV_MENU_SEQUENCE_REGEX =
-  /\b(?:Resources\s+)?(?:Overview\s+)?(?:Articles\s+)?(?:Webinars\s*)(?:Customer stories\s*)?(?:Tutorials\s*)?(?:Case studies\s*)?/gi;
+  /(?:Resources\s+)?(?:Overview\s+)?(?:Articles\s+)?(?:Webinars\s*)(?:Customer\s*stories\s*)?(?:Tutorials\s*)?(?:Case\s*studies\s*)?/gi;
 
 const NAV_MENU_WORDS = new Set([
   'resources', 'overview', 'articles', 'webinars', 'tutorials', 'pricing', 'solutions',
@@ -301,13 +305,14 @@ const NAV_MENU_WORDS = new Set([
   'documentation', 'support', 'status', 'security', 'privacy', 'terms', 'cookies',
   'cookie', 'legal', 'menu', 'navigation', 'home', 'about', 'contact', 'sales',
   'login', 'signin', 'signup', 'enterprise', 'team', 'api', 'platform', 'customers',
-  'stories', 'press', 'help', 'center', 'directory', 'sitemap'
+  'customer', 'stories', 'press', 'help', 'center', 'directory', 'sitemap',
+  'events', 'event', 'partner', 'partners', 'network', 'academy', 'service', 'services', 'powered'
 ]);
 
 function isLikelyNavSegment(segment: string): boolean {
   const s = segment.trim();
   if (!s) return true;
-  if (/^(?:contact sales|talk to sales|resources|overview|articles|webinars|customer stories|pricing|solutions|products?|company|research|careers|news|blog|docs|documentation|support|log\s*in|sign\s*in|sign\s*up|get started|try claude|menu|home|about|legal|privacy|terms)$/i.test(s)) {
+  if (/^(?:contact\s*sales|talk\s*to\s*sales|resources|overview|articles|webinars|customer\s*stories|claude\s*academy|claude\s*partner\s*network|service\s*partners|powered\s*by\s*claude|events|help\s*(?:and|&)\s*security|pricing|solutions|products?|company|research|careers|news|blog|docs|documentation|support|log\s*in|sign\s*in|sign\s*up|get\s*started|try\s*claude|menu|home|about|legal|privacy|terms)$/i.test(s)) {
     return true;
   }
   const words = s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
@@ -322,10 +327,15 @@ function isLikelyNavSegment(segment: string): boolean {
 function cleanWebFetcherSnippet(rawDescription?: string, rawTitle?: string): string {
   const cleanPiece = (input: string): string => {
     const text = input
-      .replace(/\s+/g, ' ')
+      // Split words stuck together without spaces (e.g. "salesTry" -> "sales Try")
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      // Strip markdown heading blocks when followed by nav labels (e.g. "# Articles", "## Help and security")
+      .replace(/#{1,6}\s*(?:articles|help\s*(?:and|&)\s*security|resources|overview|webinars|events|customer\s*stories|service\s*partners|partner\s*network|claude\s*academy|pricing|solutions|products?|company|research|careers|docs|documentation|support|security|privacy|terms|about|contact|menu|navigation)\b/gi, ' · ')
+      // Skip any remaining markdown heading marks (#, ##, ###)
+      .replace(/#{1,6}\s*/g, ' · ')
       .replace(NAV_BOILERPLATE_REGEX, ' · ')
       .replace(NAV_MENU_SEQUENCE_REGEX, ' · ')
-      .replace(/\bCustomer stories\b/gi, ' · ')
+      .replace(/\s+/g, ' ')
       .trim();
 
     // Split on common nav separators or sentence boundaries
@@ -333,13 +343,13 @@ function cleanWebFetcherSnippet(rawDescription?: string, rawTitle?: string): str
     const keptParts: string[] = [];
 
     for (let part of rawParts) {
-      part = part.trim();
+      part = part.replace(/^#+/, '').trim();
       if (!part) continue;
 
-      // Strip leading runs of 3+ Title-Case menu words (e.g. "Resources Overview Articles Webinars ...")
+      // Strip leading runs of Title-Case menu words
       part = part.replace(/^(?:[A-Z][a-zA-Z0-9&-]*\s+){2,}(?=[A-Z][a-z]+\s+(?:is|are|was|were|helps|lets|builds|provides|offers|delivers|brings|powers|empowers|enables|creates|makes|gives|allows|supports|connects|works|can|will|has|have)\b)/, '');
 
-      // Also strip leading nav words one by one if they belong to NAV_MENU_WORDS
+      // Strip leading nav words one by one if they belong to NAV_MENU_WORDS
       const tokens = part.split(/\s+/);
       let startIdx = 0;
       while (
@@ -348,8 +358,11 @@ function cleanWebFetcherSnippet(rawDescription?: string, rawTitle?: string): str
       ) {
         startIdx++;
       }
-      if (startIdx >= 2) {
-        part = tokens.slice(startIdx).join(' ').trim();
+      if (startIdx >= 1 && startIdx < tokens.length) {
+        const rest = tokens.slice(startIdx).join(' ').trim();
+        if (startIdx >= 2 || /^[A-Z]/.test(rest)) {
+          part = rest;
+        }
       }
 
       if (!part || isLikelyNavSegment(part)) continue;
@@ -361,12 +374,12 @@ function cleanWebFetcherSnippet(rawDescription?: string, rawTitle?: string): str
   };
 
   let cleaned = cleanPiece(rawDescription || '');
-  if (cleaned.length < 15 && rawTitle) {
-    const fallback = cleanPiece(rawTitle);
-    if (fallback && fallback.toLowerCase() !== (rawTitle || '').trim().toLowerCase()) {
-      cleaned = fallback;
-    } else if (!cleaned) {
-      cleaned = fallback;
+  if (cleaned.length < 40 && rawTitle) {
+    const cleanTitle = cleanPiece(rawTitle) || rawTitle.replace(/#{1,6}\s*/g, '').trim();
+    if (cleaned && cleanTitle && !cleaned.toLowerCase().includes(cleanTitle.toLowerCase())) {
+      cleaned = `${cleanTitle} — ${cleaned}`;
+    } else if (cleanTitle) {
+      cleaned = cleanTitle;
     }
   }
   return cleaned.slice(0, 140).trim();
@@ -374,6 +387,9 @@ function cleanWebFetcherSnippet(rawDescription?: string, rawTitle?: string): str
 
 function cleanFetchedPageText(rawText: string): string {
   if (!rawText) return '';
+  const standaloneNavLineRegex =
+    /^(?:skip\s*to\s*(?:main\s*)?content|toggle\s*navigation|main\s*menu|open\s*menu|close\s*menu|contact\s*sales|talk\s*to\s*sales|request\s*a\s*demo|book\s*a\s*demo|schedule\s*a\s*demo|log\s*in|sign\s*in|sign\s*up|try\s*claude|get\s*started(?:\s*for\s*free)?|download\s*app)$/i;
+
   const lines = rawText
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
@@ -381,15 +397,217 @@ function cleanFetchedPageText(rawText: string): string {
   const cleanedLines: string[] = [];
   for (const rawLine of lines) {
     const line = rawLine
-      .replace(NAV_BOILERPLATE_REGEX, ' ')
-      .replace(NAV_MENU_SEQUENCE_REGEX, ' ')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/\[Note:\s*Page content truncated[^\]]*\]/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
     if (!line) continue;
-    if (line.length < 60 && isLikelyNavSegment(line)) continue;
+    if (standaloneNavLineRegex.test(line)) continue;
     cleanedLines.push(line);
   }
   return cleanedLines.join('\n').slice(0, 8000).trim();
+}
+
+function buildPinnedPageLinks(
+  apiLinks: Array<{ text: string; url: string }> | undefined,
+  rawText: string,
+  baseUrl: string
+): Array<{ text: string; url: string }> {
+  const results: Array<{ text: string; url: string }> = [];
+  const seen = new Set<string>();
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+
+  const addCandidate = (rawTextLabel: string, rawHref: string) => {
+    if (results.length >= 80) return;
+    const text = (rawTextLabel || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+    const href = (rawHref || '').trim();
+    if (!text || text.length < 2 || !href || href.startsWith('#') || /^(?:javascript|mailto|tel|data):/i.test(href)) {
+      return;
+    }
+    try {
+      const u = new URL(href, baseUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+      u.hash = '';
+      const resolvedUrl = u.href;
+      if (resolvedUrl.replace(/\/+$/, '') === normalizedBase) return;
+      const key = `${resolvedUrl.toLowerCase()}::${text.toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      results.push({ text, url: resolvedUrl });
+    } catch {
+      // Ignore invalid URLs
+    }
+  };
+
+  if (Array.isArray(apiLinks)) {
+    for (const item of apiLinks) {
+      if (item && typeof item.text === 'string' && typeof item.url === 'string') {
+        addCandidate(item.text, item.url);
+      }
+    }
+  }
+
+  if (rawText && results.length < 80) {
+    const mdLinkRegex = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = mdLinkRegex.exec(rawText)) !== null && results.length < 80) {
+      addCandidate(match[1] || '', match[2] || '');
+    }
+  }
+
+  return results.slice(0, 80);
+}
+
+const TOPIC_FILLER_STOPWORDS = new Set([
+  'tell', 'more', 'about', 'explain', 'underlying', 'mechanism', 'what', 'whats', 'is', 'are', 'was', 'were',
+  'this', 'that', 'it', 'one', 'first', 'second', 'third', 'last', 'item', 'topic', 'article', 'page', 'pinned',
+  'webpage', 'website', 'site', 'section', 'detail', 'details', 'little', 'very', 'only', 'mentions', 'says',
+  'briefly', 'lists', 'headline', 'does', 'not', 'provide', 'full', 'further', 'information', 'please', 'can',
+  'you', 'give', 'me', 'on', 'in', 'of', 'to', 'for', 'the', 'a', 'an', 'and', 'or', 'with', 'from', 'into', 'by'
+]);
+
+function extractCoreTopicFromText(userQuery: string, assistantAnswer: string = '', recentContext: string = ''): string {
+  const stripConversationalLead = (input: string): string => {
+    return (input || '')
+      .replace(/^\/[a-z]+\s+/i, '')
+      .replace(
+        /^(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?(?:tell\s+me\s+more\s+about|tell\s+more\s+about|tell\s+me\s+about|explain\s+the\s+underlying\s+mechanism\s+of|explain\s+more\s+about|explain|go\s+deeper\s+into|deep\s+dive\s+into|provide\s+concrete\s+real-world\s+examples[^"]*for|what\s+are\s+the\s+biggest\s+common\s+pitfalls[^"]*for|what\s+about|what\s+is|what\s+are|how\s+does|more\s+details?\s+(?:on|about)|details?\s+(?:on|about)|more\s+(?:on|about)|elaborate\s+on|describe|read\s+more\s+about)\s+/i,
+        ''
+      )
+      .replace(/^["'`“”‘’]+|["'`“”‘’?.!,;:]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const cleanedUser = stripConversationalLead(userQuery);
+  const isVagueUserRef =
+    !cleanedUser ||
+    cleanedUser.length < 3 ||
+    /^(?:this|it|that|that\s+one|this\s+one|the\s+(?:first|second|third|last|next)\s+one|(?:first|second|third)\s+item|\d+)$/i.test(
+      cleanedUser
+    );
+
+  if (!isVagueUserRef) {
+    return cleanedUser;
+  }
+
+  // Try quoted or bold title in assistantAnswer first
+  const boldMatch = assistantAnswer.match(/\*\*([^*]{4,90})\*\*/);
+  if (boldMatch && boldMatch[1]) {
+    const candidate = stripConversationalLead(boldMatch[1]);
+    if (candidate.length >= 4 && !/^(?:note|summary|overview)$/i.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  const quotedMatch = assistantAnswer.match(/"([^"]{4,90})"/);
+  if (quotedMatch && quotedMatch[1]) {
+    const candidate = stripConversationalLead(quotedMatch[1]);
+    if (candidate.length >= 4) {
+      return candidate;
+    }
+  }
+
+  // Try recent conversation bold or headings
+  const recentBold = recentContext.match(/\*\*([^*]{4,90})\*\*/);
+  if (recentBold && recentBold[1]) {
+    const candidate = stripConversationalLead(recentBold[1]);
+    if (candidate.length >= 4) return candidate;
+  }
+
+  return cleanedUser || userQuery.trim();
+}
+
+function resolveTopicLinkFromPage(
+  candidateUrl: string | null,
+  links: Array<{ text: string; url: string }>,
+  pageText: string,
+  baseUrl: string,
+  topicCandidates: string[]
+): string | null {
+  const tryNormalize = (raw: string): string | null => {
+    try {
+      const cleaned = raw.trim().replace(/^[<("']+|[>)"'.,;]+$/g, '');
+      const u = new URL(cleaned, baseUrl);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+      u.hash = '';
+      if (u.href.replace(/\/+$/, '') === baseUrl.replace(/\/+$/, '')) return null;
+      return u.href;
+    } catch {
+      return null;
+    }
+  };
+
+  if (candidateUrl) {
+    const resolved = tryNormalize(candidateUrl);
+    if (resolved) return resolved;
+  }
+
+  const allLinks: Array<{ text: string; url: string }> = [...(links || [])];
+  if (pageText) {
+    const mdLinkRegex = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+    let match: RegExpExecArray | null;
+    while ((match = mdLinkRegex.exec(pageText)) !== null) {
+      const resolved = tryNormalize(match[2] || '');
+      if (resolved) {
+        allLinks.push({ text: match[1] || '', url: resolved });
+      }
+    }
+  }
+
+  if (allLinks.length === 0) return null;
+
+  const normalizePhrase = (s: string): string =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !TOPIC_FILLER_STOPWORDS.has(w))
+      .join(' ')
+      .trim();
+
+  let bestUrl: string | null = null;
+  let bestScore = 0;
+
+  for (const rawTopic of topicCandidates) {
+    const normTopic = normalizePhrase(rawTopic);
+    if (!normTopic) continue;
+    const topicWords = normTopic.split(/\s+/).filter(Boolean);
+    if (topicWords.length === 0) continue;
+
+    for (const link of allLinks) {
+      const resolved = tryNormalize(link.url);
+      if (!resolved) continue;
+      const normLinkText = normalizePhrase(link.text);
+      const rawLinkLower = link.text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      const rawTopicLower = rawTopic.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+      let score = 0;
+      if (rawTopicLower.length >= 5 && rawLinkLower.includes(rawTopicLower)) {
+        score += 10 + topicWords.length * 2;
+      } else if (normTopic.length >= 5 && normLinkText.includes(normTopic)) {
+        score += 8 + topicWords.length * 2;
+      } else if (normLinkText.length >= 5 && normTopic.includes(normLinkText)) {
+        score += 6 + normLinkText.split(/\s+/).length;
+      }
+
+      const linkTextWords = new Set(normLinkText.split(/\s+/).filter(Boolean));
+      const matchedInText = topicWords.filter((w) => linkTextWords.has(w) || normLinkText.includes(w)).length;
+      if (matchedInText > 0) {
+        const ratio = matchedInText / topicWords.length;
+        if (matchedInText >= 2 || (topicWords.length === 1 && matchedInText === 1 && topicWords[0].length >= 4)) {
+          score += matchedInText * 3 + (ratio >= 0.6 ? 4 : 0);
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestUrl = resolved;
+      }
+    }
+  }
+
+  return bestScore >= 3 ? bestUrl : null;
 }
 
 function getPinnedPageDomain(url: string): string {
@@ -470,6 +688,7 @@ interface WebFetcherPinnedPage {
   url: string;
   title: string;
   text: string;
+  links: Array<{ text: string; url: string }>;
 }
 
 const POPULAR_COMMANDER_MODELS = [
@@ -2372,9 +2591,11 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
   const [webFetcherOriginalRequest, setWebFetcherOriginalRequest] = useState<string>('');
   const [webFetcherPinnedPage, setWebFetcherPinnedPage] = useState<WebFetcherPinnedPage | null>(null);
+  const [webFetcherOriginalPage, setWebFetcherOriginalPage] = useState<WebFetcherPinnedPage | null>(null);
   useEffect(() => {
     if (!webFetcherEnabled) {
       setWebFetcherPinnedPage(null);
+      setWebFetcherOriginalPage(null);
     }
   }, [webFetcherEnabled]);
   const [newMemoryInput, setNewMemoryInput] = useState('');
@@ -2425,10 +2646,7 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
       assistantContent: string,
       tool?: Message['tool'],
     ): Array<{ category: string; emoji: string; label: string; prompt: string }> => {
-      const cleanQuery = (userQuery || '')
-        .replace(/^\/[a-z]+\s+/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+      const strippedQuery = extractCoreTopicFromText(userQuery || '', assistantContent || '');
 
       // Extract headings or bold concepts from the assistant's answer
       const headings = Array.from(
@@ -2443,21 +2661,25 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
         .filter((h) => h.length > 3 && h.length < 55 && !/^(overview|summary|conclusion|sources|references)/i.test(h));
 
       const boldTerms = Array.from(
-        (assistantContent || '').matchAll(/\*\*([^*]{4,42})\*\*/g),
+        (assistantContent || '').matchAll(/\*\*([^*]{4,55})\*\*/g),
       )
         .map((m) => m[1].replace(/[:.,;!?]+$/, '').trim())
         .filter(
           (t) =>
             t.length > 3 &&
-            !/^(note|tip|warning|source|claim|step|phase|verdict|summary|key|overview)/i.test(t),
+            !/^(note|tip|warning|source|claim|step|phase|verdict|summary|key|overview|official)/i.test(t),
         );
 
+      const baseTopic = strippedQuery || headings[0] || boldTerms[0] || 'this topic';
       const shortTopic =
-        cleanQuery.length > 48
-          ? cleanQuery.slice(0, 46).replace(/\s+\S*$/, '') + '...'
-          : cleanQuery || headings[0] || boldTerms[0] || 'this topic';
+        baseTopic.length > 48
+          ? baseTopic.slice(0, 46).replace(/\s+\S*$/, '') + '...'
+          : baseTopic;
 
-      const focusConcept1 = headings[0] || boldTerms[0] || shortTopic;
+      const focusConcept1 =
+        (headings[0] && headings[0].toLowerCase() !== baseTopic.toLowerCase() ? headings[0] : '') ||
+        (boldTerms[0] && boldTerms[0].toLowerCase() !== baseTopic.toLowerCase() ? boldTerms[0] : '') ||
+        shortTopic;
       const focusConcept2 = headings[1] || boldTerms[1] || focusConcept1;
 
       if (tool === 'coder') {
@@ -3004,6 +3226,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
       setWebFetcherList([]);
       setWebFetcherOriginalRequest('');
       setWebFetcherPinnedPage(null);
+      setWebFetcherOriginalPage(null);
     }
     if (except !== 'wikimedia') {
       setWikimediaEnabled(false);
@@ -3290,6 +3513,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
       setWebFetcherList([]);
       setWebFetcherOriginalRequest('');
       setWebFetcherPinnedPage(null);
+      setWebFetcherOriginalPage(null);
     }
     setWebFetcherEnabled(next);
     storage.setAssistantWebFetcherEnabled(next);
@@ -5002,6 +5226,254 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
     adjustTextareaHeight();
   };
 
+  const handleBackToOriginalPinnedPage = () => {
+    if (!webFetcherOriginalPage) return;
+    setWebFetcherPinnedPage(webFetcherOriginalPage);
+    setWebFetcherOriginalPage(null);
+  };
+
+  const handleReadFullArticle = async (articleUrl: string, questionText: string) => {
+    if (loading || !webFetcherEnabled) return;
+    const previousPage = webFetcherPinnedPage;
+    if (previousPage && !webFetcherOriginalPage) {
+      setWebFetcherOriginalPage(previousPage);
+    }
+
+    setLoading(true);
+    webFetcherCancelledRef.current = false;
+    setSpecialistProgress(30);
+    setSpecialistPhase(`Fetching full article (${getPinnedPageDomain(articleUrl)})...`);
+
+    let fullRawText = '';
+    let fetchedTitle = '';
+    let fetchedFinalUrl = articleUrl;
+    let fetchedLinks: Array<{ text: string; url: string }> = [];
+    try {
+      const webRes = await Promise.race([
+        api.webFetch(articleUrl),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('webFetch timeout')), 60000)
+        ),
+      ]);
+      if (webFetcherCancelledRef.current) return;
+      if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
+        fullRawText = webRes.data.textContent;
+        fetchedTitle = webRes.data.title || '';
+        fetchedFinalUrl = webRes.data.finalUrl || articleUrl;
+        fetchedLinks = webRes.data.links || [];
+      }
+    } catch {
+      if (webFetcherCancelledRef.current) return;
+    }
+
+    if (webFetcherCancelledRef.current) return;
+
+    if (!fullRawText) {
+      const errMsg: Message = {
+        role: 'assistant',
+        content: 'Could not read this article.',
+        tool: 'webfetcher',
+      };
+      setMessages((current) => [...current, errMsg]);
+      setLoading(false);
+      setSpecialistProgress(0);
+      setSpecialistPhase('');
+      return;
+    }
+
+    const cleanedArticleText = cleanFetchedPageText(fullRawText).slice(0, 8000) || fullRawText.slice(0, 8000);
+    const newPinned: WebFetcherPinnedPage = {
+      url: fetchedFinalUrl,
+      title: (fetchedTitle || getPinnedPageDomain(fetchedFinalUrl)).trim(),
+      text: cleanedArticleText,
+      links: buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl),
+    };
+    setWebFetcherPinnedPage(newPinned);
+
+    setSpecialistProgress(70);
+    setSpecialistPhase('Answering from full article...');
+    const currentLanguage = storage.getAssistantLanguage();
+
+    const articlePrompt = `You are answering the user's question from the full article text below.
+Use ONLY the article text provided below (max 8,000 characters).
+
+Article Title: ${newPinned.title}
+Article URL: ${newPinned.url}
+
+Article Text:
+${newPinned.text}
+
+User Question: "${questionText}"
+
+STRICT RULES:
+1. Answer directly and clearly using ONLY information in the Article Text above.
+2. Do NOT use outside knowledge or guesses.
+3. If the answer is not in the Article Text above, reply with ONLY this exact sentence:
+I don't see that on the page.`;
+
+    let finalAnswerText = '';
+    try {
+      const aiRes = await Promise.race([
+        api.aiChat(
+          articlePrompt,
+          [],
+          '',
+          undefined,
+          false,
+          { language: currentLanguage, skillsText: buildActiveSkillsText() }
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('aiChat timeout')), 40000)
+        ),
+      ]);
+      if (webFetcherCancelledRef.current) return;
+      finalAnswerText = stripTierLabels(aiRes.answer).trim() || "I don't see that on the page.";
+    } catch {
+      if (webFetcherCancelledRef.current) return;
+      finalAnswerText = "I don't see that on the page.";
+    }
+
+    if (webFetcherCancelledRef.current) return;
+
+    const assistantMessage: Message = {
+      role: 'assistant',
+      content: finalAnswerText,
+      tool: 'webfetcher',
+      webFetcherCanBackToList: true,
+    };
+
+    setMessages((current) => [...current, assistantMessage]);
+    setLoading(false);
+    setSpecialistProgress(0);
+    setSpecialistPhase('');
+  };
+
+  const handleSearchTopicOnDomain = async (domain: string, topic: string) => {
+    if (loading || !webFetcherEnabled) return;
+    const cleanDomain = domain.replace(/^www\./i, '').trim();
+    const cleanTopic = topic.trim();
+    if (!cleanDomain || !cleanTopic) return;
+
+    setLoading(true);
+    webFetcherCancelledRef.current = false;
+    setSpecialistProgress(30);
+    setSpecialistPhase(`Searching "${cleanTopic}" on ${cleanDomain}...`);
+
+    const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
+    const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
+    const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
+    const opts = isCustomSearchActive
+      ? { customSearchApiKey: customKeyPayload, customSearchApiUrl: customUrlPayload }
+      : undefined;
+
+    type SearchItem = Awaited<ReturnType<typeof api.search>>[number];
+    let rawResults: SearchItem[] = [];
+    const siteQuery = `${cleanTopic} site:${cleanDomain}`;
+
+    try {
+      const res = await api.search(siteQuery, 'ALL', undefined, 8, opts);
+      if (res && res.length > 0) {
+        rawResults = res;
+      }
+    } catch {
+      // Ignore and try fallback
+    }
+
+    if (rawResults.length === 0) {
+      try {
+        const res = await api.search(`${cleanDomain} ${cleanTopic}`, 'ALL', undefined, 8, opts);
+        if (res && res.length > 0) {
+          rawResults = res;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    if (webFetcherCancelledRef.current) return;
+
+    const seenUrls = new Set<string>();
+    const domainResults: SearchItem[] = [];
+
+    for (const r of rawResults) {
+      if (!r || !r.url || !isValidOfficialHttpsUrl(r.url)) continue;
+      const rDomain = getPinnedPageDomain(r.url);
+      if (rDomain !== cleanDomain && !rDomain.endsWith(`.${cleanDomain}`)) continue;
+      const normalized = r.url.trim().toLowerCase().replace(/\/+$/, '');
+      if (!seenUrls.has(normalized)) {
+        seenUrls.add(normalized);
+        domainResults.push(r);
+      }
+    }
+
+    const finalResults = domainResults.slice(0, 8);
+    if (finalResults.length === 0) {
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: `No matching pages found on ${cleanDomain} for "${cleanTopic}".`,
+        tool: 'webfetcher',
+      };
+      setMessages((current) => [...current, assistantMessage]);
+      setLoading(false);
+      setSpecialistProgress(0);
+      setSpecialistPhase('');
+      return;
+    }
+
+    const seenSnippets = new Set<string>();
+    const items: WebFetcherResultItem[] = finalResults.map((r, idx) => {
+      let host = cleanDomain;
+      try {
+        host = new URL(r.url).hostname;
+      } catch {
+        host = r.domain || cleanDomain;
+      }
+      const isOff = checkIsOfficialDomain(r.url, cleanDomain);
+      let snippet = cleanWebFetcherSnippet(r.description, r.title);
+      const titleClean = (r.title || host).replace(/#{1,6}\s*/g, '').replace(/\s+/g, ' ').trim();
+      if (snippet.length < 40 || seenSnippets.has(snippet.toLowerCase())) {
+        snippet = `${titleClean} — ${r.url}`.slice(0, 140).trim();
+      }
+      seenSnippets.add(snippet.toLowerCase());
+      return {
+        number: idx + 1,
+        title: r.title || host,
+        domain: host,
+        url: r.url,
+        snippet,
+        isOfficial: isOff,
+      };
+    });
+
+    setWebFetcherList(items);
+    setWebFetcherOriginalRequest(`${cleanTopic} (${cleanDomain})`);
+
+    const lines: string[] = [];
+    lines.push(`Found ${items.length} result${items.length === 1 ? '' : 's'} on \`${cleanDomain}\` for "${cleanTopic}":\n`);
+    items.forEach((item) => {
+      const badge = item.isOfficial ? ' **[Official]**' : '';
+      lines.push(`${item.number}.${badge} [${item.title}](${item.url}) — \`${item.domain}\``);
+      if (item.snippet) {
+        lines.push(`   ${item.snippet}`);
+      }
+      lines.push('');
+    });
+    lines.push(`Send a number (1-${items.length}) to read that page.`);
+
+    const assistantMessage: Message = {
+      role: 'assistant',
+      content: lines.join('\n').trim(),
+      tool: 'webfetcher',
+      sources: items.map((i) => ({ title: i.title, url: i.url, domain: i.domain })),
+      searchedWeb: true,
+    };
+
+    setMessages((current) => [...current, assistantMessage]);
+    setLoading(false);
+    setSpecialistProgress(0);
+    setSpecialistPhase('');
+  };
+
   const sendMessage = async (value = input) => {
     const rawMessage = value.trim();
     const fileToSend = attachedFile;
@@ -5479,6 +5951,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
           setWebFetcherList([]);
           setWebFetcherOriginalRequest('');
           setWebFetcherPinnedPage(null);
+          setWebFetcherOriginalPage(null);
           console.log(`[Web Fetcher] direct URL: ${directUrl}`);
           setSpecialistProgress(30);
           setSpecialistPhase(`Fetching webpage content directly from ${directUrl}...`);
@@ -5487,6 +5960,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
           let fetchedTitle = '';
           let fetchedFinalUrl = directUrl;
           let fullRawText = '';
+          let fetchedLinks: Array<{ text: string; url: string }> = [];
           const fetchStart = Date.now();
           try {
             const webRes = await Promise.race([
@@ -5500,6 +5974,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
               fullRawText = webRes.data.textContent;
               fetchedTitle = webRes.data.title || '';
               fetchedFinalUrl = webRes.data.finalUrl || directUrl;
+              fetchedLinks = webRes.data.links || [];
               pageContent = fullRawText.slice(0, 4500);
               const fetchTime = Date.now() - fetchStart;
               console.log(`[Web Fetcher] fetch ok: ${directUrl} (${fetchTime} ms, ${pageContent.length} chars)`);
@@ -5523,6 +5998,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
               url: fetchedFinalUrl,
               title: (fetchedTitle || getPinnedPageDomain(fetchedFinalUrl)).trim(),
               text: cleanedPinText || pageContent,
+              links: buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl),
             });
 
             setSpecialistProgress(70);
@@ -5642,6 +6118,7 @@ DIRECTIVES:
 
           const pickedItem = webFetcherList[pickedNumber - 1];
           setWebFetcherPinnedPage(null);
+          setWebFetcherOriginalPage(null);
           console.log(`[Web Fetcher] picked #${pickedNumber}: ${pickedItem.url}`);
 
           setSpecialistProgress(30);
@@ -5651,6 +6128,7 @@ DIRECTIVES:
           let fetchedTitle = '';
           let fetchedFinalUrl = pickedItem.url;
           let fullRawText = '';
+          let fetchedLinks: Array<{ text: string; url: string }> = [];
           const fetchStart = Date.now();
           try {
             const webRes = await Promise.race([
@@ -5664,6 +6142,7 @@ DIRECTIVES:
               fullRawText = webRes.data.textContent;
               fetchedTitle = webRes.data.title || pickedItem.title || '';
               fetchedFinalUrl = webRes.data.finalUrl || pickedItem.url;
+              fetchedLinks = webRes.data.links || [];
               pageContent = fullRawText.slice(0, 4500);
               const fetchTime = Date.now() - fetchStart;
               console.log(`[Web Fetcher] fetch ok: ${pickedItem.url} (${fetchTime} ms, ${pageContent.length} chars)`);
@@ -5687,6 +6166,7 @@ DIRECTIVES:
               url: fetchedFinalUrl,
               title: (fetchedTitle || pickedItem.title || getPinnedPageDomain(fetchedFinalUrl)).trim(),
               text: cleanedPinText || pageContent,
+              links: buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl),
             });
 
             setSpecialistProgress(70);
@@ -5888,6 +6368,7 @@ DIRECTIVES:
             return;
           }
 
+          const seenSnippets = new Set<string>();
           const items: WebFetcherResultItem[] = combinedResults.map((r, idx) => {
             let host = '';
             try {
@@ -5896,7 +6377,31 @@ DIRECTIVES:
               host = r.domain || 'web';
             }
             const isOff = checkIsOfficialDomain(r.url, targetForMatch);
-            const snippet = cleanWebFetcherSnippet(r.description, r.title);
+            let snippet = cleanWebFetcherSnippet(r.description, r.title);
+            const rawDescClean = (r.description || '')
+              .replace(/([a-z])([A-Z])/g, '$1 $2')
+              .replace(/#{1,6}\s*/g, '')
+              .replace(NAV_BOILERPLATE_REGEX, '')
+              .replace(NAV_MENU_SEQUENCE_REGEX, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            const titleClean = (r.title || host).replace(/#{1,6}\s*/g, '').replace(/\s+/g, ' ').trim();
+
+            if (snippet.length < 40 || seenSnippets.has(snippet.toLowerCase())) {
+              const titlePlusDesc =
+                rawDescClean && !rawDescClean.toLowerCase().startsWith(titleClean.toLowerCase())
+                  ? `${titleClean} — ${rawDescClean}`.slice(0, 140).trim()
+                  : `${titleClean} (${r.url})`.slice(0, 140).trim();
+              if (!seenSnippets.has(titlePlusDesc.toLowerCase()) && titlePlusDesc.length >= 40) {
+                snippet = titlePlusDesc;
+              } else if (rawDescClean && !seenSnippets.has(rawDescClean.slice(0, 140).toLowerCase())) {
+                snippet = rawDescClean.slice(0, 140).trim();
+              } else {
+                snippet = `${titleClean} — ${r.url}`.slice(0, 140).trim();
+              }
+            }
+            seenSnippets.add(snippet.toLowerCase());
+
             return {
               number: idx + 1,
               title: r.title || host,
@@ -5942,30 +6447,50 @@ DIRECTIVES:
           setSpecialistPhase('');
           return;
         } else if (webFetcherPinnedPage) {
-          // Case e: Follow-up question answered strictly from the pinned page text
+          // Case e: Follow-up question answered strictly from the pinned page text + last 4 chat messages
           const pinned = webFetcherPinnedPage;
           setSpecialistProgress(60);
           setSpecialistPhase(`Answering from pinned page (${getPinnedPageDomain(pinned.url)})...`);
           const currentLanguage = storage.getAssistantLanguage();
 
+          const recent4Messages = messages
+            .filter((m) => m.content && m.content.trim() && !(m as { isWelcome?: boolean }).isWelcome)
+            .slice(-4)
+            .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.trim().slice(0, 1200)}`)
+            .join('\n\n');
+
           const followUpPrompt = `You are answering a follow-up question about a pinned webpage.
-Use ONLY the pinned webpage text provided below to answer the user's question.
+Use ONLY the pinned webpage text provided below (max 8,000 characters) and the last 4 chat messages to understand what the user is asking about.
 
 Pinned Webpage Title: ${pinned.title}
 Pinned Webpage URL: ${pinned.url}
 
 Pinned Webpage Text:
-${pinned.text}
+${pinned.text.slice(0, 8000)}
+
+Recent Conversation (last 4 messages):
+${recent4Messages || '(none)'}
 
 User Question: "${message}"
 
 STRICT RULES:
-1. Answer the user's question using ONLY information present in the Pinned Webpage Text above.
-2. Do NOT use outside knowledge, guesses, or assumptions.
-3. If the answer is not in the Pinned Webpage Text above, reply with ONLY this exact sentence:
-I don't see that on the page.`;
+1. Work out what "this", "it", "that", "the first one", etc. refers to from the Recent Conversation above.
+2. Answer ONLY about that specific topic, using ONLY the Pinned Webpage Text above. Do NOT re-list everything on the page.
+3. If the pinned page has little detail on that specific topic, say so in one sentence, and give what the page does say. If a link or URL for that topic exists in the Pinned Webpage Text, also output it on a new line at the end in this exact format:
+[ARTICLE_LINK: https://...]
+4. If the topic or answer is not on the pinned page at all, reply with ONLY this exact sentence:
+I don't see that on the page.
+5. If it is genuinely unclear what "this / it / that" refers to (for example, the last answer listed many items and it is not clear which one the user means), do NOT guess and do NOT re-list the page. Instead:
+   - Ask ONE short question on the first line.
+   - Then provide 3 to 5 of the most likely items on separate lines using this exact format:
+[OPTION: Likely item 1]
+[OPTION: Likely item 2]
+[OPTION: Likely item 3]`;
 
           let finalAnswerText = '';
+          let followUpOptions: string[] = [];
+          let detectedArticleUrl: string | null = null;
+          let domainSearchFallback: { domain: string; topic: string } | undefined = undefined;
           try {
             const aiRes = await Promise.race([
               api.aiChat(
@@ -5981,7 +6506,55 @@ I don't see that on the page.`;
               ),
             ]);
             if (webFetcherCancelledRef.current) return;
-            finalAnswerText = stripTierLabels(aiRes.answer).trim() || "I don't see that on the page.";
+            const rawAnswer = stripTierLabels(aiRes.answer).trim();
+            const extractedOptions: string[] = [];
+            const keptLines: string[] = [];
+            let rawLinkCandidate: string | null = null;
+            for (const line of rawAnswer.split('\n')) {
+              const optMatch = line.trim().match(/^\[OPTION:\s*(.+?)\]$/i);
+              const linkMatch = line.trim().match(/^\[ARTICLE_LINK:\s*(.+?)\]$/i);
+              if (optMatch && optMatch[1]) {
+                const label = optMatch[1].trim();
+                if (label && extractedOptions.length < 5) {
+                  extractedOptions.push(label);
+                }
+              } else if (linkMatch && linkMatch[1]) {
+                rawLinkCandidate = linkMatch[1].trim();
+              } else {
+                keptLines.push(line);
+              }
+            }
+            followUpOptions = extractedOptions.length >= 2 ? extractedOptions.slice(0, 5) : [];
+            finalAnswerText = keptLines.join('\n').trim() || "I don't see that on the page.";
+
+            const hasLittleDetail =
+              Boolean(rawLinkCandidate) ||
+              /\b(little detail|very little detail|only mentions|briefly|only lists|headline|not much detail|limited detail|only says|does not provide (?:full|more|further) detail|doesn't provide (?:full|more|further) detail|only includes|no further details|short description)\b/i.test(
+                finalAnswerText
+              );
+            if (hasLittleDetail && followUpOptions.length === 0) {
+              const coreTopic = extractCoreTopicFromText(message, finalAnswerText, recent4Messages);
+              const topicCandidates = [
+                coreTopic,
+                message,
+                finalAnswerText,
+              ].filter((s) => Boolean(s && s.trim()));
+
+              detectedArticleUrl = resolveTopicLinkFromPage(
+                rawLinkCandidate,
+                pinned.links || [],
+                pinned.text,
+                pinned.url,
+                topicCandidates
+              );
+
+              if (!detectedArticleUrl && coreTopic) {
+                domainSearchFallback = {
+                  domain: getPinnedPageDomain(pinned.url),
+                  topic: coreTopic.slice(0, 100),
+                };
+              }
+            }
           } catch {
             if (webFetcherCancelledRef.current) return;
             finalAnswerText = "I don't see that on the page.";
@@ -5993,6 +6566,11 @@ I don't see that on the page.`;
             role: 'assistant',
             content: finalAnswerText,
             tool: 'webfetcher',
+            webFetcherOptions: followUpOptions.length > 0 ? followUpOptions : undefined,
+            webFetcherArticleRef: detectedArticleUrl
+              ? { url: detectedArticleUrl, question: message }
+              : undefined,
+            webFetcherDomainSearchRef: !detectedArticleUrl ? domainSearchFallback : undefined,
           };
 
           setMessages((current) => [...current, assistantMessage]);
@@ -9093,6 +9671,88 @@ I don't see that on the page.`;
                               }`}
                             >
                               <FormattedText content={stripTierLabels(message.content.replace(/^Read page:\s+[^\n]+\n\n?/, ''))} />
+                              {message.tool === 'webfetcher' &&
+                                message.webFetcherOptions &&
+                                message.webFetcherOptions.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 pt-2.5">
+                                    {message.webFetcherOptions.map((opt, optIdx) => (
+                                      <button
+                                        key={`${opt}-${optIdx}`}
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={() => sendMessage(`Tell me more about ${opt}`)}
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                          theme === 'classic'
+                                            ? 'bg-teal-950/70 hover:bg-teal-900/80 text-teal-200 border-teal-500/40'
+                                            : theme === 'fulldark'
+                                            ? 'bg-[#1f1f1f] hover:bg-[#2a2a2a] text-[#e4e4e7] border-[#3f3f46]'
+                                            : 'bg-teal-950/50 hover:bg-teal-900/60 text-teal-200 border-teal-500/30'
+                                        }`}
+                                      >
+                                        {opt}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              {message.tool === 'webfetcher' &&
+                                (message.webFetcherArticleRef ||
+                                  message.webFetcherDomainSearchRef ||
+                                  (message.webFetcherCanBackToList && webFetcherOriginalPage)) && (
+                                  <div className="flex flex-wrap items-center gap-2 pt-2.5">
+                                    {message.webFetcherArticleRef && (
+                                      <button
+                                        type="button"
+                                        disabled={loading || !webFetcherEnabled}
+                                        onClick={() =>
+                                          handleReadFullArticle(
+                                            message.webFetcherArticleRef!.url,
+                                            message.webFetcherArticleRef!.question
+                                          )
+                                        }
+                                        className={`px-3 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                          theme === 'classic'
+                                            ? 'bg-teal-950/80 hover:bg-teal-900 text-teal-200 border-teal-500/50'
+                                            : theme === 'fulldark'
+                                            ? 'bg-[#1f1f1f] hover:bg-[#2a2a2a] text-[#e4e4e7] border-[#3f3f46]'
+                                            : 'bg-teal-950/60 hover:bg-teal-900/70 text-teal-200 border-teal-500/40'
+                                        }`}
+                                      >
+                                        Read full article
+                                      </button>
+                                    )}
+                                    {!message.webFetcherArticleRef && message.webFetcherDomainSearchRef && (
+                                      <button
+                                        type="button"
+                                        disabled={loading || !webFetcherEnabled}
+                                        onClick={() =>
+                                          handleSearchTopicOnDomain(
+                                            message.webFetcherDomainSearchRef!.domain,
+                                            message.webFetcherDomainSearchRef!.topic
+                                          )
+                                        }
+                                        className={`px-3 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer active:scale-95 disabled:opacity-50 ${
+                                          theme === 'classic'
+                                            ? 'bg-teal-950/80 hover:bg-teal-900 text-teal-200 border-teal-500/50'
+                                            : theme === 'fulldark'
+                                            ? 'bg-[#1f1f1f] hover:bg-[#2a2a2a] text-[#e4e4e7] border-[#3f3f46]'
+                                            : 'bg-teal-950/60 hover:bg-teal-900/70 text-teal-200 border-teal-500/40'
+                                        }`}
+                                      >
+                                        Search this topic on {message.webFetcherDomainSearchRef.domain}
+                                      </button>
+                                    )}
+                                    {webFetcherEnabled && webFetcherOriginalPage && (
+                                      <button
+                                        type="button"
+                                        disabled={loading}
+                                        onClick={handleBackToOriginalPinnedPage}
+                                        className="px-2.5 py-1 rounded-lg text-xs font-medium border border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+                                      >
+                                        Back to list
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                             </div>
                           </div>
                         )}
@@ -9992,7 +10652,7 @@ I don't see that on the page.`;
 
             {/* Web Fetcher Pinned Page Chip (only shown while Web Fetcher mode is active) */}
             {webFetcherEnabled && webFetcherPinnedPage && (
-              <div className="flex items-center mb-1.5 px-1">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1.5 px-1">
                 <div
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border shadow-sm ${
                     theme === 'classic'
@@ -10007,7 +10667,10 @@ I don't see that on the page.`;
                   </span>
                   <button
                     type="button"
-                    onClick={() => setWebFetcherPinnedPage(null)}
+                    onClick={() => {
+                      setWebFetcherPinnedPage(null);
+                      setWebFetcherOriginalPage(null);
+                    }}
                     className="ml-0.5 px-1 rounded hover:bg-teal-500/20 text-teal-300 hover:text-white transition-colors font-mono text-xs leading-none"
                     title="Clear pinned page"
                     aria-label="Clear pinned page"
@@ -10015,6 +10678,16 @@ I don't see that on the page.`;
                     [×]
                   </button>
                 </div>
+                {webFetcherOriginalPage && (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={handleBackToOriginalPinnedPage}
+                    className="px-2 py-1 rounded-lg text-xs font-medium border border-zinc-700 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Back to list
+                  </button>
+                )}
               </div>
             )}
 

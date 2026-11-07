@@ -1621,10 +1621,98 @@ export function cleanHtmlToText(rawChunk: string, isArticleOrMainScope = false):
   return lines.join('\n\n');
 }
 
-export function extractReadableTextFromHtml(html: string): {
+export function extractLinksFromHtml(html: string, baseUrl: string): Array<{ text: string; url: string }> {
+  if (!html || !baseUrl) return [];
+  const cleanedHtml = html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ')
+    .replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ')
+    .replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ');
+
+  const results: Array<{ text: string; url: string }> = [];
+  const seen = new Set<string>();
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const anchorRegex = /<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = anchorRegex.exec(cleanedHtml)) !== null && results.length < 80) {
+    const rawHref = (match[1] || match[2] || match[3] || '').trim();
+    if (!rawHref || rawHref.startsWith('#') || /^(?:javascript|mailto|tel|data):/i.test(rawHref)) {
+      continue;
+    }
+    let resolvedUrl = '';
+    try {
+      const u = new URL(rawHref.replace(/&amp;/gi, '&'), baseUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      u.hash = '';
+      resolvedUrl = u.href;
+    } catch {
+      continue;
+    }
+    if (!resolvedUrl || resolvedUrl.replace(/\/+$/, '') === normalizedBase) continue;
+
+    const innerHtml = match[4] || '';
+    const headingMatch = innerHtml.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i);
+    const rawTextSource = headingMatch ? `${headingMatch[1]} — ${innerHtml}` : innerHtml;
+    const text = rawTextSource
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&mdash;/gi, '—')
+      .replace(/&ndash;/gi, '–')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 220);
+
+    if (!text || text.length < 3) continue;
+    const dedupeKey = `${resolvedUrl.toLowerCase()}::${text.toLowerCase()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    results.push({ text, url: resolvedUrl });
+  }
+
+  return results.slice(0, 80);
+}
+
+export function extractLinksFromMarkdown(md: string, baseUrl: string): Array<{ text: string; url: string }> {
+  if (!md || !baseUrl) return [];
+  const results: Array<{ text: string; url: string }> = [];
+  const seen = new Set<string>();
+  const normalizedBase = baseUrl.replace(/\/+$/, '');
+  const mdLinkRegex = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = mdLinkRegex.exec(md)) !== null && results.length < 80) {
+    const rawLabel = (match[1] || '').replace(/[!#*_`~]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
+    const rawHref = (match[2] || '').trim();
+    if (!rawLabel || rawLabel.length < 3 || !rawHref || rawHref.startsWith('#')) continue;
+    let resolvedUrl = '';
+    try {
+      const u = new URL(rawHref, baseUrl);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+      u.hash = '';
+      resolvedUrl = u.href;
+    } catch {
+      continue;
+    }
+    if (!resolvedUrl || resolvedUrl.replace(/\/+$/, '') === normalizedBase) continue;
+    const dedupeKey = `${resolvedUrl.toLowerCase()}::${rawLabel.toLowerCase()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    results.push({ text: rawLabel, url: resolvedUrl });
+  }
+
+  return results.slice(0, 80);
+}
+
+export function extractReadableTextFromHtml(html: string, baseUrl: string = ''): {
   title: string;
   description: string;
   headings: string[];
+  links: Array<{ text: string; url: string }>;
   textContent: string;
   rawTotalLength: number;
   isTruncated: boolean;
@@ -1694,8 +1782,27 @@ export function extractReadableTextFromHtml(html: string): {
     }
   }
 
+  let links: Array<{ text: string; url: string }> = [];
+  if (baseUrl) {
+    const primaryLinks = extractLinksFromHtml(selectedSourceHtml || html, baseUrl);
+    if (primaryLinks.length >= 80 || selectedSourceHtml === html) {
+      links = primaryLinks.slice(0, 80);
+    } else {
+      const extraLinks = extractLinksFromHtml(html, baseUrl);
+      const seenUrls = new Set(primaryLinks.map((l) => l.url));
+      links = [...primaryLinks];
+      for (const l of extraLinks) {
+        if (links.length >= 80) break;
+        if (!seenUrls.has(l.url)) {
+          seenUrls.add(l.url);
+          links.push(l);
+        }
+      }
+    }
+  }
+
   const rawTotalLength = fullText.length;
-  const MAX_CONTENT_CHARS = 4500;
+  const MAX_CONTENT_CHARS = 8000;
   let textContent = fullText;
   let isTruncated = false;
 
@@ -1717,6 +1824,7 @@ export function extractReadableTextFromHtml(html: string): {
     title,
     description,
     headings: headings.slice(0, 25),
+    links: links.slice(0, 80),
     textContent,
     rawTotalLength: rawTotalLength || textContent.length,
     isTruncated,
@@ -1882,6 +1990,7 @@ export async function renderPageViaJinaReader(url: string): Promise<{
     title: string;
     description: string;
     headings: string[];
+    links: Array<{ text: string; url: string }>;
     textContent: string;
     length: number;
     rawTotalLength: number;
@@ -1987,8 +2096,10 @@ export async function renderPageViaJinaReader(url: string): Promise<{
       }
     }
 
+    const links = extractLinksFromMarkdown(rawContent, url);
+
     const rawTotalLength = rawContent.length;
-    const MAX_CONTENT_CHARS = 4500;
+    const MAX_CONTENT_CHARS = 8000;
     let textContent = rawContent;
     let isTruncated = false;
 
@@ -2005,6 +2116,7 @@ export async function renderPageViaJinaReader(url: string): Promise<{
         title,
         description,
         headings: headings.slice(0, 25),
+        links,
         textContent,
         length: textContent.length,
         rawTotalLength,
@@ -2078,6 +2190,7 @@ export async function executeFallbackCascade(
     title: string;
     description: string;
     headings: string[];
+    links: Array<{ text: string; url: string }>;
     textContent: string;
     length: number;
     rawTotalLength: number;
@@ -2092,7 +2205,7 @@ export async function executeFallbackCascade(
   console.log('[Server WebFetch] Attempting Fallback 1 (Headless Chromium)...');
   const headlessResult = await renderPageHeadless(normalizedUrl);
   if (headlessResult.ok && headlessResult.html) {
-    const renderedData = extractReadableTextFromHtml(headlessResult.html);
+    const renderedData = extractReadableTextFromHtml(headlessResult.html, normalizedUrl);
     const isError = isBlockedOrErrorPage(headlessResult.html, renderedData.textContent, renderedData.title);
     if (!isError && renderedData.textContent.trim().length > 100) {
       console.log(`[Server WebFetch] Fallback 1 (Headless Chromium) succeeded with ${renderedData.textContent.length} chars.`);
@@ -2104,6 +2217,7 @@ export async function executeFallbackCascade(
           title: renderedData.title || hostname,
           description: renderedData.description,
           headings: renderedData.headings,
+          links: renderedData.links,
           textContent: renderedData.textContent,
           length: renderedData.textContent.length,
           rawTotalLength: renderedData.rawTotalLength,
@@ -2122,7 +2236,7 @@ export async function executeFallbackCascade(
   console.log('[Server WebFetch] Attempting Fallback 2 (Browserless Proxy)...');
   const proxyResult = await renderPageViaProxy(normalizedUrl);
   if (proxyResult.ok && proxyResult.html) {
-    const renderedData = extractReadableTextFromHtml(proxyResult.html);
+    const renderedData = extractReadableTextFromHtml(proxyResult.html, normalizedUrl);
     const isError = isBlockedOrErrorPage(proxyResult.html, renderedData.textContent, renderedData.title);
     if (!isError && renderedData.textContent.trim().length > 100) {
       console.log(`[Server WebFetch] Fallback 2 (Browserless Proxy) succeeded with ${renderedData.textContent.length} chars.`);
@@ -2134,6 +2248,7 @@ export async function executeFallbackCascade(
           title: renderedData.title || hostname,
           description: renderedData.description,
           headings: renderedData.headings,
+          links: renderedData.links,
           textContent: renderedData.textContent,
           length: renderedData.textContent.length,
           rawTotalLength: renderedData.rawTotalLength,
@@ -2163,6 +2278,7 @@ export async function executeFallbackCascade(
           title: jinaResult.data.title || hostname,
           description: jinaResult.data.description,
           headings: jinaResult.data.headings,
+          links: jinaResult.data.links,
           textContent: jinaResult.data.textContent,
           length: jinaResult.data.length,
           rawTotalLength: jinaResult.data.rawTotalLength,
@@ -2192,6 +2308,7 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
     title: string;
     description: string;
     headings: string[];
+    links: Array<{ text: string; url: string }>;
     textContent: string;
     length: number;
     rawTotalLength: number;
@@ -2250,10 +2367,10 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
         const wikiSummary = await fetchWikipediaSummary(wikiQuery);
         if (wikiSummary && wikiSummary.extract) {
           const wikiText = wikiSummary.extract;
-          const isTrunc = wikiText.length > 4500;
+          const isTrunc = wikiText.length > 8000;
           const cappedWikiText = isTrunc
-            ? wikiText.slice(0, 4500) +
-              `\n\n[Note: Page content truncated from ${wikiText.length.toLocaleString()} characters to 4,500 characters for optimal synthesis.]`
+            ? wikiText.slice(0, 8000) +
+              `\n\n[Note: Page content truncated from ${wikiText.length.toLocaleString()} characters to 8,000 characters for optimal synthesis.]`
             : wikiText;
           return {
             ok: true,
@@ -2263,6 +2380,7 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
               title: wikiSummary.title || parsed.hostname,
               description: wikiSummary.description || '',
               headings: ['H1: ' + wikiSummary.title],
+              links: [],
               textContent: cappedWikiText,
               length: cappedWikiText.length,
               rawTotalLength: wikiText.length,
@@ -2288,7 +2406,8 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
       return await executeFallbackCascade(normalizedUrl, parsed.hostname, 'Empty response body on direct fetch');
     }
 
-    const parsedData = extractReadableTextFromHtml(rawBody);
+    const resolvedFinalUrl = response.url || normalizedUrl;
+    const parsedData = extractReadableTextFromHtml(rawBody, resolvedFinalUrl);
 
     if (isBlockedOrErrorPage(rawBody, parsedData.textContent, parsedData.title)) {
       console.warn(
@@ -2328,10 +2447,11 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
       ok: true,
       data: {
         url: normalizedUrl,
-        finalUrl: response.url || normalizedUrl,
+        finalUrl: resolvedFinalUrl,
         title: parsedData.title || parsed.hostname,
         description: parsedData.description,
         headings: parsedData.headings,
+        links: parsedData.links,
         textContent: parsedData.textContent,
         length: parsedData.textContent.length,
         rawTotalLength: parsedData.rawTotalLength,
