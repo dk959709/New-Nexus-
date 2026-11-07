@@ -266,6 +266,14 @@ function checkIsOfficialDomain(url: string, query: string): boolean {
   try {
     if (isNonOfficialDomain(url)) return false;
     const host = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    if (
+      host === 'anthropic.com' ||
+      host.endsWith('.anthropic.com') ||
+      host === 'claude.com' ||
+      host.endsWith('.claude.com')
+    ) {
+      return true;
+    }
     const cleanHost = host.replace(/\.(com|org|net|io|ai|dev|app|co|uk|in|me|info|de|ca|jp|fr|tech|xyz|site|online)$/i, '');
     const noise = new Set([
       'list', 'liste', 'find', 'get', 'give', 'show', 'search', 'check', 'gather', 'information', 'info',
@@ -279,6 +287,130 @@ function checkIsOfficialDomain(url: string, query: string): boolean {
   } catch {
     return false;
   }
+}
+
+const NAV_BOILERPLATE_REGEX =
+  /\b(?:skip to (?:main )?content|toggle navigation|main menu|open menu|close menu|contact sales|talk to sales|request a demo|book a demo|schedule a demo|log\s*in|sign\s*in|sign\s*up|try claude|get started(?: for free)?|download app)\b/gi;
+
+const NAV_MENU_SEQUENCE_REGEX =
+  /\b(?:Resources\s+)?(?:Overview\s+)?(?:Articles\s+)?(?:Webinars\s*)(?:Customer stories\s*)?(?:Tutorials\s*)?(?:Case studies\s*)?/gi;
+
+const NAV_MENU_WORDS = new Set([
+  'resources', 'overview', 'articles', 'webinars', 'tutorials', 'pricing', 'solutions',
+  'product', 'products', 'research', 'company', 'careers', 'news', 'blog', 'docs',
+  'documentation', 'support', 'status', 'security', 'privacy', 'terms', 'cookies',
+  'cookie', 'legal', 'menu', 'navigation', 'home', 'about', 'contact', 'sales',
+  'login', 'signin', 'signup', 'enterprise', 'team', 'api', 'platform', 'customers',
+  'stories', 'press', 'help', 'center', 'directory', 'sitemap'
+]);
+
+function isLikelyNavSegment(segment: string): boolean {
+  const s = segment.trim();
+  if (!s) return true;
+  if (/^(?:contact sales|talk to sales|resources|overview|articles|webinars|customer stories|pricing|solutions|products?|company|research|careers|news|blog|docs|documentation|support|log\s*in|sign\s*in|sign\s*up|get started|try claude|menu|home|about|legal|privacy|terms)$/i.test(s)) {
+    return true;
+  }
+  const words = s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const navCount = words.filter((w) => NAV_MENU_WORDS.has(w)).length;
+  if (words.length <= 8 && navCount / words.length >= 0.6) {
+    return true;
+  }
+  return false;
+}
+
+function cleanWebFetcherSnippet(rawDescription?: string, rawTitle?: string): string {
+  const cleanPiece = (input: string): string => {
+    const text = input
+      .replace(/\s+/g, ' ')
+      .replace(NAV_BOILERPLATE_REGEX, ' · ')
+      .replace(NAV_MENU_SEQUENCE_REGEX, ' · ')
+      .replace(/\bCustomer stories\b/gi, ' · ')
+      .trim();
+
+    // Split on common nav separators or sentence boundaries
+    const rawParts = text.split(/(?:\s*[·•|»›]\s*|\s+-\s+|\s+—\s+|\.\s+)/);
+    const keptParts: string[] = [];
+
+    for (let part of rawParts) {
+      part = part.trim();
+      if (!part) continue;
+
+      // Strip leading runs of 3+ Title-Case menu words (e.g. "Resources Overview Articles Webinars ...")
+      part = part.replace(/^(?:[A-Z][a-zA-Z0-9&-]*\s+){2,}(?=[A-Z][a-z]+\s+(?:is|are|was|were|helps|lets|builds|provides|offers|delivers|brings|powers|empowers|enables|creates|makes|gives|allows|supports|connects|works|can|will|has|have)\b)/, '');
+
+      // Also strip leading nav words one by one if they belong to NAV_MENU_WORDS
+      const tokens = part.split(/\s+/);
+      let startIdx = 0;
+      while (
+        startIdx < tokens.length &&
+        NAV_MENU_WORDS.has(tokens[startIdx].toLowerCase().replace(/[^a-z]/g, ''))
+      ) {
+        startIdx++;
+      }
+      if (startIdx >= 2) {
+        part = tokens.slice(startIdx).join(' ').trim();
+      }
+
+      if (!part || isLikelyNavSegment(part)) continue;
+      keptParts.push(part);
+    }
+
+    const joined = keptParts.join('. ').replace(/\.\s*\./g, '.').replace(/\s+/g, ' ').trim();
+    return joined;
+  };
+
+  let cleaned = cleanPiece(rawDescription || '');
+  if (cleaned.length < 15 && rawTitle) {
+    const fallback = cleanPiece(rawTitle);
+    if (fallback && fallback.toLowerCase() !== (rawTitle || '').trim().toLowerCase()) {
+      cleaned = fallback;
+    } else if (!cleaned) {
+      cleaned = fallback;
+    }
+  }
+  return cleaned.slice(0, 140).trim();
+}
+
+function cleanFetchedPageText(rawText: string): string {
+  if (!rawText) return '';
+  const lines = rawText
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n');
+  const cleanedLines: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine
+      .replace(NAV_BOILERPLATE_REGEX, ' ')
+      .replace(NAV_MENU_SEQUENCE_REGEX, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!line) continue;
+    if (line.length < 60 && isLikelyNavSegment(line)) continue;
+    cleanedLines.push(line);
+  }
+  return cleanedLines.join('\n').slice(0, 8000).trim();
+}
+
+function getPinnedPageDomain(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
+function isNewWebsiteSearchWhenPinned(text: string): boolean {
+  const q = text.trim().toLowerCase();
+  if (/\b(this|that|the)\s+(page|webpage|site|website|article|doc)\b/i.test(q)) return false;
+  if (/\bon\s+(the\s+)?(page|site|website)\b/i.test(q)) return false;
+  if (/^(?:list|liste|find|search|show\s+me|give\s+me)\b/i.test(q) && isWebsiteRequest(q)) {
+    return true;
+  }
+  if (/\b(?:official|offical|officeal|offial|offfical|oficial|ofcial|officail)\s+(?:website|websites|websit|wesite|web|site|sites|page|pages|url|urls|link|links)\b/i.test(q)) {
+    return true;
+  }
+  return false;
 }
 
 function cleanWebFetcherQuery(rawMessage: string): { name: string; query: string } {
@@ -332,6 +464,12 @@ interface WebFetcherResultItem {
   url: string;
   snippet: string;
   isOfficial?: boolean;
+}
+
+interface WebFetcherPinnedPage {
+  url: string;
+  title: string;
+  text: string;
 }
 
 const POPULAR_COMMANDER_MODELS = [
@@ -2233,6 +2371,12 @@ ${commanderConfig.systemPrompts.synthesizer?.trim() || '(Default system prompt)'
   }, []);
   const [webFetcherList, setWebFetcherList] = useState<WebFetcherResultItem[]>([]);
   const [webFetcherOriginalRequest, setWebFetcherOriginalRequest] = useState<string>('');
+  const [webFetcherPinnedPage, setWebFetcherPinnedPage] = useState<WebFetcherPinnedPage | null>(null);
+  useEffect(() => {
+    if (!webFetcherEnabled) {
+      setWebFetcherPinnedPage(null);
+    }
+  }, [webFetcherEnabled]);
   const [newMemoryInput, setNewMemoryInput] = useState('');
   const [editingMemoryIndex, setEditingMemoryIndex] = useState<number | null>(null);
   const [editingMemoryDraft, setEditingMemoryDraft] = useState('');
@@ -2859,6 +3003,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
       storage.setAssistantWebFetcherEnabled(false);
       setWebFetcherList([]);
       setWebFetcherOriginalRequest('');
+      setWebFetcherPinnedPage(null);
     }
     if (except !== 'wikimedia') {
       setWikimediaEnabled(false);
@@ -3144,6 +3289,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
     } else {
       setWebFetcherList([]);
       setWebFetcherOriginalRequest('');
+      setWebFetcherPinnedPage(null);
     }
     setWebFetcherEnabled(next);
     storage.setAssistantWebFetcherEnabled(next);
@@ -5310,29 +5456,37 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
     if (webFetcherEnabled) {
       const directUrl = extractUrlOrDomain(message);
       const pickedNumber = parseSelectionNumber(message);
-      const asksForWebsite = isWebsiteRequest(message);
+      const asksForWebsite = webFetcherPinnedPage
+        ? isNewWebsiteSearchWhenPinned(message)
+        : isWebsiteRequest(message);
 
       // If Coder is also ON, Web Fetcher handles:
       // - messages with a URL
       // - number selection when a list exists
       // - messages that ask for a website, site, page, link or web address
+      // - follow-up questions when a page is pinned
       // Everything else goes to Coder.
       const shouldWebFetcherHandle =
         Boolean(directUrl) ||
         (pickedNumber !== null && (webFetcherList.length > 0 || !coderEnabled)) ||
         asksForWebsite ||
+        Boolean(webFetcherPinnedPage) ||
         !coderEnabled;
 
       if (shouldWebFetcherHandle) {
         if (directUrl) {
-          // Case a: URL or bare domain
+          // Case a: URL or bare domain (replaces any old pinned page)
           setWebFetcherList([]);
           setWebFetcherOriginalRequest('');
+          setWebFetcherPinnedPage(null);
           console.log(`[Web Fetcher] direct URL: ${directUrl}`);
           setSpecialistProgress(30);
           setSpecialistPhase(`Fetching webpage content directly from ${directUrl}...`);
 
           let pageContent = '';
+          let fetchedTitle = '';
+          let fetchedFinalUrl = directUrl;
+          let fullRawText = '';
           const fetchStart = Date.now();
           try {
             const webRes = await Promise.race([
@@ -5343,7 +5497,10 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
             ]);
             if (webFetcherCancelledRef.current) return;
             if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
-              pageContent = webRes.data.textContent.slice(0, 4500);
+              fullRawText = webRes.data.textContent;
+              fetchedTitle = webRes.data.title || '';
+              fetchedFinalUrl = webRes.data.finalUrl || directUrl;
+              pageContent = fullRawText.slice(0, 4500);
               const fetchTime = Date.now() - fetchStart;
               console.log(`[Web Fetcher] fetch ok: ${directUrl} (${fetchTime} ms, ${pageContent.length} chars)`);
             }
@@ -5361,6 +5518,13 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
           if (webFetcherCancelledRef.current) return;
 
           if (pageContent) {
+            const cleanedPinText = cleanFetchedPageText(fullRawText);
+            setWebFetcherPinnedPage({
+              url: fetchedFinalUrl,
+              title: (fetchedTitle || getPinnedPageDomain(fetchedFinalUrl)).trim(),
+              text: cleanedPinText || pageContent,
+            });
+
             setSpecialistProgress(70);
             setSpecialistPhase('Synthesizing answer from webpage content...');
             const currentLanguage = storage.getAssistantLanguage();
@@ -5453,7 +5617,7 @@ DIRECTIVES:
             return;
           }
         } else if (pickedNumber !== null) {
-          // Case c: Number selection
+          // Case c: Number selection (replaces any old pinned page)
           if (webFetcherList.length === 0) {
             const assistantMessage: Message = {
               role: 'assistant',
@@ -5477,12 +5641,16 @@ DIRECTIVES:
           }
 
           const pickedItem = webFetcherList[pickedNumber - 1];
+          setWebFetcherPinnedPage(null);
           console.log(`[Web Fetcher] picked #${pickedNumber}: ${pickedItem.url}`);
 
           setSpecialistProgress(30);
           setSpecialistPhase(`Fetching content from #${pickedNumber} (${pickedItem.url})...`);
 
           let pageContent = '';
+          let fetchedTitle = '';
+          let fetchedFinalUrl = pickedItem.url;
+          let fullRawText = '';
           const fetchStart = Date.now();
           try {
             const webRes = await Promise.race([
@@ -5493,7 +5661,10 @@ DIRECTIVES:
             ]);
             if (webFetcherCancelledRef.current) return;
             if (webRes && webRes.ok && webRes.data && webRes.data.textContent) {
-              pageContent = webRes.data.textContent.slice(0, 4500);
+              fullRawText = webRes.data.textContent;
+              fetchedTitle = webRes.data.title || pickedItem.title || '';
+              fetchedFinalUrl = webRes.data.finalUrl || pickedItem.url;
+              pageContent = fullRawText.slice(0, 4500);
               const fetchTime = Date.now() - fetchStart;
               console.log(`[Web Fetcher] fetch ok: ${pickedItem.url} (${fetchTime} ms, ${pageContent.length} chars)`);
             }
@@ -5511,6 +5682,13 @@ DIRECTIVES:
           if (webFetcherCancelledRef.current) return;
 
           if (pageContent) {
+            const cleanedPinText = cleanFetchedPageText(fullRawText);
+            setWebFetcherPinnedPage({
+              url: fetchedFinalUrl,
+              title: (fetchedTitle || pickedItem.title || getPinnedPageDomain(fetchedFinalUrl)).trim(),
+              text: cleanedPinText || pageContent,
+            });
+
             setSpecialistProgress(70);
             setSpecialistPhase('Synthesizing answer from webpage content...');
             const currentLanguage = storage.getAssistantLanguage();
@@ -5718,7 +5896,7 @@ DIRECTIVES:
               host = r.domain || 'web';
             }
             const isOff = checkIsOfficialDomain(r.url, targetForMatch);
-            const snippet = (r.description || r.title || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+            const snippet = cleanWebFetcherSnippet(r.description, r.title);
             return {
               number: idx + 1,
               title: r.title || host,
@@ -5763,8 +5941,67 @@ DIRECTIVES:
           setSpecialistProgress(0);
           setSpecialistPhase('');
           return;
+        } else if (webFetcherPinnedPage) {
+          // Case e: Follow-up question answered strictly from the pinned page text
+          const pinned = webFetcherPinnedPage;
+          setSpecialistProgress(60);
+          setSpecialistPhase(`Answering from pinned page (${getPinnedPageDomain(pinned.url)})...`);
+          const currentLanguage = storage.getAssistantLanguage();
+
+          const followUpPrompt = `You are answering a follow-up question about a pinned webpage.
+Use ONLY the pinned webpage text provided below to answer the user's question.
+
+Pinned Webpage Title: ${pinned.title}
+Pinned Webpage URL: ${pinned.url}
+
+Pinned Webpage Text:
+${pinned.text}
+
+User Question: "${message}"
+
+STRICT RULES:
+1. Answer the user's question using ONLY information present in the Pinned Webpage Text above.
+2. Do NOT use outside knowledge, guesses, or assumptions.
+3. If the answer is not in the Pinned Webpage Text above, reply with ONLY this exact sentence:
+I don't see that on the page.`;
+
+          let finalAnswerText = '';
+          try {
+            const aiRes = await Promise.race([
+              api.aiChat(
+                followUpPrompt,
+                [],
+                '',
+                undefined,
+                false,
+                { language: currentLanguage, skillsText: buildActiveSkillsText() }
+              ),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('aiChat timeout')), 40000)
+              ),
+            ]);
+            if (webFetcherCancelledRef.current) return;
+            finalAnswerText = stripTierLabels(aiRes.answer).trim() || "I don't see that on the page.";
+          } catch {
+            if (webFetcherCancelledRef.current) return;
+            finalAnswerText = "I don't see that on the page.";
+          }
+
+          if (webFetcherCancelledRef.current) return;
+
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: finalAnswerText,
+            tool: 'webfetcher',
+          };
+
+          setMessages((current) => [...current, assistantMessage]);
+          setLoading(false);
+          setSpecialistProgress(0);
+          setSpecialistPhase('');
+          return;
         } else {
-          // Case d: Unrecognized message when Web Fetcher is ON
+          // Case d: Unrecognized message when Web Fetcher is ON and no page is pinned
           const assistantMessage: Message = {
             role: 'assistant',
             content: 'Web Fetcher is ON. Send a URL, ask for a website (for example: list claude official web), or send a number from the list.',
@@ -9750,6 +9987,34 @@ DIRECTIVES:
                 >
                   <X size={14} />
                 </button>
+              </div>
+            )}
+
+            {/* Web Fetcher Pinned Page Chip (only shown while Web Fetcher mode is active) */}
+            {webFetcherEnabled && webFetcherPinnedPage && (
+              <div className="flex items-center mb-1.5 px-1">
+                <div
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border shadow-sm ${
+                    theme === 'classic'
+                      ? 'bg-teal-950/70 text-teal-200 border-teal-500/40'
+                      : theme === 'fulldark'
+                      ? 'bg-[#1f1f1f] text-[#e4e4e7] border-[#3f3f46]'
+                      : 'bg-teal-950/50 text-teal-200 border-teal-500/30'
+                  }`}
+                >
+                  <span className="truncate max-w-[240px] sm:max-w-[360px]">
+                    Pinned page: {getPinnedPageDomain(webFetcherPinnedPage.url)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setWebFetcherPinnedPage(null)}
+                    className="ml-0.5 px-1 rounded hover:bg-teal-500/20 text-teal-300 hover:text-white transition-colors font-mono text-xs leading-none"
+                    title="Clear pinned page"
+                    aria-label="Clear pinned page"
+                  >
+                    [×]
+                  </button>
+                </div>
               </div>
             )}
 
