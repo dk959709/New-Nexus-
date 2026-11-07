@@ -49,12 +49,38 @@ import {
   Cpu,
   Bot,
   RotateCcw,
+  FolderTree,
+  Folder,
+  FolderOpen,
+  FileCode,
+  FilePlus,
+  Pencil,
+  ChevronDown,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
 import { buildActiveSkillsText, estimateTokens, getActiveSkills } from '@/lib/skills';
 import { copyToClipboard } from '@/lib/clipboard';
 import { cleanMarkdownForSpeech } from '@/lib/format';
+import {
+  MAX_PROJECT_FILES,
+  MAX_PROJECT_CHARS,
+  type ProjectFile,
+  type ProjectTreeNode,
+  isValidProjectPath,
+  parseProjectBundle,
+  serializeProject,
+  projectTotalChars,
+  listFolders,
+  buildTree,
+  renamePath,
+  deletePath,
+  guessLanguage,
+  starterProject,
+  convertArtifactToProject,
+  buildZip,
+  inlineStaticProject,
+} from '@/lib/canvasProject';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import type { AIProviderConfig } from '@/types';
 
@@ -73,7 +99,7 @@ function getCanvasProviderModels(provider: AIProviderConfig): Array<{ id: string
   return [];
 }
 
-export type ArtifactKind = 'html' | 'svg' | 'react' | 'code' | 'markdown';
+export type ArtifactKind = 'html' | 'svg' | 'react' | 'code' | 'markdown' | 'project';
 
 export interface ArtifactVersion {
   versionNumber: number;
@@ -203,7 +229,9 @@ function normalizeCanvasArtifact(rawItem: Partial<CanvasArtifact> & { type?: Art
   const inferredKind: ArtifactKind =
     rawItem.kind ||
     rawItem.type ||
-    (lower.startsWith('<!doctype html') || lower.startsWith('<html')
+    (content.includes('=== FILE: ')
+      ? 'project'
+      : lower.startsWith('<!doctype html') || lower.startsWith('<html')
       ? 'html'
       : lower.startsWith('<svg')
       ? 'svg'
@@ -530,7 +558,11 @@ export function extractArtifactsFromMessage(
     let kind: ArtifactKind = 'code';
     let title = `${rawLang.toUpperCase() || 'CODE'} Snippet #${blockIdx}`;
 
-    if (
+    if (rawLang === 'project') {
+      kind = 'project';
+      const parsedProj = parseProjectBundle(codeBody);
+      title = parsedProj.files[0]?.path || 'Project';
+    } else if (
       rawLang === 'html' ||
       rawLang === 'htm' ||
       codeBody.includes('<!DOCTYPE html') ||
@@ -1297,6 +1329,20 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [editorDraft, setEditorDraft] = useState('');
   const [hasUnsavedEdits, setHasUnsavedEdits] = useState(false);
 
+  // Project Mode State (Part 3)
+  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [openTabs, setOpenTabs] = useState<string[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const [explorerOpen, setExplorerOpen] = useState<boolean>(true);
+  const [activeTreeTargetPath, setActiveTreeTargetPath] = useState<string | null>(null);
+  const [projectInlineMode, setProjectInlineMode] = useState<'none' | 'new-file' | 'rename'>('none');
+  const [projectInlineInput, setProjectInlineInput] = useState<string>('');
+  const [projectActionError, setProjectActionError] = useState<string | null>(null);
+  const [projectDeleteConfirmPath, setProjectDeleteConfirmPath] = useState<string | null>(null);
+  const [copiedProjectBundle, setCopiedProjectBundle] = useState<boolean>(false);
+  const [projectPromptMode, setProjectPromptMode] = useState<boolean>(false);
+
   // Live Coding Process Studio State
   const [liveCodingActive, setLiveCodingActive] = useState(false);
   const [liveCodingPhase, setLiveCodingPhase] = useState<'planning' | 'streaming' | 'compiling'>('planning');
@@ -1427,6 +1473,31 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       const tableExtracted = extractTableRowsFromContent(activeArtifact.content);
       setDataHeaders(tableExtracted.headers);
       setDataRows(tableExtracted.rows);
+
+      if (activeArtifact.kind === 'project') {
+        const parsed = parseProjectBundle(activeArtifact.content);
+        setProjectFiles(parsed.files);
+        setExpandedFolders(new Set(listFolders(parsed.files)));
+        const initialFile =
+          parsed.files.find((f) => f.path.toLowerCase() === 'index.html')?.path ||
+          parsed.files[0]?.path ||
+          null;
+        setSelectedPath(initialFile);
+        setActiveTreeTargetPath(initialFile);
+        setOpenTabs(initialFile ? [initialFile] : []);
+        setProjectInlineMode('none');
+        setProjectInlineInput('');
+        setProjectActionError(parsed.errors.length > 0 ? parsed.errors[0] : null);
+        setProjectDeleteConfirmPath(null);
+      } else {
+        setProjectFiles([]);
+        setSelectedPath(null);
+        setActiveTreeTargetPath(null);
+        setOpenTabs([]);
+        setProjectInlineMode('none');
+        setProjectActionError(null);
+        setProjectDeleteConfirmPath(null);
+      }
     }
   }, [activeArtifact]);
 
@@ -1458,27 +1529,6 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const isRunnableWeb =
-    activeArtifact?.kind === 'html' ||
-    activeArtifact?.kind === 'react' ||
-    Boolean(
-      activeArtifact?.content &&
-        (activeArtifact.content.trim().toLowerCase().startsWith('<!doctype html') ||
-          activeArtifact.content.trim().toLowerCase().startsWith('<html')),
-    );
-  const isSvg = activeArtifact?.kind === 'svg';
-
-  const latestRuntimeError = useMemo(
-    () => [...consoleLogs].reverse().find((l) => l.level === 'error') || null,
-    [consoleLogs],
-  );
-
-  const staticAuditReport = useMemo(() => {
-    if (!activeArtifact) return null;
-    const currentCode = hasUnsavedEdits ? editorDraft : activeArtifact.content;
-    return runStaticArtifactAudit(activeArtifact, currentCode);
-  }, [activeArtifact, editorDraft, hasUnsavedEdits]);
-
   const [previewSource, setPreviewSource] = useState<string>(() =>
     hasUnsavedEdits ? editorDraft : activeArtifact?.content || '',
   );
@@ -1496,6 +1546,35 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       window.clearTimeout(timer);
     };
   }, [hasUnsavedEdits, editorDraft, activeArtifact?.id, activeArtifact?.currentVersionIndex, activeArtifact?.content]);
+
+  const projectInlinedPreviewHtml = useMemo(() => {
+    if (activeArtifact?.kind !== 'project') return null;
+    const parsed = parseProjectBundle(previewSource);
+    return inlineStaticProject(parsed.files);
+  }, [activeArtifact?.kind, previewSource]);
+
+  const isRunnableWeb =
+    activeArtifact?.kind === 'html' ||
+    activeArtifact?.kind === 'react' ||
+    (activeArtifact?.kind === 'project' && Boolean(projectInlinedPreviewHtml)) ||
+    Boolean(
+      activeArtifact?.kind !== 'project' &&
+        activeArtifact?.content &&
+        (activeArtifact.content.trim().toLowerCase().startsWith('<!doctype html') ||
+          activeArtifact.content.trim().toLowerCase().startsWith('<html')),
+    );
+  const isSvg = activeArtifact?.kind === 'svg';
+
+  const latestRuntimeError = useMemo(
+    () => [...consoleLogs].reverse().find((l) => l.level === 'error') || null,
+    [consoleLogs],
+  );
+
+  const staticAuditReport = useMemo(() => {
+    if (!activeArtifact) return null;
+    const currentCode = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+    return runStaticArtifactAudit(activeArtifact, currentCode);
+  }, [activeArtifact, editorDraft, hasUnsavedEdits]);
 
   const svgDataUrl = useMemo(() => {
     if (!previewSource || !previewSource.includes('<svg')) return '';
@@ -1536,7 +1615,31 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
   const handleSaveManualEdits = () => {
     if (!activeArtifact || !hasUnsavedEdits) return;
-    commitNewVersion(editorDraft, 'Manual Code Edit');
+    const contentToSave =
+      activeArtifact.kind === 'project' ? serializeProject(projectFiles) : editorDraft;
+    commitNewVersion(contentToSave, 'Manual Code Edit');
+  };
+
+  const handleDiscardManualEdits = () => {
+    if (!activeArtifact || !hasUnsavedEdits) return;
+    setEditorDraft(activeArtifact.content);
+    setHasUnsavedEdits(false);
+    setProjectActionError(null);
+    setProjectDeleteConfirmPath(null);
+    setProjectInlineMode('none');
+    if (activeArtifact.kind === 'project') {
+      const parsed = parseProjectBundle(activeArtifact.content);
+      setProjectFiles(parsed.files);
+      setExpandedFolders(new Set(listFolders(parsed.files)));
+      const initialFile =
+        (selectedPath && parsed.files.some((f) => f.path === selectedPath) ? selectedPath : null) ||
+        parsed.files.find((f) => f.path.toLowerCase() === 'index.html')?.path ||
+        parsed.files[0]?.path ||
+        null;
+      setSelectedPath(initialFile);
+      setActiveTreeTargetPath(initialFile);
+      setOpenTabs(initialFile ? [initialFile] : []);
+    }
   };
 
   const handleSelectVersion = (versionIdx: number) => {
@@ -1555,7 +1658,12 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   };
 
   const handleCopyArtifact = async () => {
-    const textToCopy = hasUnsavedEdits ? editorDraft : activeArtifact?.content || '';
+    const textToCopy =
+      activeArtifact?.kind === 'project'
+        ? serializeProject(projectFiles)
+        : hasUnsavedEdits
+        ? editorDraft
+        : activeArtifact?.content || '';
     if (!textToCopy) return;
     const ok = await copyToClipboard(textToCopy);
     if (ok) {
@@ -1564,8 +1672,35 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     }
   };
 
+  const handleDownloadProjectZip = () => {
+    if (!activeArtifact) return;
+    const filesToZip =
+      activeArtifact.kind === 'project'
+        ? projectFiles
+        : parseProjectBundle(hasUnsavedEdits ? editorDraft : activeArtifact.content).files;
+    const zipBytes = buildZip(filesToZip);
+    const blob = new Blob([zipBytes as unknown as BlobPart], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeSlug = activeArtifact.title
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 36);
+    a.href = url;
+    a.download = `${safeSlug || 'project'}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+
   const handleDownloadArtifact = () => {
     if (!activeArtifact) return;
+    if (activeArtifact.kind === 'project') {
+      handleDownloadProjectZip();
+      return;
+    }
     const contentToSave = hasUnsavedEdits ? editorDraft : activeArtifact.content;
     const extMap: Record<ArtifactKind, string> = {
       html: 'html',
@@ -1573,6 +1708,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       react: 'tsx',
       markdown: 'md',
       code: activeArtifact.language || 'txt',
+      project: 'zip',
     };
     const ext = extMap[activeArtifact.kind] || 'txt';
     const mimeMap: Record<string, string> = {
@@ -1871,6 +2007,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       ? `complete, production-ready ${targetLangOverride.toUpperCase()} code`
       : forceHtmlOutput
       ? 'a complete, self-contained, single-file HTML5 interactive web application using Tailwind CSS (<script src="https://cdn.tailwindcss.com"></script>) and vanilla JavaScript'
+      : activeArtifact.kind === 'project'
+      ? 'a complete multi-file project inside a single fenced code block with language "project", where each file starts with "=== FILE: path/to/file.ext ===" on its own line followed by the file content'
       : activeArtifact.kind === 'html'
       ? 'a complete, self-contained HTML5 document with Tailwind CSS and interactive JavaScript'
       : activeArtifact.kind === 'svg'
@@ -1918,6 +2056,12 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         setLiveCodingActive(false);
         setEditorDraft(extracted);
         setHasUnsavedEdits(true);
+        if (activeArtifact.kind === 'project' && extracted.includes('=== FILE: ')) {
+          const parsedTrunc = parseProjectBundle(extracted);
+          if (parsedTrunc.files.length > 0) {
+            setProjectFiles(parsedTrunc.files);
+          }
+        }
         if (activeTab !== 'split') {
           setActiveTab('code');
         }
@@ -1929,21 +2073,31 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
       const nextKind: ArtifactKind =
         targetKindOverride ||
-        (forceHtmlOutput ||
-        extracted.includes('<!DOCTYPE html') ||
-        (extracted.includes('<html') && extracted.includes('</html>'))
+        (activeArtifact.kind === 'project' && !forceHtmlOutput && extracted.includes('=== FILE: ')
+          ? 'project'
+          : forceHtmlOutput ||
+            extracted.includes('<!DOCTYPE html') ||
+            (extracted.includes('<html') && extracted.includes('</html>'))
           ? 'html'
           : extracted.startsWith('<svg')
           ? 'svg'
           : activeArtifact.kind);
 
+      const finalExtracted =
+        nextKind === 'project'
+          ? (() => {
+              const parsedProj = parseProjectBundle(extracted);
+              return parsedProj.files.length > 0 ? serializeProject(parsedProj.files) : extracted;
+            })()
+          : extracted;
+
       // Stage 2: Stream the generated code live into the Live Coding Terminal & Editor
-      await streamCodeIntoCanvas(extracted, (partial) => {
+      await streamCodeIntoCanvas(finalExtracted, (partial) => {
         setEditorDraft(partial);
       });
 
-      commitNewVersion(extracted, shortLabel, nextKind, targetLangOverride);
-      if (forceHtmlOutput || nextKind === 'html' || nextKind === 'svg') {
+      commitNewVersion(finalExtracted, shortLabel, nextKind, targetLangOverride);
+      if (forceHtmlOutput || nextKind === 'html' || nextKind === 'svg' || nextKind === 'project') {
         if (activeTab !== 'split') setActiveTab('preview');
       } else if (targetKindOverride) {
         setActiveTab('code');
@@ -1959,6 +2113,71 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     }
   };
 
+  const buildNewCanvasArtifact = (
+    title: string,
+    kind: ArtifactKind,
+    language: string,
+    content: string,
+    versionLabel: string,
+    idPrefix = 'ai-canvas',
+  ): CanvasArtifact => {
+    const now = Date.now();
+    return {
+      id: `${idPrefix}-${now}`,
+      messageIndex: -1,
+      title,
+      kind,
+      language,
+      content,
+      versions: [
+        {
+          versionNumber: 1,
+          label: versionLabel,
+          content,
+          timestamp: now,
+        },
+      ],
+      currentVersionIndex: 0,
+      createdAt: now,
+    };
+  };
+
+  const handleCreateStarterProject = () => {
+    const bundle = serializeProject(starterProject());
+    const created = buildNewCanvasArtifact(
+      'New project',
+      'project',
+      'project',
+      bundle,
+      'Starter Project',
+      'project',
+    );
+    onCreateArtifact(created);
+    setActiveTab('preview');
+  };
+
+  const handleConvertCurrentArtifactToProject = () => {
+    if (!activeArtifact || activeArtifact.kind === 'project') return;
+    const sourceContent = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+    const convertedFiles = convertArtifactToProject(
+      activeArtifact.kind,
+      activeArtifact.language,
+      sourceContent,
+      activeArtifact.title,
+    );
+    const bundle = serializeProject(convertedFiles);
+    const created = buildNewCanvasArtifact(
+      `${activeArtifact.title} (Project)`,
+      'project',
+      'project',
+      bundle,
+      'Converted to Project',
+      'project',
+    );
+    onCreateArtifact(created);
+    setActiveTab('code');
+  };
+
   const handleCreateArtifactFromPrompt = async (userPrompt: string) => {
     if (aiRefining) return;
     setAiRefining(true);
@@ -1970,8 +2189,23 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     setLiveCodingPhase('planning');
     setLiveCodingStatusText(`Architecting new application from prompt with ${activeCanvasModelLabel}...`);
 
-    const isSvgRequest = /\b(svg|diagram|flowchart|blueprint|vector)\b/i.test(userPrompt);
-    const bootstrapScaffold = isSvgRequest
+    const isProjectBuild = projectPromptMode;
+    const isSvgRequest = !isProjectBuild && /\b(svg|diagram|flowchart|blueprint|vector)\b/i.test(userPrompt);
+    const bootstrapScaffold = isProjectBuild
+      ? [
+          `=== FILE: index.html ===`,
+          `<!DOCTYPE html>`,
+          `<html lang="en" class="dark">`,
+          `<head>`,
+          `  <meta charset="UTF-8" />`,
+          `  <meta name="viewport" content="width=device-width, initial-scale=1.0" />`,
+          `  <title>${userPrompt.slice(0, 42)}</title>`,
+          `  <link rel="stylesheet" href="styles.css" />`,
+          `</head>`,
+          `<body>`,
+          `  <!-- Synthesizing multi-file project (${activeCanvasModelLabel})... -->`,
+        ]
+      : isSvgRequest
       ? [
           `<!-- ⚡ NEXUS LIVE AI CANVAS COMPILER -->`,
           `<!-- 🤖 Model: ${activeCanvasModelLabel} -->`,
@@ -2014,7 +2248,9 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     let prompt = [
       `You are the NEXUS Live AI Canvas Studio engine.`,
       `User Request: ${userPrompt}`,
-      isSvgRequest
+      isProjectBuild
+        ? `Output format requirement: Return ONE fenced code block with the language 'project'. Inside it write the files using this exact format: lines like === FILE: index.html === followed by the file content, then the next file marker. Build a complete, self-contained front-end project of plain HTML, CSS and vanilla JavaScript with no build step and no npm packages: index.html is the entry, it links the other files with relative paths (for example styles.css and js/app.js), maximum 8 files, folders allowed (for example js/ and css/). Use Tailwind only through <script src="https://cdn.tailwindcss.com"></script> in index.html if needed. Return ONLY that fenced block.`
+        : isSvgRequest
         ? `Output format requirement: Return ONLY valid, standalone <svg>...</svg> markup with rich dark-mode visual styling. No conversational text.`
         : `Output format requirement: Build a complete, self-contained, single-file HTML5 interactive web application using Tailwind CSS (<script src="https://cdn.tailwindcss.com"></script>) and vanilla JavaScript. Return ONLY the HTML code.`,
     ].join('\n');
@@ -2041,6 +2277,50 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         throw new Error('AI returned an empty response.');
       }
 
+      if (isProjectBuild) {
+        const parsedProj = parseProjectBundle(extracted);
+        const hasIndexHtml = parsedProj.files.some(
+          (f) => f.path.split('/').pop()?.toLowerCase() === 'index.html',
+        );
+        if (parsedProj.files.length === 0 || !hasIndexHtml) {
+          setLiveCodingActive(false);
+          setAiError('The AI did not return a valid project. Try again or turn off Project.');
+          return;
+        }
+
+        // Enforce MAX_PROJECT_CHARS across parsed files
+        const boundedFiles: ProjectFile[] = [];
+        let runningChars = 0;
+        for (const f of parsedProj.files) {
+          const remaining = MAX_PROJECT_CHARS - runningChars;
+          if (remaining <= 0) break;
+          const contentSlice = f.content.slice(0, remaining);
+          boundedFiles.push({ path: f.path, content: contentSlice });
+          runningChars += contentSlice.length;
+        }
+
+        const bundleContent = serializeProject(boundedFiles);
+
+        if (truncated) {
+          setAiWarning(
+            'The AI answer looks cut off, so the last file in the project may be incomplete. Try a shorter request or ask the AI to continue.',
+          );
+        }
+
+        await streamCodeIntoCanvas(bundleContent);
+
+        const created = buildNewCanvasArtifact(
+          userPrompt.slice(0, 38),
+          'project',
+          'project',
+          bundleContent,
+          'AI Generated Project',
+        );
+        onCreateArtifact(created);
+        setActiveTab('preview');
+        return;
+      }
+
       if (truncated) {
         setAiWarning(
           'The AI answer looks cut off, so the code may be incomplete. Try a shorter request or ask the AI to continue.',
@@ -2051,25 +2331,13 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       await streamCodeIntoCanvas(extracted);
 
       const kind: ArtifactKind = extracted.startsWith('<svg') ? 'svg' : 'html';
-      const now = Date.now();
-      const created: CanvasArtifact = {
-        id: `ai-canvas-${now}`,
-        messageIndex: -1,
-        title: userPrompt.slice(0, 38),
+      const created = buildNewCanvasArtifact(
+        userPrompt.slice(0, 38),
         kind,
-        language: kind,
-        content: extracted,
-        versions: [
-          {
-            versionNumber: 1,
-            label: 'AI Generated Artifact',
-            content: extracted,
-            timestamp: now,
-          },
-        ],
-        currentVersionIndex: 0,
-        createdAt: now,
-      };
+        kind,
+        extracted,
+        'AI Generated Artifact',
+      );
       onCreateArtifact(created);
       setActiveTab('preview');
     } catch (err) {
@@ -2141,10 +2409,602 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
   const lineCount = (hasUnsavedEdits ? editorDraft : activeArtifact?.content || '').split('\n').length;
 
+  const projectTree = useMemo(() => buildTree(projectFiles), [projectFiles]);
+  const totalProjectChars = useMemo(() => projectTotalChars(projectFiles), [projectFiles]);
+
+  const updateProjectFilesAndDraft = (nextFiles: ProjectFile[]) => {
+    setProjectFiles(nextFiles);
+    const serialized = serializeProject(nextFiles);
+    setEditorDraft(serialized);
+    setHasUnsavedEdits(serialized !== (activeArtifact?.content || ''));
+  };
+
+  const handleOpenProjectFile = (filePath: string) => {
+    setSelectedPath(filePath);
+    setActiveTreeTargetPath(filePath);
+    setOpenTabs((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
+    setProjectDeleteConfirmPath(null);
+  };
+
+  const handleToggleProjectFolder = (folderPath: string) => {
+    setActiveTreeTargetPath(folderPath);
+    setProjectDeleteConfirmPath(null);
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+      } else {
+        next.add(folderPath);
+      }
+      return next;
+    });
+  };
+
+  const handleCreateNewProjectFile = (e: React.FormEvent) => {
+    e.preventDefault();
+    const candidate = projectInlineInput.trim();
+    if (!isValidProjectPath(candidate)) {
+      setProjectActionError(
+        'Invalid path. Use A-Z, a-z, 0-9, _, -, ., /, @ (no leading "/", "..", or "//", max 120 chars).',
+      );
+      return;
+    }
+    if (projectFiles.length >= MAX_PROJECT_FILES) {
+      setProjectActionError(`Limit reached: maximum ${MAX_PROJECT_FILES} files per project.`);
+      return;
+    }
+    if (totalProjectChars >= MAX_PROJECT_CHARS) {
+      setProjectActionError(
+        `Limit reached: maximum ${MAX_PROJECT_CHARS.toLocaleString()} total characters.`,
+      );
+      return;
+    }
+    const hasCollision = projectFiles.some(
+      (f) =>
+        f.path === candidate ||
+        f.path.startsWith(`${candidate}/`) ||
+        candidate.startsWith(`${f.path}/`),
+    );
+    if (hasCollision) {
+      setProjectActionError(`A file or folder already exists at "${candidate}".`);
+      return;
+    }
+
+    const nextFiles = [...projectFiles, { path: candidate, content: '' }];
+    updateProjectFilesAndDraft(nextFiles);
+
+    const parts = candidate.split('/');
+    if (parts.length > 1) {
+      setExpandedFolders((prev) => {
+        const next = new Set(prev);
+        let accum = '';
+        for (let i = 0; i < parts.length - 1; i++) {
+          accum = accum ? `${accum}/${parts[i]}` : parts[i];
+          next.add(accum);
+        }
+        return next;
+      });
+    }
+
+    setSelectedPath(candidate);
+    setActiveTreeTargetPath(candidate);
+    setOpenTabs((prev) => (prev.includes(candidate) ? prev : [...prev, candidate]));
+    setProjectInlineMode('none');
+    setProjectInlineInput('');
+    setProjectActionError(null);
+  };
+
+  const handleRenameProjectTarget = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = activeTreeTargetPath || selectedPath;
+    if (!target) {
+      setProjectInlineMode('none');
+      return;
+    }
+    const cleanNew = projectInlineInput.trim();
+    const res = renamePath(projectFiles, target, cleanNew);
+    if (res.error) {
+      setProjectActionError(res.error);
+      return;
+    }
+
+    updateProjectFilesAndDraft(res.files);
+
+    const isFileRename = projectFiles.some((f) => f.path === target);
+    if (isFileRename) {
+      if (selectedPath === target) setSelectedPath(cleanNew);
+      setActiveTreeTargetPath(cleanNew);
+      setOpenTabs((prev) => prev.map((p) => (p === target ? cleanNew : p)));
+    } else {
+      const prefix = `${target}/`;
+      if (selectedPath && selectedPath.startsWith(prefix)) {
+        setSelectedPath(`${cleanNew}${selectedPath.slice(target.length)}`);
+      }
+      setActiveTreeTargetPath(cleanNew);
+      setOpenTabs((prev) =>
+        prev.map((p) => (p.startsWith(prefix) ? `${cleanNew}${p.slice(target.length)}` : p)),
+      );
+      setExpandedFolders((prev) => {
+        const next = new Set<string>();
+        prev.forEach((folder) => {
+          if (folder === target) {
+            next.add(cleanNew);
+          } else if (folder.startsWith(prefix)) {
+            next.add(`${cleanNew}${folder.slice(target.length)}`);
+          } else {
+            next.add(folder);
+          }
+        });
+        return next;
+      });
+    }
+
+    const parentParts = cleanNew.split('/');
+    if (parentParts.length > 1) {
+      setExpandedFolders((prev) => {
+        const next = new Set(prev);
+        let accum = '';
+        for (let i = 0; i < parentParts.length - 1; i++) {
+          accum = accum ? `${accum}/${parentParts[i]}` : parentParts[i];
+          next.add(accum);
+        }
+        return next;
+      });
+    }
+
+    setProjectInlineMode('none');
+    setProjectInlineInput('');
+    setProjectActionError(null);
+  };
+
+  const handleDeleteProjectTarget = () => {
+    const target = activeTreeTargetPath || selectedPath;
+    if (!target) return;
+    if (projectDeleteConfirmPath !== target) {
+      setProjectDeleteConfirmPath(target);
+      return;
+    }
+
+    const nextFiles = deletePath(projectFiles, target);
+    updateProjectFilesAndDraft(nextFiles);
+
+    const prefix = `${target}/`;
+    const nextOpen = openTabs.filter((p) => p !== target && !p.startsWith(prefix));
+    const nextSelected =
+      (selectedPath && selectedPath !== target && !selectedPath.startsWith(prefix)
+        ? selectedPath
+        : null) ||
+      nextOpen[0] ||
+      nextFiles[0]?.path ||
+      null;
+
+    setOpenTabs(
+      nextSelected && !nextOpen.includes(nextSelected) ? [...nextOpen, nextSelected] : nextOpen,
+    );
+    setSelectedPath(nextSelected);
+    setActiveTreeTargetPath(nextSelected);
+    setProjectDeleteConfirmPath(null);
+    setProjectActionError(null);
+  };
+
+  const handleCopyProjectBundle = async () => {
+    const bundleText = serializeProject(projectFiles);
+    if (!bundleText) return;
+    const ok = await copyToClipboard(bundleText);
+    if (ok) {
+      setCopiedProjectBundle(true);
+      setTimeout(() => setCopiedProjectBundle(false), 2000);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const renderProjectTreeNodes = (nodes: ProjectTreeNode[], depth = 0): React.ReactNode =>
+    nodes.map((node) => {
+      if (node.kind === 'folder') {
+        const isExpanded = expandedFolders.has(node.path);
+        const isTarget = activeTreeTargetPath === node.path;
+        return (
+          <div key={`folder-${node.path}`}>
+            <button
+              type="button"
+              onClick={() => handleToggleProjectFolder(node.path)}
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+              className={`w-full pr-2 py-1 text-left text-xs font-mono flex items-center gap-1.5 rounded transition-colors cursor-pointer ${
+                isTarget
+                  ? 'bg-cyan-500/15 text-cyan-200'
+                  : 'text-zinc-300 hover:bg-zinc-800/70 hover:text-white'
+              }`}
+              title={node.path}
+            >
+              {isExpanded ? (
+                <ChevronDown size={12} className="text-zinc-400 shrink-0" />
+              ) : (
+                <ChevronRight size={12} className="text-zinc-400 shrink-0" />
+              )}
+              {isExpanded ? (
+                <FolderOpen size={13} className="text-amber-400 shrink-0" />
+              ) : (
+                <Folder size={13} className="text-amber-400 shrink-0" />
+              )}
+              <span className="truncate">{node.name}</span>
+            </button>
+            {isExpanded && node.children && node.children.length > 0 && (
+              <div>{renderProjectTreeNodes(node.children, depth + 1)}</div>
+            )}
+          </div>
+        );
+      }
+
+      const isSelected = selectedPath === node.path;
+      const isTarget = activeTreeTargetPath === node.path;
+      return (
+        <button
+          key={`file-${node.path}`}
+          type="button"
+          onClick={() => handleOpenProjectFile(node.path)}
+          style={{ paddingLeft: `${20 + depth * 12}px` }}
+          className={`w-full pr-2 py-1 text-left text-xs font-mono flex items-center gap-1.5 rounded transition-colors cursor-pointer ${
+            isSelected
+              ? 'bg-cyan-500/20 text-cyan-200 font-semibold border-l-2 border-cyan-400'
+              : isTarget
+              ? 'bg-zinc-800 text-zinc-100'
+              : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200'
+          }`}
+          title={`${node.path} (${guessLanguage(node.path)})`}
+        >
+          <FileCode
+            size={13}
+            className={isSelected ? 'text-cyan-400 shrink-0' : 'text-zinc-500 shrink-0'}
+          />
+          <span className="truncate">{node.name}</span>
+        </button>
+      );
+    });
+
+  const renderProjectWorkspace = (isSplitPane = false) => {
+    const activeFileObj = projectFiles.find((f) => f.path === selectedPath) || null;
+    const activeFileLines = (activeFileObj?.content || '').split('\n').length;
+    const isNearCharLimit = totalProjectChars > MAX_PROJECT_CHARS * 0.8;
+    const formattedChars =
+      totalProjectChars >= 1000
+        ? `${Math.round(totalProjectChars / 1000)}k`
+        : String(totalProjectChars);
+    const targetForAction = activeTreeTargetPath || selectedPath;
+
+    return (
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#0b0b0e]">
+        {/* Project Workspace Top Bar: Collapsible Files Toggle + Size Badge + Toolbar Actions */}
+        <div className="px-2.5 py-1.5 bg-zinc-900/90 border-b border-zinc-800 flex items-center justify-between gap-1.5 flex-wrap shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              type="button"
+              onClick={() => setExplorerOpen((prev) => !prev)}
+              className="px-2 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-700/80 text-xs font-mono text-zinc-200 flex items-center gap-1 cursor-pointer"
+              title="Toggle project file tree panel"
+            >
+              <FolderTree size={12} className="text-cyan-400 shrink-0" />
+              <span>Files ({projectFiles.length})</span>
+              {explorerOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            </button>
+
+            <span
+              className={`px-2 py-0.5 rounded-md text-[11px] font-mono border shrink-0 ${
+                isNearCharLimit
+                  ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-semibold'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+              }`}
+              title={`${projectFiles.length} / ${MAX_PROJECT_FILES} files · ${totalProjectChars.toLocaleString()} / ${MAX_PROJECT_CHARS.toLocaleString()} chars`}
+            >
+              {projectFiles.length} {projectFiles.length === 1 ? 'file' : 'files'} · {formattedChars} chars
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setProjectInlineMode((prev) => (prev === 'new-file' ? 'none' : 'new-file'));
+                setProjectInlineInput('');
+                setProjectActionError(null);
+                setProjectDeleteConfirmPath(null);
+              }}
+              className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                projectInlineMode === 'new-file'
+                  ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                  : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+              }`}
+              title="New file"
+            >
+              <FilePlus size={13} />
+            </button>
+
+            <button
+              type="button"
+              disabled={!targetForAction}
+              onClick={() => {
+                if (!targetForAction) return;
+                setProjectInlineMode((prev) => (prev === 'rename' ? 'none' : 'rename'));
+                setProjectInlineInput(targetForAction);
+                setProjectActionError(null);
+                setProjectDeleteConfirmPath(null);
+              }}
+              className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer disabled:opacity-40 ${
+                projectInlineMode === 'rename'
+                  ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                  : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+              }`}
+              title={targetForAction ? `Rename "${targetForAction}"` : 'Rename'}
+            >
+              <Pencil size={13} />
+            </button>
+
+            <button
+              type="button"
+              disabled={!targetForAction}
+              onClick={handleDeleteProjectTarget}
+              className={`px-2 py-1 rounded-lg border text-xs font-mono flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40 ${
+                projectDeleteConfirmPath && projectDeleteConfirmPath === targetForAction
+                  ? 'bg-rose-600 hover:bg-rose-500 border-rose-400 text-white font-semibold'
+                  : 'bg-zinc-950 hover:bg-rose-950/60 border-zinc-800 text-zinc-300 hover:text-rose-300'
+              }`}
+              title={targetForAction ? `Delete "${targetForAction}"` : 'Delete'}
+            >
+              <Trash2 size={13} />
+              {projectDeleteConfirmPath && projectDeleteConfirmPath === targetForAction && (
+                <span className="text-[11px]">Tap again to confirm</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDownloadProjectZip}
+              className="p-1.5 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-cyan-300 transition-colors cursor-pointer"
+              title="Download ZIP"
+            >
+              <Download size={13} />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyProjectBundle}
+              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                copiedProjectBundle
+                  ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                  : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+              }`}
+              title="Copy project"
+            >
+              {copiedProjectBundle ? <Check size={13} /> : <Copy size={13} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Inline New File / Rename Input Bar */}
+        {projectInlineMode !== 'none' && (
+          <form
+            onSubmit={
+              projectInlineMode === 'new-file'
+                ? handleCreateNewProjectFile
+                : handleRenameProjectTarget
+            }
+            className="px-2.5 py-1.5 bg-zinc-900 border-b border-zinc-800 flex items-center gap-1.5 flex-wrap shrink-0"
+          >
+            <span className="text-[11px] font-mono text-cyan-300 shrink-0">
+              {projectInlineMode === 'new-file' ? 'New file path:' : `Rename "${targetForAction}":`}
+            </span>
+            <input
+              type="text"
+              value={projectInlineInput}
+              onChange={(e) => {
+                setProjectInlineInput(e.target.value);
+                setProjectActionError(null);
+              }}
+              placeholder={
+                projectInlineMode === 'new-file'
+                  ? 'src/components/Button.tsx'
+                  : 'Enter new file or folder path'
+              }
+              autoFocus
+              className="flex-1 min-w-[140px] px-2.5 py-1 rounded-lg bg-zinc-950 border border-zinc-700 focus:border-cyan-400 text-xs font-mono text-zinc-100 outline-none"
+            />
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold cursor-pointer"
+            >
+              {projectInlineMode === 'new-file' ? 'Create' : 'Rename'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setProjectInlineMode('none');
+                setProjectActionError(null);
+              }}
+              className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs cursor-pointer"
+            >
+              Cancel
+            </button>
+          </form>
+        )}
+
+        {/* Inline Validation / Limit Error Banner */}
+        {projectActionError && (
+          <div className="px-3 py-1.5 bg-rose-950/80 border-b border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertTriangle size={12} className="text-rose-400 shrink-0" />
+              <span className="truncate font-mono text-[11px]">{projectActionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setProjectActionError(null)}
+              className="text-rose-300 hover:text-white"
+              title="Dismiss error"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
+        {/* Main Project Explorer + Open Tabs + Editor Layout */}
+        <div
+          className={`flex-1 min-h-0 flex flex-col ${
+            isSplitPane ? '' : 'md:flex-row'
+          } overflow-hidden`}
+        >
+          {/* File Tree Panel (Collapsible on top on small screens / split, left sidebar on md+) */}
+          {explorerOpen && (
+            <div
+              className={`bg-zinc-950/90 border-zinc-800 overflow-y-auto p-1.5 shrink-0 ${
+                isSplitPane
+                  ? 'max-h-40 border-b w-full'
+                  : 'max-h-44 border-b md:max-h-none md:border-b-0 md:border-r md:w-52 lg:w-56'
+              }`}
+            >
+              {projectTree.length === 0 ? (
+                <div className="p-2 text-[11px] font-mono text-zinc-500">
+                  No files in project. Click New file (+) to add one.
+                </div>
+              ) : (
+                renderProjectTreeNodes(projectTree, 0)
+              )}
+            </div>
+          )}
+
+          {/* Right / Bottom Area: Open File Tabs Strip + Monospace File Editor */}
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {/* Open File Tabs Strip */}
+            <div className="bg-zinc-900/70 border-b border-zinc-800 flex items-center overflow-x-auto no-scrollbar shrink-0">
+              {openTabs.map((tabPath) => {
+                const isSelected = tabPath === selectedPath;
+                const fileName = tabPath.split('/').pop() || tabPath;
+                return (
+                  <div
+                    key={tabPath}
+                    className={`inline-flex items-center border-r border-zinc-800 text-xs font-mono shrink-0 transition-colors ${
+                      isSelected
+                        ? 'bg-[#0b0b0e] text-cyan-300 border-b-2 border-b-cyan-400'
+                        : 'bg-zinc-900/60 text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleOpenProjectFile(tabPath)}
+                      className="px-2.5 py-1.5 flex items-center gap-1.5 cursor-pointer"
+                      title={tabPath}
+                    >
+                      <FileCode size={11} className={isSelected ? 'text-cyan-400' : 'text-zinc-500'} />
+                      <span className="max-w-[130px] truncate">{fileName}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const nextTabs = openTabs.filter((t) => t !== tabPath);
+                        setOpenTabs(nextTabs);
+                        if (selectedPath === tabPath) {
+                          const fallback = nextTabs[nextTabs.length - 1] || projectFiles[0]?.path || null;
+                          setSelectedPath(fallback);
+                          setActiveTreeTargetPath(fallback);
+                        }
+                      }}
+                      className="pr-2 pl-0.5 py-1.5 text-zinc-500 hover:text-rose-400 cursor-pointer"
+                      title={`Close ${tabPath}`}
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Active File Editor */}
+            {activeFileObj ? (
+              <div className="flex-1 min-h-0 relative flex overflow-hidden">
+                <div
+                  aria-hidden="true"
+                  className="py-3 px-2 bg-zinc-950 border-r border-zinc-800/80 text-right font-mono text-xs text-zinc-600 select-none overflow-hidden shrink-0"
+                >
+                  {Array.from({ length: Math.max(1, activeFileLines) }).map((_, i) => (
+                    <div key={i} className="leading-6">
+                      {i + 1}
+                    </div>
+                  ))}
+                </div>
+                <textarea
+                  value={activeFileObj.content}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    const otherChars = totalProjectChars - activeFileObj.content.length;
+                    if (otherChars + nextVal.length > MAX_PROJECT_CHARS) {
+                      setProjectActionError(
+                        `Maximum project size (${MAX_PROJECT_CHARS.toLocaleString()} chars) reached.`,
+                      );
+                      return;
+                    }
+                    setProjectActionError(null);
+                    const nextFiles = projectFiles.map((f) =>
+                      f.path === activeFileObj.path ? { ...f, content: nextVal } : f,
+                    );
+                    updateProjectFilesAndDraft(nextFiles);
+                  }}
+                  spellCheck={false}
+                  className="flex-1 w-full h-full p-3 sm:p-4 bg-[#0b0b0e] text-zinc-100 font-mono text-xs sm:text-[13px] leading-6 outline-none resize-none overflow-auto"
+                  placeholder={`Edit ${activeFileObj.path}...`}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-6 text-xs font-mono text-zinc-500">
+                Select a file from the project tree to edit its contents.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const renderLivePreviewSurface = () => {
     if (!activeArtifact) return null;
+    if (activeArtifact.kind === 'project') {
+      if (!projectInlinedPreviewHtml) {
+        return (
+          <div className="w-full max-w-lg mx-auto p-6 rounded-xl bg-zinc-900/70 border border-zinc-800/90 text-center space-y-2.5">
+            <FolderTree size={28} className="text-cyan-400 mx-auto" />
+            <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed">
+              No index.html found. Add an index.html to preview a plain HTML project. React and TypeScript preview comes in the next update.
+            </p>
+          </div>
+        );
+      }
+      return (
+        <div
+          className={`h-full min-h-[360px] rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl transition-all duration-200 ${
+            viewportSize === 'mobile'
+              ? 'w-[375px]'
+              : viewportSize === 'tablet'
+              ? 'w-[768px]'
+              : 'w-full'
+          }`}
+        >
+          <iframe
+            key={`${activeArtifact.id}-${activeArtifact.currentVersionIndex}-${iframeRefreshKey}-${inspectMode}-${selectedThemePreset}`}
+            ref={iframeRef}
+            title={activeArtifact.title}
+            sandbox="allow-scripts allow-modals allow-forms"
+            srcDoc={buildRunnableSandboxHtml(
+              {
+                ...activeArtifact,
+                kind: 'html',
+                content: projectInlinedPreviewHtml,
+              },
+              inspectMode,
+              activeThemePresetObj.cssOverride,
+            )}
+            className="w-full h-full min-h-[420px] border-0 bg-zinc-950"
+          />
+        </div>
+      );
+    }
     if (isRunnableWeb) {
       return (
         <div
@@ -2357,11 +3217,29 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 type="button"
                 onClick={handleDownloadArtifact}
                 className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 transition-colors flex items-center gap-1 cursor-pointer"
-                title="Download standalone file"
+                title={
+                  activeArtifact.kind === 'project'
+                    ? 'Download project as ZIP'
+                    : 'Download standalone file'
+                }
               >
                 <Download size={13} className="text-cyan-400" />
-                <span className="hidden sm:inline">Export</span>
+                <span className="hidden sm:inline">
+                  {activeArtifact.kind === 'project' ? 'ZIP' : 'Export'}
+                </span>
               </button>
+
+              {activeArtifact.kind !== 'project' && (
+                <button
+                  type="button"
+                  onClick={handleConvertCurrentArtifactToProject}
+                  className="p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Convert to project"
+                >
+                  <FolderTree size={13} className="text-amber-400" />
+                  <span className="hidden xl:inline">Convert to project</span>
+                </button>
+              )}
             </>
           )}
 
@@ -2414,7 +3292,11 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         }`}
       >
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <Layers size={13} className="text-cyan-400 shrink-0" />
+          {activeArtifact?.kind === 'project' ? (
+            <FolderTree size={13} className="text-amber-400 shrink-0" />
+          ) : (
+            <Layers size={13} className="text-cyan-400 shrink-0" />
+          )}
           <select
             value={activeArtifact?.id || ''}
             onChange={(e) => onSelectArtifact(e.target.value)}
@@ -2422,7 +3304,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           >
             {artifacts.map((art, idx) => (
               <option key={art.id} value={art.id}>
-                {idx + 1}. [{(art.kind || 'html').toUpperCase()}] {art.title}
+                {idx + 1}. [{art.kind === 'project' ? 'Project' : (art.kind || 'html').toUpperCase()}] {art.title}
               </option>
             ))}
           </select>
@@ -2437,6 +3319,16 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
               <Trash2 size={12} />
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={handleCreateStarterProject}
+            className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-amber-300 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+            title="New project"
+          >
+            <FolderTree size={12} className="text-amber-400" />
+            <span>New project</span>
+          </button>
 
           <button
             type="button"
@@ -2758,14 +3650,26 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         )}
 
         {(activeTab === 'code' || activeTab === 'split') && hasUnsavedEdits && (
-          <button
-            type="button"
-            onClick={handleSaveManualEdits}
-            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 shadow-sm cursor-pointer"
-          >
-            <CheckCircle2 size={12} />
-            <span>Save v{(activeArtifact?.versions.length || 1) + 1}</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleDiscardManualEdits}
+              className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs font-medium flex items-center gap-1 cursor-pointer"
+              title="Discard unsaved manual edits"
+            >
+              <RotateCcw size={11} />
+              <span>Discard</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveManualEdits}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 shadow-sm cursor-pointer"
+              title="Save edits as a new version"
+            >
+              <CheckCircle2 size={12} />
+              <span>Save edits (v{(activeArtifact?.versions.length || 1) + 1})</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -3361,49 +4265,59 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           /* Feature 9: Split Code + Live Preview Side-by-Side (Desktop) / Stacked (Mobile) */
           <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 overflow-hidden divide-y lg:divide-y-0 lg:divide-x divide-zinc-800">
             <div className="flex flex-col min-h-0 overflow-hidden">
-              <div className="px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 text-[11px] font-mono text-zinc-400 flex items-center justify-between">
-                <span>LIVE SOURCE EDITOR</span>
-                <span>Hot-Reload Active</span>
-              </div>
-              <textarea
-                value={editorDraft}
-                onChange={(e) => {
-                  setEditorDraft(e.target.value);
-                  setHasUnsavedEdits(e.target.value !== activeArtifact.content);
-                }}
-                spellCheck={false}
-                className="flex-1 w-full p-3 bg-[#0b0b0e] text-zinc-100 font-mono text-xs leading-5 outline-none resize-none overflow-auto"
-              />
+              {activeArtifact.kind === 'project' ? (
+                renderProjectWorkspace(true)
+              ) : (
+                <>
+                  <div className="px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 text-[11px] font-mono text-zinc-400 flex items-center justify-between">
+                    <span>LIVE SOURCE EDITOR</span>
+                    <span>Hot-Reload Active</span>
+                  </div>
+                  <textarea
+                    value={editorDraft}
+                    onChange={(e) => {
+                      setEditorDraft(e.target.value);
+                      setHasUnsavedEdits(e.target.value !== activeArtifact.content);
+                    }}
+                    spellCheck={false}
+                    className="flex-1 w-full p-3 bg-[#0b0b0e] text-zinc-100 font-mono text-xs leading-5 outline-none resize-none overflow-auto"
+                  />
+                </>
+              )}
             </div>
             <div className="flex flex-col min-h-0 overflow-auto p-2.5 bg-[#09090b]">
               {renderLivePreviewSurface()}
             </div>
           </div>
         ) : activeTab === 'code' && activeArtifact ? (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="flex-1 relative flex overflow-hidden">
-              <div
-                aria-hidden="true"
-                className="py-4 px-2.5 bg-zinc-950 border-r border-zinc-800/80 text-right font-mono text-xs text-zinc-600 select-none overflow-hidden shrink-0"
-              >
-                {Array.from({ length: Math.max(1, lineCount) }).map((_, i) => (
-                  <div key={i} className="leading-6">
-                    {i + 1}
-                  </div>
-                ))}
+          activeArtifact.kind === 'project' ? (
+            renderProjectWorkspace(false)
+          ) : (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="flex-1 relative flex overflow-hidden">
+                <div
+                  aria-hidden="true"
+                  className="py-4 px-2.5 bg-zinc-950 border-r border-zinc-800/80 text-right font-mono text-xs text-zinc-600 select-none overflow-hidden shrink-0"
+                >
+                  {Array.from({ length: Math.max(1, lineCount) }).map((_, i) => (
+                    <div key={i} className="leading-6">
+                      {i + 1}
+                    </div>
+                  ))}
+                </div>
+                <textarea
+                  value={editorDraft}
+                  onChange={(e) => {
+                    setEditorDraft(e.target.value);
+                    setHasUnsavedEdits(e.target.value !== activeArtifact.content);
+                  }}
+                  spellCheck={false}
+                  className="flex-1 w-full h-full p-4 bg-[#0b0b0e] text-zinc-100 font-mono text-xs sm:text-[13px] leading-6 outline-none resize-none overflow-auto"
+                  placeholder="Edit artifact code or markdown..."
+                />
               </div>
-              <textarea
-                value={editorDraft}
-                onChange={(e) => {
-                  setEditorDraft(e.target.value);
-                  setHasUnsavedEdits(e.target.value !== activeArtifact.content);
-                }}
-                spellCheck={false}
-                className="flex-1 w-full h-full p-4 bg-[#0b0b0e] text-zinc-100 font-mono text-xs sm:text-[13px] leading-6 outline-none resize-none overflow-auto"
-                placeholder="Edit artifact code or markdown..."
-              />
             </div>
-          </div>
+          )
         ) : activeTab === 'data' && activeArtifact ? (
           /* Feature 4: Interactive Data & Table Playground */
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
@@ -3735,6 +4649,26 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           </div>
         )}
 
+        {/* Project Toggle Chip (only for create-from-prompt, off by default) */}
+        {(!activeArtifact || activeTab === 'templates') && (
+          <button
+            type="button"
+            onClick={() => setProjectPromptMode((prev) => !prev)}
+            className={`h-9 px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
+              projectPromptMode
+                ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
+                : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-400 hover:text-zinc-200'
+            }`}
+            title="Toggle multi-file Project generation mode"
+          >
+            <FolderTree
+              size={13}
+              className={projectPromptMode ? 'text-amber-400 shrink-0' : 'text-zinc-400 shrink-0'}
+            />
+            <span className="text-[11px] font-mono whitespace-nowrap">Project</span>
+          </button>
+        )}
+
         <input
           type="text"
           value={customAiPrompt}
@@ -3745,6 +4679,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
               ? `Tell AI how to change <${inspectedElement.tagName}>...`
               : activeArtifact && activeTab !== 'templates'
               ? `Tell AI how to modify "${activeArtifact.title}"...`
+              : projectPromptMode
+              ? 'Describe a multi-file HTML/CSS/JS project to build...'
               : 'Describe an interactive app, calculator, or SVG diagram to build...'
           }
           className="flex-1 min-w-0 min-h-[42px] bg-zinc-900 border border-zinc-700/90 focus:border-cyan-400 rounded-xl px-3 py-2 text-[15px] sm:text-xs text-zinc-100 placeholder-zinc-400 outline-none shadow-inner"
