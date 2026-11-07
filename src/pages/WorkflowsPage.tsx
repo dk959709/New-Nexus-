@@ -54,6 +54,7 @@ import {
   Snowflake,
   Clock,
   History,
+  Rocket,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -3708,7 +3709,7 @@ export function StepSettingsForm({
                       <option value="" className="bg-[#0b0d14]">None</option>
                       {savedSkills.map((skill) => (
                         <option key={skill.id} value={skill.id} className="bg-[#0b0d14]">
-                          {skill.name} ({formatSkillSize(skill.sizeChars || skill.text.length)})
+                          {skill.name} ({formatSkillSize(skill.text.length)})
                         </option>
                       ))}
                       {isSkillMissing && (
