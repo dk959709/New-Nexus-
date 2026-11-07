@@ -1760,11 +1760,58 @@ export const storage = {
 
   saveWorkflowRun(record: WorkflowRunRecord): void {
     try {
+      const sanitizeHistoryText = (val?: string): string | undefined => {
+        if (!val) return val;
+        const trimmed = val.trim();
+        if (trimmed.startsWith('data:image/') || /^data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,/i.test(trimmed)) {
+          return '[1 image]';
+        }
+        return val.length > 500 ? `${val.slice(0, 500)}…` : val;
+      };
+
+      const safeRecord: WorkflowRunRecord = {
+        ...record,
+        finalOutput: sanitizeHistoryText(record.finalOutput),
+        steps: Array.isArray(record.steps)
+          ? record.steps.map((s) => ({
+              ...s,
+              outputSummary: sanitizeHistoryText(s.outputSummary) || '',
+              error: sanitizeHistoryText(s.error),
+            }))
+          : [],
+      };
+
       const all = read<Record<string, WorkflowRunRecord[]>>(KEYS.workflowRunHistory, {});
-      const list = Array.isArray(all[record.workflowId]) ? all[record.workflowId] : [];
-      list.unshift(record);
-      all[record.workflowId] = list.slice(0, 20);
-      write(KEYS.workflowRunHistory, all);
+      const list = Array.isArray(all[safeRecord.workflowId]) ? [...all[safeRecord.workflowId]] : [];
+      list.unshift(safeRecord);
+      all[safeRecord.workflowId] = list.slice(0, 20);
+
+      try {
+        localStorage.setItem(KEYS.workflowRunHistory, JSON.stringify(all));
+      } catch {
+        // Storage full: drop oldest runs and try again
+        while (all[safeRecord.workflowId] && all[safeRecord.workflowId].length > 1) {
+          all[safeRecord.workflowId].pop();
+          try {
+            localStorage.setItem(KEYS.workflowRunHistory, JSON.stringify(all));
+            return;
+          } catch {
+            // continue dropping oldest runs
+          }
+        }
+        // If still full, drop oldest runs from other workflows too
+        for (const wfId of Object.keys(all)) {
+          if (wfId !== safeRecord.workflowId) {
+            delete all[wfId];
+            try {
+              localStorage.setItem(KEYS.workflowRunHistory, JSON.stringify(all));
+              return;
+            } catch {
+              // continue
+            }
+          }
+        }
+      }
     } catch (e) {
       console.error('Failed to save workflow run history', e);
     }

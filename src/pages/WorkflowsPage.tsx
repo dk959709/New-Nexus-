@@ -711,19 +711,35 @@ export function WorkflowsPage() {
 
       const durationMs = Math.max(0, Date.now() - runStartTime);
 
+      const formatHistoryText = (out?: WorkflowOutput | null, fallbackText?: string): string => {
+        if (out?.type === 'image') return '[1 image]';
+        const raw = (fallbackText ?? out?.value ?? '').trim();
+        if (!raw) return '';
+        if (raw.startsWith('data:image/') || /^data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,/i.test(raw)) {
+          return '[1 image]';
+        }
+        return raw.length > 500 ? `${raw.slice(0, 500)}…` : raw;
+      };
+
       // Collect step records
-      const stepRecords: WorkflowRunStepRecord[] = activeWorkflow.nodes.map((node) => ({
-        nodeId: node.id,
-        label: node.label,
-        type: node.type,
-        status: localStatuses[node.id] || 'idle',
-        outputSummary: localSummaries[node.id] || (localOutputs[node.id] ? getOutputSummary(localOutputs[node.id]) : ''),
-        error: localErrors[node.id],
-        durationMs: localDurations[node.id] || 0,
-      }));
+      const stepRecords: WorkflowRunStepRecord[] = activeWorkflow.nodes.map((node) => {
+        const nodeOut = localOutputs[node.id];
+        const rawSummary = localSummaries[node.id] || (nodeOut ? getOutputSummary(nodeOut) : '');
+        const rawErr = localErrors[node.id];
+        return {
+          nodeId: node.id,
+          label: node.label,
+          type: node.type,
+          status: localStatuses[node.id] || 'idle',
+          outputSummary: formatHistoryText(nodeOut, rawSummary),
+          error: rawErr ? (rawErr.length > 500 ? `${rawErr.slice(0, 500)}…` : rawErr) : undefined,
+          durationMs: localDurations[node.id] || 0,
+        };
+      });
 
       const finalOutObj = localFinalNodeId ? localOutputs[localFinalNodeId] : null;
-      const finalOutputVal = finalOutObj?.value || undefined;
+      const finalOutputFormatted = finalOutObj ? formatHistoryText(finalOutObj) : undefined;
+      const finalOutputVal = finalOutputFormatted || undefined;
 
       const record: WorkflowRunRecord = {
         id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -2490,13 +2506,15 @@ export function WorkflowsPage() {
         <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
           <div className="wf-cyber-card wf-modal-panel rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-4 backdrop-blur-2xl max-h-[85vh] flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#2a292e] pb-3 shrink-0">
-              <div className="min-w-0">
-                <h3 className="text-sm sm:text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2 truncate">
+            <div className="flex items-center justify-between gap-2 border-b border-[#2a292e] pb-3 shrink-0">
+              <div className="min-w-0 flex-1 pr-2">
+                <h3 className="text-sm sm:text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2 min-w-0">
                   <History size={16} className="text-[#49effd] shrink-0" />
-                  <span>Run History · {activeWorkflow.name}</span>
+                  <span className="truncate">
+                    History · {activeWorkflow.name.length > 24 ? `${activeWorkflow.name.slice(0, 24)}…` : activeWorkflow.name}
+                  </span>
                 </h3>
-                <p className="text-xs wf-rainbow-subtext mt-0.5">
+                <p className="text-xs wf-rainbow-subtext mt-0.5 truncate">
                   Last 20 runs recorded for this workflow pipeline.
                 </p>
               </div>
@@ -2621,7 +2639,10 @@ export function WorkflowsPage() {
 
                           {st.outputSummary && (
                             <p className="text-[11px] font-mono text-zinc-300 bg-[#080b12] rounded px-2 py-1 border border-zinc-800/80 truncate">
-                              Summary: {st.outputSummary}
+                              Summary:{' '}
+                              {st.outputSummary === '[1 image]' || st.outputSummary.startsWith('data:image/')
+                                ? '🖼️ 1 image'
+                                : st.outputSummary}
                             </p>
                           )}
 
@@ -2642,7 +2663,10 @@ export function WorkflowsPage() {
                         Final Output
                       </h4>
                       <pre className="p-3 rounded-xl bg-[#080b12] border border-cyan-500/25 text-cyan-100 font-mono text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto leading-relaxed">
-                        {selectedRunDetail.finalOutput}
+                        {selectedRunDetail.finalOutput === '[1 image]' ||
+                        selectedRunDetail.finalOutput.startsWith('data:image/')
+                          ? '🖼️ 1 image'
+                          : selectedRunDetail.finalOutput}
                       </pre>
                     </div>
                   )}
@@ -2705,7 +2729,11 @@ export function WorkflowsPage() {
                             <>
                               <span>·</span>
                               <span className="truncate max-w-[280px] text-zinc-500">
-                                {run.finalOutput.slice(0, 60)}...
+                                {run.finalOutput === '[1 image]' || run.finalOutput.startsWith('data:image/')
+                                  ? '🖼️ 1 image'
+                                  : run.finalOutput.length > 60
+                                  ? `${run.finalOutput.slice(0, 60)}...`
+                                  : run.finalOutput}
                               </span>
                             </>
                           )}
