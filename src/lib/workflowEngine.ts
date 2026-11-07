@@ -70,6 +70,62 @@ export function getAncestorNodeIds(
 }
 
 /**
+ * Resolves all placeholders for a node's settings using the provided outputs.
+ */
+export function resolveNodeSettings(
+  node: WorkflowNode,
+  allNodes: WorkflowNode[],
+  currentOutputs: Record<string, WorkflowOutput>,
+): Record<string, string> {
+  const outputsByLabel = new Map<string, string>();
+  const outputsById = new Map<string, string>();
+  for (const n of allNodes) {
+    const out = currentOutputs[n.id];
+    if (out) {
+      outputsById.set(n.id, out.value);
+      outputsByLabel.set(n.label, out.value);
+    }
+  }
+
+  const resolvedSettings: Record<string, string> = {};
+  for (const [k, v] of Object.entries(node.settings || {})) {
+    resolvedSettings[k] = resolvePlaceholders(v, outputsByLabel, outputsById);
+  }
+  return resolvedSettings;
+}
+
+/**
+ * Execute a single node in isolation given the current outputs of previous nodes.
+ * Used by the Step Debugger to test individual nodes instantly.
+ */
+export async function executeSingleNodeStep(
+  node: WorkflowNode,
+  allNodes: WorkflowNode[],
+  currentOutputs: Record<string, WorkflowOutput>,
+): Promise<{ output: WorkflowOutput; conditionPassed?: boolean }> {
+  const isFrozen = node.settings?.frozen === 'true' || Boolean(node.frozen);
+  if (isFrozen) {
+    if (node.mockOutput && node.mockOutput.value !== undefined) {
+      return { output: node.mockOutput };
+    }
+    if (node.settings?.mockValue !== undefined && node.settings.mockValue !== '') {
+      return {
+        output: {
+          type: (node.settings.mockType as 'text' | 'json' | 'image') || 'text',
+          value: node.settings.mockValue,
+        },
+      };
+    }
+    if (currentOutputs[node.id]) {
+      return { output: currentOutputs[node.id] };
+    }
+  }
+
+  const resolved = resolveNodeSettings(node, allNodes, currentOutputs);
+  return await executeStep(node, resolved);
+}
+
+/**
  * Find all downstream node IDs reachable from startNodeId (including startNodeId itself).
  */
 export function getDownstreamNodeIds(
@@ -490,7 +546,16 @@ export async function runWorkflow(
     const prevOutputs = options.previousOutputs || {};
     for (const ancId of ancestors) {
       const ancNode = nodeMap.get(ancId);
-      const savedOut = prevOutputs[ancId];
+      const isAncFrozen = ancNode?.settings?.frozen === 'true' || Boolean(ancNode?.frozen);
+      const savedOut =
+        prevOutputs[ancId] ||
+        (isAncFrozen && ancNode?.mockOutput) ||
+        (isAncFrozen && ancNode?.settings?.mockValue
+          ? {
+              type: (ancNode.settings.mockType as 'text' | 'json' | 'image') || 'text',
+              value: ancNode.settings.mockValue,
+            }
+          : undefined);
       if (savedOut && ancNode) {
         executedNodeIds.add(ancId);
         fullOutputsById.set(ancId, savedOut);
@@ -620,6 +685,71 @@ export async function runWorkflow(
         ifResults.set(currentId, 'yes');
         for (const edge of outgoingEdges) {
           if (!edge.branch || edge.branch === 'yes') {
+            if (
+              !executedNodeIds.has(edge.to) &&
+              !disabledCompletedIds.has(edge.to) &&
+              !enqueued.has(edge.to)
+            ) {
+              queue.push(edge.to);
+              enqueued.add(edge.to);
+            }
+          }
+        }
+      } else {
+        for (const edge of outgoingEdges) {
+          if (
+            !executedNodeIds.has(edge.to) &&
+            !disabledCompletedIds.has(edge.to) &&
+            !enqueued.has(edge.to)
+          ) {
+            queue.push(edge.to);
+            enqueued.add(edge.to);
+          }
+        }
+      }
+      continue;
+    }
+
+    // Check if step is frozen (mocked / cached)
+    const isFrozen = currentNode.settings?.frozen === 'true' || Boolean(currentNode.frozen);
+    if (isFrozen) {
+      let frozenOutput: WorkflowOutput;
+      if (currentNode.mockOutput && currentNode.mockOutput.value !== undefined) {
+        frozenOutput = currentNode.mockOutput;
+      } else if (
+        currentNode.settings?.mockValue !== undefined &&
+        currentNode.settings.mockValue !== ''
+      ) {
+        frozenOutput = {
+          type: (currentNode.settings.mockType as 'text' | 'json' | 'image') || 'text',
+          value: currentNode.settings.mockValue,
+        };
+      } else if (options?.previousOutputs?.[currentId]) {
+        frozenOutput = options.previousOutputs[currentId];
+      } else {
+        frozenOutput = {
+          type: 'text',
+          value: '(Frozen Step Output)',
+        };
+      }
+
+      fullOutputsById.set(currentId, frozenOutput);
+      outputsById.set(currentId, frozenOutput.value);
+      outputsByLabel.set(currentNode.label, frozenOutput.value);
+      setNodeStatus(currentId, 'done', frozenOutput);
+      if (callbacks.onLog) {
+        callbacks.onLog(
+          `Step "${currentNode.label}" is frozen. Using cached/mock output (${getOutputSummary(frozenOutput)}).`,
+        );
+      }
+
+      const outgoingEdges = (workflow.edges || []).filter((e) => e.from === currentId);
+      if (currentNode.type === 'if') {
+        const val = frozenOutput.value.trim().toLowerCase();
+        const branch: 'yes' | 'no' = val === 'false' || val === '0' || val === 'no' || !val ? 'no' : 'yes';
+        ifResults.set(currentId, branch);
+        for (const edge of outgoingEdges) {
+          if (!edge.branch || edge.branch === branch) {
             if (
               !executedNodeIds.has(edge.to) &&
               !disabledCompletedIds.has(edge.to) &&

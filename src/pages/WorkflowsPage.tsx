@@ -17,6 +17,8 @@ import {
   getOutputSummary,
   getAncestorNodeIds,
   getDownstreamNodeIds,
+  executeSingleNodeStep,
+  resolveNodeSettings,
 } from '@/lib/workflowEngine';
 import {
   WorkflowCanvas,
@@ -49,6 +51,7 @@ import {
   Menu,
   Maximize2,
   Minimize2,
+  Snowflake,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -594,11 +597,34 @@ export function WorkflowsPage() {
 
   // Clear results
   const handleClearResults = () => {
+    // Retain mock / frozen node outputs
+    const retainedOutputs: Record<string, WorkflowOutput> = {};
+    const retainedSummaries: Record<string, string> = {};
+    if (activeWorkflow) {
+      for (const n of activeWorkflow.nodes) {
+        if (n.settings?.frozen === 'true' || n.frozen) {
+          if (n.mockOutput) {
+            retainedOutputs[n.id] = n.mockOutput;
+            retainedSummaries[n.id] = getOutputSummary(n.mockOutput);
+          } else if (n.settings?.mockValue !== undefined && n.settings.mockValue !== '') {
+            const out: WorkflowOutput = {
+              type: (n.settings.mockType as 'text' | 'json' | 'image') || 'text',
+              value: n.settings.mockValue,
+            };
+            retainedOutputs[n.id] = out;
+            retainedSummaries[n.id] = getOutputSummary(out);
+          } else if (stepOutputs[n.id]) {
+            retainedOutputs[n.id] = stepOutputs[n.id];
+            retainedSummaries[n.id] = stepOutputSummaries[n.id] || getOutputSummary(stepOutputs[n.id]);
+          }
+        }
+      }
+    }
     setStepStatuses({});
-    setStepOutputs({});
+    setStepOutputs(retainedOutputs);
     setStepStartTimes({});
     setStepDurations({});
-    setStepOutputSummaries({});
+    setStepOutputSummaries(retainedSummaries);
     setStepErrors({});
     setLastExecutedNodeId(null);
     setRunLogs([]);
@@ -613,13 +639,17 @@ export function WorkflowsPage() {
 
     if (startFromNodeId) {
       const preservedAncestors = getAncestorNodeIds(startFromNodeId, activeWorkflow.edges || []);
-      // Verify all needed ancestors have saved outputs
+      // Verify all needed ancestors have saved outputs or are frozen mocks
       for (const ancId of preservedAncestors) {
         const ancNode = nodeMap.get(ancId);
         if (!ancNode) continue;
         if (ancNode.settings?.disabled === 'true') continue;
         if (stepStatuses[ancId] === 'skipped') continue;
-        if (!stepOutputs[ancId]) {
+        const isAncFrozen = ancNode.settings?.frozen === 'true' || Boolean(ancNode.frozen);
+        const hasMockOrOutput =
+          Boolean(stepOutputs[ancId]) ||
+          (isAncFrozen && (Boolean(ancNode.mockOutput) || Boolean(ancNode.settings?.mockValue)));
+        if (!hasMockOrOutput) {
           showToast('Run the whole workflow once first');
           return;
         }
@@ -633,36 +663,53 @@ export function WorkflowsPage() {
       handleClearResults();
       stepStartTimesRef.current = {};
     } else {
-      // Only clear target and downstream nodes; preserve ancestors AND unrelated parallel branches
+      // Only clear target and downstream nodes; preserve ancestors, parallel branches, and frozen nodes
       const downstreamIds = getDownstreamNodeIds(startFromNodeId, activeWorkflow.edges || []);
+      const frozenNodeIds = new Set(
+        activeWorkflow.nodes
+          .filter((n) => n.settings?.frozen === 'true' || n.frozen)
+          .map((n) => n.id),
+      );
       setStepStatuses((prev) => {
         const next = { ...prev };
-        for (const id of downstreamIds) delete next[id];
+        for (const id of downstreamIds) {
+          if (!frozenNodeIds.has(id)) delete next[id];
+        }
         return next;
       });
       setStepOutputs((prev) => {
         const next = { ...prev };
-        for (const id of downstreamIds) delete next[id];
+        for (const id of downstreamIds) {
+          if (!frozenNodeIds.has(id)) delete next[id];
+        }
         return next;
       });
       setStepStartTimes((prev) => {
         const next = { ...prev };
-        for (const id of downstreamIds) delete next[id];
+        for (const id of downstreamIds) {
+          if (!frozenNodeIds.has(id)) delete next[id];
+        }
         return next;
       });
       setStepDurations((prev) => {
         const next = { ...prev };
-        for (const id of downstreamIds) delete next[id];
+        for (const id of downstreamIds) {
+          if (!frozenNodeIds.has(id)) delete next[id];
+        }
         return next;
       });
       setStepOutputSummaries((prev) => {
         const next = { ...prev };
-        for (const id of downstreamIds) delete next[id];
+        for (const id of downstreamIds) {
+          if (!frozenNodeIds.has(id)) delete next[id];
+        }
         return next;
       });
       setStepErrors((prev) => {
         const next = { ...prev };
-        for (const id of downstreamIds) delete next[id];
+        for (const id of downstreamIds) {
+          if (!frozenNodeIds.has(id)) delete next[id];
+        }
         return next;
       });
     }
@@ -875,6 +922,85 @@ export function WorkflowsPage() {
       );
     },
     [activeWorkflow],
+  );
+
+  // Toggle freeze/unfreeze on a single node (Mock / Cached output mode)
+  const handleToggleFreezeNode = useCallback(
+    (nodeId: string) => {
+      if (!activeWorkflow) return;
+      const target = activeWorkflow.nodes.find((n) => n.id === nodeId);
+      if (!target) return;
+      const isCurrentlyFrozen = target.settings?.frozen === 'true' || Boolean(target.frozen);
+      const nextFrozen = isCurrentlyFrozen ? 'false' : 'true';
+
+      const newSettings: Record<string, string> = {
+        ...target.settings,
+        frozen: nextFrozen,
+      };
+
+      // If turning on freeze and mockValue is empty, capture existing step output if available
+      if (nextFrozen === 'true' && !target.settings?.mockValue && stepOutputs[nodeId]) {
+        newSettings.mockValue = stepOutputs[nodeId].value || '';
+        newSettings.mockType = stepOutputs[nodeId].type || 'text';
+      }
+
+      handleUpdateNode(nodeId, 'settings', newSettings);
+      showToast(
+        nextFrozen === 'true'
+          ? `Frozen "${target.label}" (using cached/mock output)`
+          : `Unfrozen "${target.label}" (will execute live)`,
+      );
+    },
+    [activeWorkflow, stepOutputs, showToast],
+  );
+
+  // Run a single node in isolation (Step Debugger test)
+  const handleRunSingleNode = useCallback(
+    async (nodeId: string) => {
+      if (!activeWorkflow || isRunning) return;
+      const target = activeWorkflow.nodes.find((n) => n.id === nodeId);
+      if (!target) return;
+
+      setIsRunning(true);
+      setStepStatuses((prev) => ({ ...prev, [nodeId]: 'running' }));
+      const now = Date.now();
+      stepStartTimesRef.current[nodeId] = now;
+      setStepStartTimes((prev) => ({ ...prev, [nodeId]: now }));
+
+      try {
+        const result = await executeSingleNodeStep(target, activeWorkflow.nodes, stepOutputs);
+        const duration = Math.max(0, Date.now() - now);
+        setStepDurations((prev) => ({ ...prev, [nodeId]: duration }));
+        setStepOutputs((prev) => ({ ...prev, [nodeId]: result.output }));
+        setStepOutputSummaries((prev) => ({
+          ...prev,
+          [nodeId]: getOutputSummary(result.output),
+        }));
+        setStepStatuses((prev) => ({ ...prev, [nodeId]: 'done' }));
+        setLastExecutedNodeId(nodeId);
+        setRunLogs((prev) => [
+          ...prev,
+          {
+            id: `log-${Date.now()}-${nodeId}`,
+            nodeId,
+            label: target.label,
+            type: target.type,
+            durationMs: duration,
+            status: 'done',
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ]);
+        showToast(`Tested step "${target.label}" successfully`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setStepStatuses((prev) => ({ ...prev, [nodeId]: 'error' }));
+        setStepErrors((prev) => ({ ...prev, [nodeId]: msg }));
+        showToast(`Error in step "${target.label}": ${msg}`);
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [activeWorkflow, isRunning, stepOutputs, showToast],
   );
 
   // Move node up (in list view)
@@ -1566,6 +1692,8 @@ export function WorkflowsPage() {
                 const durationMs = stepDurations[node.id];
                 const summaryText = stepOutputSummaries[node.id] || (output ? getOutputSummary(output) : '');
                 const isDisabled = node.settings?.disabled === 'true';
+                const isFrozen = node.settings?.frozen === 'true' || Boolean(node.frozen);
+                const hasMock = Boolean(node.settings?.mockValue && node.settings.mockValue.trim() !== '');
                 const isSettingsOpen = !collapsedSettings[node.id];
                 const isOutputOpen = !collapsedOutputs[node.id];
                 const nextNode = activeWorkflow.nodes[index + 1];
@@ -1578,6 +1706,8 @@ export function WorkflowsPage() {
                       className={`wf-cyber-card wf-step-card-enter group/card rounded-2xl p-4 sm:p-5 transition-all duration-300 ${
                         isDisabled ? 'opacity-60' : ''
                       } ${
+                        isFrozen ? 'ring-1 ring-cyan-400/40 border-cyan-400/40 shadow-[0_0_18px_rgba(73,239,253,0.15)] ' : ''
+                      }${
                         status === 'running'
                           ? 'wf-cyber-card-active wf-step-running'
                           : status === 'done'
@@ -1659,6 +1789,11 @@ export function WorkflowsPage() {
                                 <Ban size={12} />
                                 <span>Disabled</span>
                               </span>
+                            ) : isFrozen ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/45 text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-200 shadow-[0_0_12px_rgba(73,239,253,0.2)]">
+                                <Snowflake size={12} className="text-cyan-300" />
+                                <span>{hasMock ? 'Mocked' : 'Frozen'}</span>
+                              </span>
                             ) : status === 'running' ? (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#49effd]/15 border border-[#49effd]/55 text-[10px] font-mono font-bold uppercase tracking-wider text-[#49effd] shadow-[0_0_16px_rgba(73,239,253,0.28)]">
                                 <Loader2 size={12} className="animate-spin" />
@@ -1688,6 +1823,17 @@ export function WorkflowsPage() {
                           </div>
 
                           <div className="flex items-center gap-1">
+                            {/* Test Single Step */}
+                            <button
+                              type="button"
+                              disabled={isRunning}
+                              onClick={() => handleRunSingleNode(node.id)}
+                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-emerald-500/15 border border-white/10 hover:border-emerald-400/45 text-emerald-300 hover:text-emerald-200 disabled:opacity-30 transition-all active:scale-95"
+                              title="Test this single step only"
+                            >
+                              <Play size={13} className="fill-emerald-400/30" />
+                            </button>
+
                             {/* Run from this step */}
                             <button
                               type="button"
@@ -1697,6 +1843,20 @@ export function WorkflowsPage() {
                               title="Run workflow starting from this step"
                             >
                               <Play size={13} />
+                            </button>
+
+                            {/* Freeze / Unfreeze Step */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFreezeNode(node.id)}
+                              className={`p-1.5 rounded-lg border transition-all active:scale-95 ${
+                                isFrozen
+                                  ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 shadow-[0_0_10px_rgba(73,239,253,0.25)]'
+                                  : 'bg-[#0b0d14]/90 hover:bg-white/[0.06] border-white/10 hover:border-cyan-400/35 text-cyan-400 hover:text-[#f8fafc]'
+                              }`}
+                              title={isFrozen ? 'Unfreeze step (execute live)' : 'Freeze output (use cached / mock output)'}
+                            >
+                              <Snowflake size={13} />
                             </button>
 
                             {/* Move Up / Move Down */}
@@ -1766,6 +1926,8 @@ export function WorkflowsPage() {
                             edges={activeWorkflow.edges}
                             stepOutputs={stepOutputs}
                             viewMode={viewMode}
+                            isWorkflowRunning={isRunning}
+                            onRunSingleNode={handleRunSingleNode}
                             onUpdateSettings={(newSettings) =>
                               handleUpdateNode(node.id, 'settings', newSettings)
                             }
@@ -1972,8 +2134,10 @@ export function WorkflowsPage() {
               onDeleteEdge={handleDeleteEdge}
               onTidy={handleTidyLayout}
               onRunFromNode={handleRunFromNode}
+              onRunSingleNode={handleRunSingleNode}
               onDuplicateNode={handleDuplicateNode}
               onToggleDisableNode={handleToggleDisableNode}
+              onToggleFreezeNode={handleToggleFreezeNode}
               onDeleteNode={handleDeleteNode}
               onOpenInspectorOutput={(nodeId) => {
                 setSelectedNodeId(nodeId);
@@ -2148,6 +2312,8 @@ export function WorkflowsPage() {
                     edges={activeWorkflow.edges}
                     stepOutputs={stepOutputs}
                     viewMode={viewMode}
+                    isWorkflowRunning={isRunning}
+                    onRunSingleNode={handleRunSingleNode}
                     onUpdateSettings={(newSettings) =>
                       handleUpdateNode(selectedNode.id, 'settings', newSettings)
                     }
@@ -2624,7 +2790,16 @@ function VariableField({
       if (!matchedNode) {
         segments.push({ kind: 'unknown', rawName: rawKey });
       } else {
-        const out = stepOutputs[matchedNode.id];
+        const isFrozen = matchedNode.settings?.frozen === 'true' || Boolean(matchedNode.frozen);
+        const out =
+          stepOutputs[matchedNode.id] ||
+          (isFrozen && matchedNode.mockOutput) ||
+          (isFrozen && matchedNode.settings?.mockValue
+            ? {
+                type: (matchedNode.settings.mockType as 'text' | 'json' | 'image') || 'text',
+                value: matchedNode.settings.mockValue,
+              }
+            : undefined);
         if (out && out.value !== undefined && out.value !== '') {
           const displayVal =
             out.type === 'image'
@@ -2635,7 +2810,7 @@ function VariableField({
           segments.push({
             kind: 'resolved',
             label: matchedNode.label,
-            text: displayVal,
+            text: isFrozen ? `❄️ ${displayVal}` : displayVal,
           });
         } else {
           segments.push({ kind: 'unrun', label: matchedNode.label });
@@ -2663,11 +2838,22 @@ function VariableField({
   ) => {
     const cfg = NODE_CONFIG[step.type] || NODE_CONFIG.input;
     const StepIcon = cfg.icon;
-    const out = stepOutputs[step.id];
+    const isFrozen = step.settings?.frozen === 'true' || Boolean(step.frozen);
+    const out =
+      stepOutputs[step.id] ||
+      (isFrozen && step.mockOutput) ||
+      (isFrozen && step.settings?.mockValue
+        ? {
+            type: (step.settings.mockType as 'text' | 'json' | 'image') || 'text',
+            value: step.settings.mockValue,
+          }
+        : undefined);
     const snippet = out
       ? out.type === 'image'
         ? '[Generated image]'
-        : (out.value || '').slice(0, 40) + ((out.value || '').length > 40 ? '…' : '')
+        : (isFrozen ? '❄️ ' : '') + (out.value || '').slice(0, 40) + ((out.value || '').length > 40 ? '…' : '')
+      : isFrozen
+      ? '❄️ Frozen mock output'
       : '';
 
     return (
@@ -2865,6 +3051,8 @@ interface StepSettingsFormProps {
   edges?: WorkflowEdge[];
   stepOutputs?: Record<string, WorkflowOutput>;
   viewMode?: 'list' | 'canvas';
+  isWorkflowRunning?: boolean;
+  onRunSingleNode?: (nodeId: string) => void;
   onUpdateSettings: (newSettings: Record<string, string>) => void;
 }
 
@@ -2874,9 +3062,12 @@ export function StepSettingsForm({
   edges = [],
   stepOutputs = {},
   viewMode = 'list',
+  isWorkflowRunning = false,
+  onRunSingleNode,
   onUpdateSettings,
 }: StepSettingsFormProps) {
   const settings = node.settings || {};
+  const isFrozen = settings.frozen === 'true';
 
   const [configuredProviders, setConfiguredProviders] = useState<AIProviderConfig[]>(() => {
     try {
@@ -2953,8 +3144,204 @@ export function StepSettingsForm({
     return idx > 0 ? allNodes.slice(0, idx) : [];
   }, [allNodes, edges, node.id, viewMode]);
 
+  const resolvedSettings = useMemo(() => {
+    return resolveNodeSettings(node, allNodes, stepOutputs);
+  }, [node, allNodes, stepOutputs]);
+
+  const hasAnyVariables = useMemo(() => {
+    return Object.values(settings).some((val) =>
+      /\{\{\s*([^}]+?)\.output\s*\}\}/i.test(val || ''),
+    );
+  }, [settings]);
+
+  const resolvedPreviewList = useMemo(() => {
+    return Object.entries(settings)
+      .filter(([, v]) => /\{\{\s*([^}]+?)\.output\s*\}\}/i.test(v || ''))
+      .map(([k]) => ({
+        field:
+          k === 'query'
+            ? 'Search Query'
+            : k === 'prompt'
+            ? 'AI Prompt'
+            : k === 'url'
+            ? 'Target URL'
+            : k,
+        resolved: resolvedSettings[k] || '',
+      }));
+  }, [settings, resolvedSettings]);
+
   return (
     <div className="space-y-4">
+      {/* Interactive Step Debugger & Runner Card */}
+      <div className="p-3.5 rounded-xl bg-[#0b0d14] border border-[#49effd]/25 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="p-1 rounded-md bg-[#49effd]/15 border border-[#49effd]/40 text-[#49effd]">
+              <Sparkles size={13} />
+            </span>
+            <div>
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-200 block">
+                Step Debugger
+              </span>
+              <span className="text-[10px] text-cyan-300/70 block">
+                Test and inspect this step in isolation
+              </span>
+            </div>
+          </div>
+
+          {onRunSingleNode && (
+            <button
+              type="button"
+              disabled={isWorkflowRunning}
+              onClick={() => onRunSingleNode(node.id)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-40 active:scale-95 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+              title="Execute only this step with current inputs"
+            >
+              <Play size={11} className="fill-emerald-400 text-emerald-400" />
+              <span>Test This Step</span>
+            </button>
+          )}
+        </div>
+
+        {/* Live Resolved Inputs Preview */}
+        {hasAnyVariables && (
+          <div className="pt-2 border-t border-[#2a292e] space-y-2">
+            <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-[#49effd] block select-none">
+              Live Resolved Inputs:
+            </span>
+            <div className="space-y-1.5">
+              {resolvedPreviewList.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="bg-[#131317] rounded-lg p-2 border border-[#2a292e] text-[11px] font-mono"
+                >
+                  <div className="text-[10px] text-[#49effd] font-bold uppercase tracking-wider mb-0.5">
+                    {item.field}
+                  </div>
+                  <div className="text-cyan-100 whitespace-pre-wrap break-words max-h-24 overflow-y-auto leading-relaxed">
+                    {item.resolved || <span className="text-[#94a3b8] italic">(empty)</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Freeze / Mock Output Toggle Card */}
+      <div className="p-3.5 rounded-xl bg-[#0b0d14] border border-cyan-400/30 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span
+              className={`p-1 rounded-md border ${
+                isFrozen
+                  ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
+                  : 'bg-[#1b1b1f] border-white/10 text-[#b9cacb]'
+              }`}
+            >
+              <Snowflake size={13} className={isFrozen ? 'text-cyan-300 animate-pulse' : ''} />
+            </span>
+            <div>
+              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-200 block">
+                Freeze Output (Mock / Cache)
+              </span>
+              <span className="text-[10px] text-cyan-300/70 block">
+                Lock step output so downstream nodes run instantly without API calls
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isFrozen}
+            onClick={() => {
+              const nextFrozen = isFrozen ? 'false' : 'true';
+              const nextSettings: Record<string, string> = { ...settings, frozen: nextFrozen };
+              if (nextFrozen === 'true' && !settings.mockValue && stepOutputs[node.id]) {
+                nextSettings.mockValue = stepOutputs[node.id].value || '';
+                nextSettings.mockType = stepOutputs[node.id].type || 'text';
+              }
+              onUpdateSettings(nextSettings);
+            }}
+            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${
+              isFrozen
+                ? 'bg-cyan-400 border-cyan-300 shadow-[0_0_12px_rgba(73,239,253,0.35)]'
+                : 'bg-[#2a292e] border-[#3b494b]'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-3.5 w-3.5 mt-0.5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
+                isFrozen
+                  ? 'translate-x-4 bg-[#131317]'
+                  : 'translate-x-0.5 bg-[#b9cacb]'
+              }`}
+            />
+          </button>
+        </div>
+
+        {/* When Frozen: Mock Output Value Editor */}
+        {isFrozen && (
+          <div className="pt-2 border-t border-[#2a292e] space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-1">
+              <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                <span>Mock Output Payload</span>
+                <span className="text-[9px] text-[#94a3b8] font-normal lowercase">
+                  ({(settings.mockValue || '').length} chars)
+                </span>
+              </label>
+
+              <div className="flex items-center gap-1">
+                {stepOutputs[node.id]?.value && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateSettings({
+                        ...settings,
+                        frozen: 'true',
+                        mockValue: stepOutputs[node.id].value,
+                        mockType: stepOutputs[node.id].type || 'text',
+                      });
+                    }}
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300 hover:text-[#49effd] px-2 py-0.5 rounded bg-[#131317] border border-cyan-500/35 flex items-center gap-1 transition-colors"
+                    title="Copy last execution output into mock payload"
+                  >
+                    <Copy size={10} />
+                    <span>Use Last Output</span>
+                  </button>
+                )}
+                {settings.mockValue && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateSettings({
+                        ...settings,
+                        mockValue: '',
+                      });
+                    }}
+                    className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#ffb4ab] hover:bg-[#ffb4ab]/15 px-2 py-0.5 rounded bg-[#131317] border border-[#ffb4ab]/30 flex items-center gap-1 transition-colors"
+                    title="Clear mock payload"
+                  >
+                    <X size={10} />
+                    <span>Clear</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <textarea
+              rows={4}
+              value={settings.mockValue || ''}
+              onChange={(e) => handleChange('mockValue', e.target.value)}
+              placeholder="Paste or edit the mock text to feed downstream steps..."
+              className="wf-field-box w-full rounded-xl p-2.5 text-cyan-200 placeholder-indigo-300/40 text-xs focus:outline-none font-mono resize-y"
+            />
+            <p className="text-[10px] font-mono text-cyan-300/75">
+              ⚡ Downstream nodes will use this mocked payload without executing real API calls.
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Disable this step toggle */}
       <div className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-[#0e0e12] border border-[#2a292e]">
         <div>

@@ -52,6 +52,7 @@ import {
   BarChart2,
   X,
   Maximize2,
+  Snowflake,
 } from 'lucide-react';
 
 export interface WorkflowCanvasProps {
@@ -71,8 +72,10 @@ export interface WorkflowCanvasProps {
   onDeleteEdge: (edgeId: string) => void;
   onTidy: () => void;
   onRunFromNode?: (nodeId: string) => void;
+  onRunSingleNode?: (nodeId: string) => void;
   onDuplicateNode?: (nodeId: string) => void;
   onToggleDisableNode?: (nodeId: string) => void;
+  onToggleFreezeNode?: (nodeId: string) => void;
   onDeleteNode?: (nodeId: string) => void;
   onOpenInspectorOutput?: (nodeId: string) => void;
 }
@@ -249,8 +252,10 @@ interface NodeDataPayload extends Record<string, unknown> {
   errorText?: string;
   isWorkflowRunning: boolean;
   onRunFromNode?: (nodeId: string) => void;
+  onRunSingleNode?: (nodeId: string) => void;
   onDuplicateNode?: (nodeId: string) => void;
   onToggleDisableNode?: (nodeId: string) => void;
+  onToggleFreezeNode?: (nodeId: string) => void;
   onDeleteNode?: (nodeId: string) => void;
   onOpenInspectorOutput?: (nodeId: string) => void;
   onClosePeek?: () => void;
@@ -277,8 +282,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
     errorText,
     isWorkflowRunning,
     onRunFromNode,
+    onRunSingleNode,
     onDuplicateNode,
     onToggleDisableNode,
+    onToggleFreezeNode,
     onDeleteNode,
     onOpenInspectorOutput,
     onClosePeek,
@@ -292,6 +299,8 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
   const isInput = type === 'input';
   const isIf = type === 'if';
   const isDisabled = settings?.disabled === 'true';
+  const isFrozen = settings?.frozen === 'true';
+  const hasMock = Boolean(settings?.mockValue && settings.mockValue.trim() !== '');
 
   // Metadata items rendered cleanly with unboxed typographic discipline
   const aiModelLabel = type === 'ai' ? resolveAiModelLabel(settings || {}) : null;
@@ -342,6 +351,8 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
       className={`wf-cyber-card wf-step-card-enter group/node relative rounded-2xl backdrop-blur-2xl transition-all duration-300 select-none min-w-[244px] max-w-[284px] px-4 py-3.5 ${
         isDisabled ? 'opacity-55 ' : ''
       }${
+        isFrozen && !isSelected ? 'border-cyan-400/60 shadow-[0_0_20px_rgba(73,239,253,0.2)] ring-1 ring-cyan-400/40 ' : ''
+      }${
         isSelected
           ? 'wf-cyber-card-active border-[#49effd]/80 shadow-[0_18px_44px_-10px_rgba(73,239,253,0.36)]'
           : status === 'running'
@@ -375,6 +386,20 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
             disabled={isWorkflowRunning}
             onClick={(e) => {
               e.stopPropagation();
+              onRunSingleNode?.(id);
+            }}
+            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/15 active:bg-emerald-500/25 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
+            title="Test this single step only"
+          >
+            <Play size={12} className="fill-emerald-400 text-emerald-400" />
+            <span>Test Step</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isWorkflowRunning}
+            onClick={(e) => {
+              e.stopPropagation();
               onRunFromNode?.(id);
             }}
             className="min-h-[40px] px-3 py-1.5 rounded-lg text-[#49effd] hover:bg-[#49effd]/15 active:bg-[#49effd]/25 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
@@ -382,6 +407,23 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
           >
             <Play size={12} className="fill-[#49effd]" />
             <span>Run from here</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFreezeNode?.(id);
+            }}
+            className={`min-h-[40px] px-2.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+              isFrozen
+                ? 'text-cyan-200 bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500/30 shadow-[0_0_12px_rgba(73,239,253,0.25)]'
+                : 'text-[#b9cacb] hover:text-[#e4e1e7] hover:bg-[#2a292e]'
+            }`}
+            title={isFrozen ? 'Unfreeze step (execute live)' : 'Freeze output (use cached / mock output)'}
+          >
+            <Snowflake size={12} className={isFrozen ? 'text-cyan-300' : ''} />
+            <span>{isFrozen ? 'Frozen' : 'Freeze'}</span>
           </button>
 
           <button
@@ -474,6 +516,11 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-400/35 text-[9px] font-mono font-bold uppercase tracking-wider text-amber-300">
               <Ban size={10} />
               <span>Disabled</span>
+            </span>
+          ) : isFrozen ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/45 text-[9px] font-mono font-bold uppercase tracking-wider text-cyan-200 shadow-[0_0_10px_rgba(73,239,253,0.2)]">
+              <Snowflake size={10} className="text-cyan-300" />
+              <span>{hasMock ? 'Mocked' : 'Frozen'}</span>
             </span>
           ) : status === 'running' ? (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#49effd]/15 border border-[#49effd]/55 text-[9px] font-mono font-bold uppercase tracking-wider text-[#49effd] shadow-[0_0_10px_rgba(73,239,253,0.25)]">
@@ -857,8 +904,10 @@ export function WorkflowCanvas({
   onDeleteEdge,
   onTidy,
   onRunFromNode,
+  onRunSingleNode,
   onDuplicateNode,
   onToggleDisableNode,
+  onToggleFreezeNode,
   onDeleteNode,
   onOpenInspectorOutput,
 }: WorkflowCanvasProps) {
@@ -894,8 +943,10 @@ export function WorkflowCanvas({
           errorText: stepErrors[n.id],
           isWorkflowRunning: isRunning,
           onRunFromNode,
+          onRunSingleNode,
           onDuplicateNode,
           onToggleDisableNode,
+          onToggleFreezeNode,
           onDeleteNode,
           onOpenInspectorOutput,
           onClosePeek: handleClosePeek,
@@ -914,8 +965,10 @@ export function WorkflowCanvas({
     selectedNodeId,
     peekNodeId,
     onRunFromNode,
+    onRunSingleNode,
     onDuplicateNode,
     onToggleDisableNode,
+    onToggleFreezeNode,
     onDeleteNode,
     onOpenInspectorOutput,
     handleClosePeek,

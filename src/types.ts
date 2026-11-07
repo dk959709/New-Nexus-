@@ -1710,6 +1710,8 @@ export interface WorkflowNode {
   x: number;
   y: number;
   settings: Record<string, string>;
+  frozen?: boolean;
+  mockOutput?: WorkflowOutput;
 }
 
 export interface WorkflowEdge {
