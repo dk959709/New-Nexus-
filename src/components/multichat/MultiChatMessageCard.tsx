@@ -19,6 +19,11 @@ import {
   Radio,
   Sparkles,
   Clock,
+  Swords,
+  Brain,
+  Eye,
+  EyeOff,
+  Terminal,
 } from 'lucide-react';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import { getCategoryById } from '@/data/multiChatCategories';
@@ -83,6 +88,9 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
 }) => {
   const [docLensExpanded, setDocLensExpanded] = useState(false);
   const [copiedQuery, setCopiedQuery] = useState(false);
+  const [spotlightPersonaId, setSpotlightPersonaId] = useState<string | null>(null);
+  const [openScratchpadKeys, setOpenScratchpadKeys] = useState<Record<string, boolean>>({});
+  const [isDebateArenaExpanded, setIsDebateArenaExpanded] = useState<boolean>(false);
 
   const categoryConfig = message.category ? getCategoryById(message.category) : null;
   const activeTabPersonaId = selectedTabId || message.responses[0]?.personaId || 'nova';
@@ -290,6 +298,68 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
 
       {/* 3. PERSONA RESPONSES CONTAINER */}
       <div className="p-4 sm:p-5">
+        {/* Feature 1: Mind Clash / Debate Arena & Agreement Meter */}
+        {message.responses.length >= 2 && (
+          <div className="mb-4 p-3 rounded-xl border border-rose-500/30 bg-gradient-to-r from-rose-950/40 via-slate-950/80 to-purple-950/40 shadow-lg relative overflow-hidden font-mono">
+            <div className="stitch-corner-bracket stitch-corner-tl" style={{ borderColor: '#f43f5e' }} />
+            <div className="stitch-corner-bracket stitch-corner-tr" style={{ borderColor: '#f43f5e' }} />
+
+            <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-300 grid place-items-center clash-vs-badge text-xs">
+                  <Swords size={13} />
+                </span>
+                <span className="text-xs font-bold text-white tracking-wider uppercase flex items-center gap-1.5">
+                  <span>MIND CLASH ARENA</span>
+                  <span className="text-[10px] text-rose-400 font-normal">
+                    ({message.responses.map((r) => r.name).join(' vs ')})
+                  </span>
+                </span>
+              </div>
+
+              {/* Debate Stats & Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsDebateArenaExpanded(!isDebateArenaExpanded)}
+                className="text-[10px] text-rose-300/80 hover:text-white flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded-md border border-white/10"
+              >
+                <span>{isDebateArenaExpanded ? 'Hide Dynamics' : 'View Arena Dynamics'}</span>
+                {isDebateArenaExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+              </button>
+            </div>
+
+            {/* Tri-Mind Agreement / Evidence Tug-of-War Bar */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <span className="text-sky-400">NOVA 42% (Factual Proof)</span>
+                <span className="text-amber-400">ORBIT 33% (Counter-Angle)</span>
+                <span className="text-purple-400">COSMOS 25% (Ethics)</span>
+              </div>
+              <div className="h-1.5 w-full bg-slate-900 rounded-full flex overflow-hidden border border-white/10">
+                <div className="h-full bg-sky-400 shadow-[0_0_8px_#38bdf8]" style={{ width: '42%' }} />
+                <div className="h-full bg-amber-400 shadow-[0_0_8px_#f59e0b]" style={{ width: '33%' }} />
+                <div className="h-full bg-purple-400 shadow-[0_0_8px_#c084fc]" style={{ width: '25%' }} />
+              </div>
+            </div>
+
+            {isDebateArenaExpanded && (
+              <div className="mt-2.5 pt-2 border-t border-white/10 text-[11px] text-slate-300 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="p-2 rounded bg-black/40 border border-sky-500/20">
+                  <span className="text-sky-300 font-bold block mb-0.5">⚡ Nova's Stance</span>
+                  <span className="text-slate-400 text-[10px]">Demands empirical validation and verifiable reference citations.</span>
+                </div>
+                <div className="p-2 rounded bg-black/40 border border-amber-500/20">
+                  <span className="text-amber-300 font-bold block mb-0.5">🔥 Orbit's Challenge</span>
+                  <span className="text-slate-400 text-[10px]">Introduces edge-case practical anomalies and high-impact scenarios.</span>
+                </div>
+                <div className="p-2 rounded bg-black/40 border border-purple-500/20">
+                  <span className="text-purple-300 font-bold block mb-0.5">🧘 Cosmos's Balance</span>
+                  <span className="text-slate-400 text-[10px]">Synthesizes systemic implications and long-term societal equilibrium.</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* VIEW MODE: TABS */}
         {viewMode === 'tabs' && (
           <div>
@@ -344,10 +414,41 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
           </div>
         )}
 
-        {/* VIEW MODE: UNIFIED (Default Sequential Stack) */}
+        {/* VIEW MODE: UNIFIED (Default Sequential Stack with Neural Synapse Beams) */}
         {viewMode === 'unified' && (
-          <div className="space-y-4">
-            {message.responses.map((resp) => renderPersonaCard(resp))}
+          <div className="space-y-3 sm:space-y-4">
+            {message.responses.map((resp, idx) => (
+              <React.Fragment key={resp.personaId}>
+                {idx > 0 && (
+                  /* Holographic Neural Synapse Laser Connector */
+                  <div className="flex items-center justify-center my-1 select-none pointer-events-none">
+                    <div className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-slate-900/80 border border-cyan-500/20 text-[9.5px] font-mono text-slate-400 shadow-md">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                      <span className="text-cyan-300 uppercase tracking-widest font-semibold">SYNAPSE FLOW</span>
+                      <svg width="48" height="8" className="overflow-visible">
+                        <line
+                          x1="0"
+                          y1="4"
+                          x2="48"
+                          y2="4"
+                          stroke="url(#synapseGrad)"
+                          strokeWidth="2"
+                          className="synapse-laser-pulse"
+                        />
+                        <defs>
+                          <linearGradient id="synapseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" stopColor="#38bdf8" />
+                            <stop offset="100%" stopColor="#f59e0b" />
+                          </linearGradient>
+                        </defs>
+                      </svg>
+                      <span className="text-slate-400 uppercase tracking-wider">NEXT COGNITIVE NODE</span>
+                    </div>
+                  </div>
+                )}
+                {renderPersonaCard(resp)}
+              </React.Fragment>
+            ))}
           </div>
         )}
       </div>
@@ -362,12 +463,17 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
     const isVoiceLoading = loadingAudioKey === cardKey;
     const isDownloadingAudio = downloadingAudioId === cardKey;
     const branches = resp.branches || [];
+    const isSpotlighted = spotlightPersonaId === resp.personaId;
+    const isDimmed = spotlightPersonaId !== null && !isSpotlighted;
+    const isScratchpadOpen = !!openScratchpadKeys[cardKey];
 
     return (
       <div
         key={resp.personaId}
         id={`multichat-card-${cardKey}`}
-        className="rounded-xl p-4 sm:p-5 relative transition-all duration-200 font-mono"
+        className={`rounded-xl p-4 sm:p-5 relative transition-all duration-300 font-mono overflow-hidden ${
+          isSpotlighted ? 'persona-spotlight-active' : isDimmed ? 'persona-spotlight-dimmed' : ''
+        }`}
         style={{
           background: 'rgba(6, 16, 26, 0.75)',
           border: `1px solid ${resp.accentColor}35`,
@@ -375,6 +481,10 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
         }}
       >
+        {/* Subtle Google Stitch Laser & Tactical Corner Brackets */}
+        <div className="mc-laser-line opacity-60" />
+        <div className="stitch-corner-bracket stitch-corner-tr" style={{ borderColor: `${resp.accentColor}70` }} />
+        <div className="stitch-corner-bracket stitch-corner-br" style={{ borderColor: `${resp.accentColor}70` }} />
         {/* Card Header: Avatar + Persona Name + Tone Badge + Status */}
         <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-white/5 flex-wrap">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -406,12 +516,46 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
                     {resp.toneBadge}
                   </span>
                 )}
+                {isSpotlighted && (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded font-bold uppercase bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 animate-pulse">
+                    Spotlight
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
           {/* Action Button Cluster for this Persona */}
           <div className="flex items-center gap-1.5 text-xs font-mono">
+            {/* Feature 2: Chain of Thought Reasoning Scratchpad Toggle */}
+            <button
+              type="button"
+              onClick={() => setOpenScratchpadKeys((prev) => ({ ...prev, [cardKey]: !prev[cardKey] }))}
+              className={`px-2 py-1 rounded-lg text-[10.5px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
+                isScratchpadOpen
+                  ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-400'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
+              }`}
+              title="Inspect inner chain of thought & reasoning telemetry"
+            >
+              <Brain size={11} className={isScratchpadOpen ? 'text-cyan-300 animate-pulse' : 'text-slate-400'} />
+              <span className="hidden xs:inline">Reasoning</span>
+            </button>
+
+            {/* Feature 5: Solo Spotlight Mode Toggle */}
+            <button
+              type="button"
+              onClick={() => setSpotlightPersonaId(isSpotlighted ? null : resp.personaId)}
+              className={`p-1 rounded-lg border transition-all cursor-pointer ${
+                isSpotlighted
+                  ? 'bg-cyan-500/30 text-cyan-200 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                  : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border-white/10'
+              }`}
+              title={isSpotlighted ? 'Exit Spotlight Focus' : 'Spotlight this persona (Solo focus mode)'}
+            >
+              {isSpotlighted ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+
             {/* Listen button (Edge TTS) */}
             <button
               type="button"
@@ -484,6 +628,26 @@ export const MultiChatMessageCard: React.FC<MultiChatMessageCardProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Feature 2: Inner Chain of Thought Scratchpad Monospace Drawer */}
+        {isScratchpadOpen && (
+          <div className="mb-3.5 p-3 rounded-xl bg-black/60 border border-cyan-500/25 text-[10.5px] font-mono text-cyan-200/90 space-y-1.5 shadow-inner">
+            <div className="flex items-center justify-between border-b border-white/10 pb-1 text-[9.5px] text-slate-400">
+              <span className="text-cyan-400 flex items-center gap-1.5 font-bold">
+                <Terminal size={11} />
+                <span>INTERNAL CHAIN OF THOUGHT // {resp.name.toUpperCase()}</span>
+              </span>
+              <span className="text-emerald-400">99.4% DETERMINISTIC</span>
+            </div>
+            <div className="space-y-1 text-slate-300 text-[10px]">
+              <p className="m-0 text-slate-400">› Ingesting query & extracting logical constraints...</p>
+              <p className="m-0 text-slate-400">› Assessing latent priors and counter-hypotheses...</p>
+              <p className="m-0 text-cyan-300">
+                › Applying {resp.toneBadge || 'persona'} perspective: {resp.personaId === 'nova' ? 'Maximized empirical rigor & citation consistency' : resp.personaId === 'orbit' ? 'Explored high-impact edge scenarios & engaging metaphors' : 'Evaluated long-term holistic balance & strategic principles'}.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Message Content Body */}
         {resp.status === 'running' ? (

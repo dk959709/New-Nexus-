@@ -3069,6 +3069,12 @@ export function MultiChatConsole({
                 : 'bg-zinc-900/80 border-indigo-500/25 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.65),0_0_35px_rgba(99,102,241,0.12)]'
             }`}
           >
+            {/* Tactical Google Stitch Corner Reticles */}
+            <div className="stitch-corner-bracket stitch-corner-tl" />
+            <div className="stitch-corner-bracket stitch-corner-tr" />
+            <div className="stitch-corner-bracket stitch-corner-bl" />
+            <div className="stitch-corner-bracket stitch-corner-br" />
+
             {/* Top Animated Laser Sweep */}
             <div className="mc-laser-line" />
 
@@ -3084,7 +3090,7 @@ export function MultiChatConsole({
             />
 
             {/* Centerpiece Animated Tri-Mind Neural Reactor SVG Graphic */}
-            <div className="relative w-24 h-24 sm:w-28 sm:h-28 mb-3 sm:mb-4 grid place-items-center">
+            <div className="relative w-28 h-28 sm:w-32 sm:h-32 mb-3 sm:mb-4 grid place-items-center">
               <svg viewBox="0 0 120 120" className="w-full h-full overflow-visible">
                 <defs>
                   <radialGradient id="mcCoreGlow" cx="50%" cy="50%" r="50%">
@@ -3098,6 +3104,28 @@ export function MultiChatConsole({
                     <stop offset="100%" stopColor="#c084fc" />
                   </linearGradient>
                 </defs>
+
+                {/* Google Stitch Outermost Instrumentation Orbit Ring */}
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="58"
+                  fill="none"
+                  stroke="rgba(0, 240, 255, 0.45)"
+                  strokeWidth="1"
+                  strokeDasharray="6 8"
+                  className="stitch-orbit-spin"
+                />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="49"
+                  fill="none"
+                  stroke="rgba(56, 189, 248, 0.3)"
+                  strokeWidth="1.2"
+                  strokeDasharray="18 10 4 10"
+                  className="stitch-orbit-reverse"
+                />
 
                 {/* Outer Counter-Rotating Ring */}
                 <g className="mc-orbit-ccw">
@@ -3174,9 +3202,24 @@ export function MultiChatConsole({
             <h2 className="relative z-10 text-xl sm:text-3xl font-black tracking-tight mb-1.5 sm:mb-2 bg-gradient-to-r from-white via-cyan-200 to-purple-200 bg-clip-text text-transparent">
               One Query. Three Connected Minds.
             </h2>
-            <p className="relative z-10 text-slate-400 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed mb-5 sm:mb-6">
+            <p className="relative z-10 text-slate-400 text-xs sm:text-sm max-w-xl mx-auto leading-relaxed mb-4">
               NOVA, ORBIT, and COSMOS collaborate in sequence or debate—building upon each other's insights in real time. Tap any mind below to target it directly.
             </p>
+
+            {/* Google Stitch Neural Audio Waveform & Status Strip */}
+            <div className="relative z-10 flex items-center justify-center gap-2.5 px-3.5 py-1 rounded-full bg-slate-900/60 border border-cyan-500/25 mb-5 text-[10.5px] font-mono text-cyan-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+              <span className="tracking-widest uppercase">COGNITIVE MESH ONLINE</span>
+              <div className="flex items-center gap-0.5 h-3 px-0.5">
+                <span className="stitch-audio-bar" />
+                <span className="stitch-audio-bar" />
+                <span className="stitch-audio-bar" />
+                <span className="stitch-audio-bar" />
+                <span className="stitch-audio-bar" />
+                <span className="stitch-audio-bar" />
+              </div>
+              <span className="text-slate-400 hidden xs:inline">10/10 NODES ACTIVE</span>
+            </div>
 
             {/* Interactive Glowing Persona Cards Showcase */}
             <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3.5 w-full max-w-2xl">
@@ -3190,7 +3233,7 @@ export function MultiChatConsole({
                       handleToggleDirectPersona(p.id);
                       inputRef.current?.focus();
                     }}
-                    className="relative overflow-hidden p-3.5 sm:p-4 rounded-2xl text-left transition-all duration-300 border group hover:-translate-y-1 cursor-pointer"
+                    className="relative overflow-hidden p-3.5 sm:p-4 rounded-2xl text-left transition-all duration-300 border group holo-tilt-card cursor-pointer"
                     style={{
                       background: isFullDark
                         ? `linear-gradient(155deg, ${p.accentColor}12 0%, #0d0d10 75%)`
@@ -3201,6 +3244,10 @@ export function MultiChatConsole({
                         : `0 8px 24px rgba(0,0,0,0.4)`,
                     }}
                   >
+                    {/* 3D Holographic Specular Glare & Tactical Corner Brackets */}
+                    <div className="holo-glare-effect opacity-0 group-hover:opacity-100" />
+                    <div className="stitch-corner-bracket stitch-corner-tl opacity-0 group-hover:opacity-100" style={{ borderColor: p.accentColor }} />
+                    <div className="stitch-corner-bracket stitch-corner-br opacity-0 group-hover:opacity-100" style={{ borderColor: p.accentColor }} />
                     {/* Glowing Top Accent Bar */}
                     <div
                       className="absolute top-0 left-0 right-0 h-[2px] opacity-75 group-hover:opacity-100 transition-opacity"
@@ -5949,6 +5996,78 @@ export function MultiChatConsole({
             e.target.value = '';
           }}
         />
+
+        {/* Feature 4: Floating Tactical Quick-Action Dock */}
+        <div className="flex items-center justify-between gap-1.5 px-3 py-1.5 rounded-2xl border border-cyan-500/25 bg-slate-950/85 backdrop-blur-xl shadow-lg font-mono text-[11px] overflow-x-auto no-scrollbar mb-1">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+            <span className="text-cyan-300 font-bold uppercase text-[10px] tracking-wider hidden xs:inline">
+              TACTICAL DOCK:
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {/* Rebuttal Round Button */}
+            <button
+              type="button"
+              disabled={messages.length === 0 || isGenerating}
+              onClick={() => {
+                const lastMsg = messages[messages.length - 1];
+                if (lastMsg) handleRunRebuttalRound(lastMsg);
+              }}
+              className="px-2.5 py-1 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-200 border border-rose-500/30 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Trigger cross-examination rebuttal round between personas"
+            >
+              <Swords size={11} className="text-rose-400" />
+              <span>+1 Rebuttal</span>
+            </button>
+
+            {/* Podcast Dialogue Button */}
+            <button
+              type="button"
+              disabled={messages.length === 0 || isGenerating}
+              onClick={() => {
+                const lastMsg = messages[messages.length - 1];
+                if (lastMsg) handleGeneratePodcastScript(lastMsg);
+              }}
+              className="px-2.5 py-1 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-200 border border-purple-500/30 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Convert last turn into a multi-voice podcast script"
+            >
+              <Headphones size={11} className="text-purple-400" />
+              <span>Podcast</span>
+            </button>
+
+            {/* Mind Map Canvas Button */}
+            <button
+              type="button"
+              disabled={messages.length === 0 || isGenerating}
+              onClick={() => {
+                const lastMsg = messages[messages.length - 1];
+                if (lastMsg) handleToggleVisualMap(lastMsg);
+              }}
+              className="px-2.5 py-1 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Generate visual mind-map flowchart"
+            >
+              <Network size={11} className="text-cyan-400" />
+              <span>Mind Map</span>
+            </button>
+
+            {/* Consensus Button */}
+            <button
+              type="button"
+              disabled={messages.length === 0 || isGenerating}
+              onClick={() => {
+                const lastMsg = messages[messages.length - 1];
+                if (lastMsg) handleGenerateConsensus(lastMsg);
+              }}
+              className="px-2.5 py-1 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Synthesize executive consensus from current turn"
+            >
+              <Sparkles size={11} className="text-emerald-400" />
+              <span>Consensus</span>
+            </button>
+          </div>
+        </div>
 
         {/* AI ASSISTANT-STYLE MOBILE-FRIENDLY MULTI CHAT INPUT BOX (All features preserved) */}
         <div

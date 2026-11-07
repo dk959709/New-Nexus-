@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MessageSquare, Sliders, Palette } from 'lucide-react';
+import { MessageSquare, Sliders, Palette, Terminal, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { MultiChatConsole } from '@/components/multichat/MultiChatConsole';
 import { MultiChatSettings } from '@/components/multichat/MultiChatSettings';
@@ -9,6 +9,7 @@ export function MultiChatPage() {
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat');
   const [config, setConfig] = useState<MultiChatSystemConfig>(() => storage.getMultiChatConfig());
   const [theme, setTheme] = useState<MultiChatTheme>(() => storage.getMultiChatTheme());
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Keep state synchronized with storage whenever switching views or when storage updates
   useEffect(() => {
@@ -257,6 +258,127 @@ export function MultiChatPage() {
             </div>
           </div>
         </header>
+
+        {/* Google Stitch HUD Stepper & Neural Telemetry Waveform Strip */}
+        <div
+          className={`relative overflow-hidden flex items-center justify-between gap-2 px-3 sm:px-4 py-1.5 rounded-xl border text-[11px] font-mono transition-all ${
+            theme === 'classic'
+              ? 'bg-slate-950/75 border-cyan-500/20 text-cyan-200/90 shadow-[0_4px_16px_rgba(0,0,0,0.4)]'
+              : theme === 'fulldark'
+              ? 'bg-[#09090c] border-white/10 text-zinc-300'
+              : 'bg-zinc-900/80 border-indigo-500/20 text-indigo-200'
+          }`}
+        >
+          <div className="stitch-corner-bracket stitch-corner-tl" />
+          <div className="stitch-corner-bracket stitch-corner-tr" />
+          <div className="stitch-corner-bracket stitch-corner-bl" />
+          <div className="stitch-corner-bracket stitch-corner-br" />
+
+          {/* Stepper Steps (Stitch Cognitive Pipeline) */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar">
+            <span className="flex items-center gap-1 font-bold text-cyan-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+              <span>01 INTENT</span>
+            </span>
+            <span className="text-slate-600">→</span>
+            <span className="flex items-center gap-1 text-slate-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+              <span>02 SWARM MESH</span>
+            </span>
+            <span className="text-slate-600">→</span>
+            <span className="flex items-center gap-1 text-slate-400 hidden xs:flex">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              <span>03 VALIDATE</span>
+            </span>
+            <span className="text-slate-600 hidden xs:inline">→</span>
+            <span className="flex items-center gap-1 text-slate-400 hidden sm:flex">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+              <span>04 CONSENSUS</span>
+            </span>
+          </div>
+
+          {/* Stitch Audio Waveform Visualizer & Telemetry Indicator */}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            <div className="flex items-center gap-0.5 h-4 px-1" title="Stitch Cognitive Waveform Telemetry">
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+              <span className="stitch-audio-bar" />
+            </div>
+
+            {/* Diagnostics Toggle Trigger Button */}
+            <button
+              type="button"
+              onClick={() => setShowDiagnostics(!showDiagnostics)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/50 text-cyan-300 border border-cyan-500/30 transition-all cursor-pointer text-[10px]"
+              title="Toggle Cyber Diagnostics Drawer & Token Ticker"
+            >
+              <Terminal size={11} className="text-cyan-400" />
+              <span className="hidden xs:inline">DIAGNOSTICS</span>
+              {showDiagnostics ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Cyberpunk HUD Diagnostics Drawer & Live Token Velocity Ticker */}
+        {showDiagnostics && (
+          <div
+            className={`relative overflow-hidden p-3 sm:p-3.5 rounded-xl border text-xs font-mono transition-all space-y-2.5 ${
+              theme === 'classic'
+                ? 'bg-slate-950/90 border-cyan-500/30 text-cyan-200/90 shadow-[0_8px_24px_rgba(0,0,0,0.6)]'
+                : theme === 'fulldark'
+                ? 'bg-[#0a0a0d] border-white/15 text-zinc-200 shadow-xl'
+                : 'bg-zinc-900/90 border-indigo-500/30 text-indigo-200'
+            }`}
+          >
+            <div className="stitch-corner-bracket stitch-corner-tl" />
+            <div className="stitch-corner-bracket stitch-corner-tr" />
+            <div className="stitch-corner-bracket stitch-corner-bl" />
+            <div className="stitch-corner-bracket stitch-corner-br" />
+
+            <div className="flex items-center justify-between border-b border-white/10 pb-1.5 flex-wrap gap-2">
+              <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px]">
+                <Activity size={12} className="text-cyan-400 animate-pulse" />
+                <span>NEURAL TELEMETRY STREAM &amp; TOKEN VELOCITY</span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                <span className="px-1.5 py-0.5 rounded bg-cyan-950/70 border border-cyan-500/30 text-cyan-300">
+                  CYCLE #9482-B
+                </span>
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  EPOCH SYNCHRONIZED
+                </span>
+              </div>
+            </div>
+
+            {/* 3 Node Latency Gauges & Live Velocity */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+              <div className="p-2 rounded-lg bg-black/40 border border-cyan-500/20 flex flex-col">
+                <span className="text-[10px] text-slate-400">TOKEN VELOCITY</span>
+                <span className="cyber-telemetry-number font-extrabold text-sm sm:text-base">
+                  4,280 <span className="text-[10px] text-slate-400">tok/s</span>
+                </span>
+              </div>
+              <div className="p-2 rounded-lg bg-black/40 border border-sky-500/20 flex flex-col">
+                <span className="text-[10px] text-sky-300">NOVA (ANALYST)</span>
+                <span className="font-bold text-white">12ms · <span className="text-sky-300">0.998 conf</span></span>
+              </div>
+              <div className="p-2 rounded-lg bg-black/40 border border-amber-500/20 flex flex-col">
+                <span className="text-[10px] text-amber-300">ORBIT (CREATIVE)</span>
+                <span className="font-bold text-white">18ms · <span className="text-amber-300">0.985 conf</span></span>
+              </div>
+              <div className="p-2 rounded-lg bg-black/40 border border-purple-500/20 flex flex-col">
+                <span className="text-[10px] text-purple-300">COSMOS (MENTOR)</span>
+                <span className="font-bold text-white">15ms · <span className="text-purple-300">0.994 conf</span></span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Main Tab Content */}
         {activeTab === 'chat' ? (

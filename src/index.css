@@ -6109,6 +6109,282 @@ button:active .stitch-dice-icon {
   animation: wfCelebrationSlide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* =========================================================================
+   GOOGLE STITCH MULTI-CHAT GRAPHICS & HUD TELEMETRY ANIMATIONS
+   Derived from Stitch Project 8038680276240487056 (JARVIS Cognitive Mesh)
+   ========================================================================= */
+
+@keyframes stitchOrbitSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes stitchOrbitRev {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes stitchAudioWave {
+  0%, 100% {
+    height: 3px;
+    opacity: 0.35;
+  }
+  50% {
+    height: 18px;
+    opacity: 1;
+    filter: drop-shadow(0 0 6px #00f0ff);
+  }
+}
+
+@keyframes stitchRadarPing {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+}
+
+.stitch-orbit-spin {
+  animation: stitchOrbitSlow 24s linear infinite;
+  transform-origin: center center;
+}
+
+.stitch-orbit-reverse {
+  animation: stitchOrbitRev 14s linear infinite;
+  transform-origin: center center;
+}
+
+.stitch-audio-bar {
+  display: inline-block;
+  width: 2.5px;
+  background: linear-gradient(180deg, #7df4ff, #00f0ff, #00363a);
+  border-radius: 9999px;
+  animation: stitchAudioWave 1.4s ease-in-out infinite;
+}
+
+.stitch-audio-bar:nth-child(1) { animation-delay: 0.0s; }
+.stitch-audio-bar:nth-child(2) { animation-delay: 0.25s; }
+.stitch-audio-bar:nth-child(3) { animation-delay: 0.5s; }
+.stitch-audio-bar:nth-child(4) { animation-delay: 0.15s; }
+.stitch-audio-bar:nth-child(5) { animation-delay: 0.4s; }
+.stitch-audio-bar:nth-child(6) { animation-delay: 0.6s; }
+.stitch-audio-bar:nth-child(7) { animation-delay: 0.3s; }
+.stitch-audio-bar:nth-child(8) { animation-delay: 0.45s; }
+
+/* Stitch Tactical L-Shaped Corner Reticles */
+.stitch-corner-bracket {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  z-index: 5;
+  transition: all 0.3s ease;
+}
+.stitch-corner-tl {
+  top: -1px;
+  left: -1px;
+  border-top: 1.5px solid rgba(0, 240, 255, 0.65);
+  border-left: 1.5px solid rgba(0, 240, 255, 0.65);
+}
+.stitch-corner-tr {
+  top: -1px;
+  right: -1px;
+  border-top: 1.5px solid rgba(0, 240, 255, 0.65);
+  border-right: 1.5px solid rgba(0, 240, 255, 0.65);
+}
+.stitch-corner-bl {
+  bottom: -1px;
+  left: -1px;
+  border-bottom: 1.5px solid rgba(0, 240, 255, 0.65);
+  border-left: 1.5px solid rgba(0, 240, 255, 0.65);
+}
+.stitch-corner-br {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 1.5px solid rgba(0, 240, 255, 0.65);
+  border-right: 1.5px solid rgba(0, 240, 255, 0.65);
+}
+
+/* Cybernetic Hologram Grid Overlay */
+.stitch-cyber-grid {
+  background-image: 
+    linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* =========================================================================
+   THE 4 BEAST MULTI-CHAT GRAPHICS & ANIMATIONS
+   1. Holographic Neural Synapse Beam
+   2. Live Consensus Fusion Reactor
+   3. Cyberpunk HUD Diagnostics Drawer & Token Ticker
+   4. Interactive 3D Holographic Persona Orbs & Tilt Depth
+   ========================================================================= */
+
+/* 1. Synapse Laser Beam */
+@keyframes synapseBeamFlow {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.9));
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.3;
+  }
+}
+
+.synapse-laser-pulse {
+  stroke-dasharray: 8 12;
+  animation: synapseBeamFlow 1.8s linear infinite;
+}
+
+/* 2. Consensus Fusion Reactor */
+@keyframes fusionCoreVortex {
+  0% {
+    transform: rotate(0deg) scale(0.96);
+    filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.7));
+  }
+  50% {
+    transform: rotate(180deg) scale(1.08);
+    filter: drop-shadow(0 0 28px rgba(168, 85, 247, 0.9)) drop-shadow(0 0 40px rgba(245, 158, 11, 0.6));
+  }
+  100% {
+    transform: rotate(360deg) scale(0.96);
+    filter: drop-shadow(0 0 16px rgba(0, 240, 255, 0.7));
+  }
+}
+
+@keyframes fusionShockwave {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.fusion-vortex-spin {
+  animation: fusionCoreVortex 3s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+.fusion-shockwave-ring {
+  animation: fusionShockwave 1.6s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+}
+
+/* 3. Cyber Diagnostics Drawer & Ticker */
+@keyframes cyberDigitGlow {
+  0%, 100% {
+    color: #67e8f9;
+    text-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+  }
+  50% {
+    color: #a7f3d0;
+    text-shadow: 0 0 14px rgba(52, 211, 153, 0.8);
+  }
+}
+
+.cyber-telemetry-number {
+  font-variant-numeric: tabular-nums;
+  animation: cyberDigitGlow 3s ease-in-out infinite;
+}
+
+/* 4. 3D Holographic Persona Orbs & Tilt Depth */
+.holo-tilt-card {
+  perspective: 800px;
+  transform-style: preserve-3d;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1), box-shadow 0.25s ease;
+}
+
+.holo-tilt-card:hover {
+  transform: translateY(-3px) scale(1.015) rotateX(1.5deg) rotateY(-1.5deg);
+}
+
+.holo-glare-effect {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(0, 240, 255, 0.05) 30%,
+    transparent 65%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+  transition: opacity 0.3s ease;
+}
+
+.holo-tilt-card:hover .holo-glare-effect {
+  opacity: 1;
+}
+
+/* =========================================================================
+   THE 5 BEST MULTI-CHAT UI FEATURES (STITCH INSPIRED)
+   1. Mind Clash Debate Arena & Agreement Meter
+   2. Chain of Thought Scratchpad Monospace Drawer
+   3. Persona Consensus Weighting Sliders
+   4. Floating Tactical Quick-Action Dock
+   5. Persona Solo Spotlight Mode
+   ========================================================================= */
+
+@keyframes clashVsPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 10px rgba(244, 63, 94, 0.5), inset 0 0 8px rgba(244, 63, 94, 0.4);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.8), inset 0 0 14px rgba(244, 63, 94, 0.7);
+  }
+}
+
+.clash-vs-badge {
+  animation: clashVsPulse 2.4s ease-in-out infinite;
+}
+
+.persona-spotlight-active {
+  box-shadow: 0 0 35px rgba(0, 240, 255, 0.28), 0 0 0 2px rgba(0, 240, 255, 0.7) !important;
+  transform: scale(1.01) !important;
+  z-index: 20;
+}
+
+.persona-spotlight-dimmed {
+  opacity: 0.35;
+  filter: grayscale(40%) blur(0.5px);
+  transform: scale(0.985);
+  transition: all 0.35s ease;
+}
+
+.tactical-floating-dock {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75), 0 0 20px rgba(0, 240, 255, 0.15);
+}
+
+
+
+
 
 
 
