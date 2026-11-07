@@ -309,6 +309,7 @@ export function WorkflowsPage() {
 
   // UI state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [runCelebration, setRunCelebration] = useState<{ status: WorkflowRunStatus; durationMs: number } | null>(null);
   const [collapsedSettings, setCollapsedSettings] = useState<Record<string, boolean>>({});
   const [collapsedOutputs, setCollapsedOutputs] = useState<Record<string, boolean>>({});
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -754,6 +755,11 @@ export function WorkflowsPage() {
 
       storage.saveWorkflowRun(record);
       setRunHistory(storage.getWorkflowRunHistory(activeWorkflow.id));
+
+      if (runStatus === 'success') {
+        setRunCelebration({ status: 'success', durationMs });
+        setTimeout(() => setRunCelebration(null), 4500);
+      }
     }
   };
 
@@ -1360,10 +1366,12 @@ export function WorkflowsPage() {
             <button
               type="button"
               onClick={handleRun}
-              className="wf-run-btn-idle relative overflow-hidden px-2.5 sm:px-3.5 py-1 rounded-lg bg-gradient-to-r from-[#49effd] via-[#22d3ee] to-[#818cf8] hover:brightness-110 text-[#041318] font-mono text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[0_0_20px_rgba(73,239,253,0.38)] active:scale-[0.98] whitespace-nowrap shrink-0"
+              className="wf-run-btn-idle relative overflow-hidden px-3 sm:px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#49effd] via-[#00f0ff] to-[#818cf8] hover:brightness-110 text-[#041318] font-mono text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[0_0_25px_rgba(73,239,253,0.5)] active:scale-[0.98] whitespace-nowrap shrink-0 group"
+              title="Execute Quantum Pipeline (Dispatch Run)"
             >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#041318] group-hover:scale-125 transition-transform" />
               <Play size={12} className="fill-[#041318]" />
-              <span>Run</span>
+              <span>Dispatch Run</span>
             </button>
           )}
         </div>
@@ -2060,6 +2068,26 @@ export function WorkflowsPage() {
         ) : (
           /* ================= CYBER GRAPH CANVAS VIEW ================= */
           <div className="relative w-full h-[calc(100dvh-185px)] min-h-[460px] overflow-hidden bg-[#0e0e12] border border-[#2a292e] rounded-2xl mt-2 shadow-[0_20px_50px_rgba(0,0,0,0.65)]">
+            {/* Pipeline Synchronized Celebration Banner */}
+            {runCelebration && runCelebration.status === 'success' && (
+              <div className="wf-celebration-banner absolute top-4 left-1/2 z-50 pointer-events-none flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-[#0b0d14]/95 border border-emerald-500/60 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_30px_rgba(16,185,129,0.35)] backdrop-blur-2xl">
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-black uppercase tracking-widest text-emerald-300">
+                    PIPELINE SYNCHRONIZED
+                  </span>
+                  <span className="text-zinc-600">·</span>
+                  <span className="font-mono text-[11px] text-zinc-300">
+                    Completed in <strong className="text-emerald-400">{(runCelebration.durationMs / 1000).toFixed(1)}s</strong>
+                  </span>
+                </div>
+                <Sparkles size={14} className="text-[#00f0ff] animate-pulse" />
+              </div>
+            )}
+
             <WorkflowCanvas
               nodes={activeWorkflow.nodes}
               edges={activeWorkflow.edges}

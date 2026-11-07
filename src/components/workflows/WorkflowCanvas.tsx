@@ -366,6 +366,28 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
           : ''
       }`}
     >
+      {/* Concentric Radar Rings on Running Node (Stitch Quantum Animation) */}
+      {status === 'running' && (
+        <>
+          <div className="wf-concentric-ring-1" />
+          <div className="wf-concentric-ring-2" />
+        </>
+      )}
+
+      {/* Completion & Error Flares */}
+      {status === 'done' && <div className="wf-node-success-flare" />}
+      {status === 'error' && <div className="wf-node-error-flare" />}
+
+      {/* Cybernetic Targeting Reticle Corners (Stitch HUD Decals) */}
+      {(isSelected || status === 'running') && (
+        <>
+          <div className="wf-reticle-bracket wf-reticle-bracket-tl" />
+          <div className="wf-reticle-bracket-tr" />
+          <div className="wf-reticle-bracket-bl" />
+          <div className="wf-reticle-bracket-br" />
+        </>
+      )}
+
       {/* Top Laser Sweep on Selected / Running / Hover */}
       <div
         className={`mc-laser-line transition-opacity duration-300 ${
@@ -615,9 +637,19 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         (status === 'skipped' && errorText)) && (
         <div className="mt-2.5 pt-2 border-t border-[#2a292e] flex items-center justify-between gap-2 text-[10px] font-mono tabular-nums">
           {status === 'running' && (
-            <div className="flex items-center gap-1.5 text-[#49effd] font-bold">
-              <Loader2 size={10} className="animate-spin" />
-              <RunningLiveTimer startedAt={startedAt} />
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-1.5 text-[#49effd] font-bold">
+                <Loader2 size={10} className="animate-spin" />
+                <RunningLiveTimer startedAt={startedAt} />
+              </div>
+              {/* Animated Tensor Frequency Equalizer Bars (Stitch ODE visualizer) */}
+              <div className="flex items-center gap-0.5 h-3 px-1.5 py-0.5 rounded bg-[#0b0c10] border border-[#00f0ff]/30" title="Active Inference Flow">
+                <div className="wf-eq-bar" />
+                <div className="wf-eq-bar" />
+                <div className="wf-eq-bar" />
+                <div className="wf-eq-bar" />
+                <div className="wf-eq-bar" />
+              </div>
             </div>
           )}
 
@@ -830,30 +862,66 @@ const CustomWorkflowEdge = React.memo(function CustomWorkflowEdge({
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
+        className={isFlowing ? 'wf-edge-laser-active' : ''}
         style={{
           stroke: strokeColor,
-          strokeWidth: isFlowing ? 2.4 : 1.75,
+          strokeWidth: isFlowing ? 2.6 : 1.75,
           transition: 'stroke 200ms ease',
         }}
       />
 
       {isFlowing && (
         <g>
+          {/* Cyan High-Speed Particle Streams */}
           {[0, 0.45, 0.9].map((delay, index) => (
             <circle
-              key={index}
-              r={3.5}
+              key={`cyan-${index}`}
+              r={3.8}
               fill="#00f0ff"
               style={{ filter: 'drop-shadow(0 0 6px #49effd)' }}
             >
               <animateMotion
-                dur="1.35s"
+                dur="1.2s"
                 begin={`${delay}s`}
                 repeatCount="indefinite"
                 path={edgePath}
               />
             </circle>
           ))}
+          {/* Violet Trailing Data Packets */}
+          {[0.22, 0.67].map((delay, index) => (
+            <circle
+              key={`violet-${index}`}
+              r={2.8}
+              fill="#c084fc"
+              style={{ filter: 'drop-shadow(0 0 5px #e879f9)' }}
+            >
+              <animateMotion
+                dur="1.2s"
+                begin={`${delay}s`}
+                repeatCount="indefinite"
+                path={edgePath}
+              />
+            </circle>
+          ))}
+        </g>
+      )}
+
+      {/* Finished Edge Idle Glow Pulse */}
+      {isFinished && !isFlowing && (
+        <g>
+          <circle
+            r={2.5}
+            fill="#49effd"
+            opacity={0.7}
+            style={{ filter: 'drop-shadow(0 0 4px #00f0ff)' }}
+          >
+            <animateMotion
+              dur="4.5s"
+              repeatCount="indefinite"
+              path={edgePath}
+            />
+          </circle>
         </g>
       )}
 
@@ -1048,7 +1116,10 @@ export function WorkflowCanvas({
   );
 
   return (
-    <div className="w-full h-full min-h-[540px] relative overflow-hidden bg-[#0e0e12] wf-cyber-matrix-grid">
+    <div className="w-full h-full min-h-[540px] relative overflow-hidden bg-[#0b0c10] wf-quantum-grid">
+      {/* Ambient Quantum Radar Sweep Beam (Stitch Spec) */}
+      <div className="wf-radar-beam" />
+
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -1065,7 +1136,7 @@ export function WorkflowCanvas({
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#2a292e" />
+        <Background variant={BackgroundVariant.Dots} gap={28} size={1.2} color="#3b494b" />
         <Controls className="!bg-[#1b1b1f]/95 !border !border-[#2a292e] !rounded-xl !overflow-hidden !shadow-2xl !backdrop-blur-xl [&>button]:!bg-transparent [&>button]:!border-b [&>button]:!border-[#2a292e] [&>button]:!text-[#b9cacb] hover:[&>button]:!bg-[#2a292e] hover:[&>button]:!text-[#49effd]" />
         <div className="hidden md:block">
           <MiniMap
@@ -1076,11 +1147,43 @@ export function WorkflowCanvas({
               if (nodeData?.status === 'error') return '#ffb4ab';
               return '#3b494b';
             }}
-            maskColor="rgba(14, 14, 18, 0.82)"
+            maskColor="rgba(11, 12, 16, 0.85)"
             className="!bg-[#1b1b1f]/90 !border !border-[#2a292e] !rounded-xl overflow-hidden backdrop-blur-xl"
           />
         </div>
       </ReactFlow>
+
+      {/* Floating Canvas Quantum Telemetry HUD Bar (Stitch Inspired) */}
+      <div className="nodrag nopan absolute bottom-4 left-4 z-10 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#131317]/95 border border-[#3b494b]/60 shadow-[0_12px_32px_rgba(0,0,0,0.7),0_0_15px_rgba(0,240,255,0.12)] backdrop-blur-xl text-xs font-mono pointer-events-auto">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-[#00f0ff] animate-ping' : 'bg-emerald-400'}`} />
+          <span className="text-[11px] font-bold tracking-wider text-[#e4e1e7] uppercase">
+            {isRunning ? 'SYNAPSE PIPELINE // ACTIVE' : 'QUANTUM MESH // READY'}
+          </span>
+        </div>
+        <span className="text-[#3b494b] font-light">|</span>
+        <div className="flex items-center gap-2 text-[10px] text-[#b9cacb]">
+          <span>Nodes: <strong className="text-[#49effd] font-bold">{nodes.length}</strong></span>
+          <span>Edges: <strong className="text-violet-400 font-bold">{edges.length}</strong></span>
+        </div>
+        {isRunning && (
+          <>
+            <span className="text-[#3b494b] font-light">|</span>
+            {/* Live animated SVG sparkline frequency wave */}
+            <div className="flex items-center gap-1.5 text-[10px] text-[#00f0ff]">
+              <svg className="w-14 h-4 overflow-visible" viewBox="0 0 56 16" fill="none">
+                <path
+                  d="M0 8 Q7 2 14 8 T28 8 T42 8 T56 8"
+                  stroke="#00f0ff"
+                  strokeWidth="1.5"
+                  className="animate-pulse"
+                />
+              </svg>
+              <span className="font-bold text-[9px] tracking-wider uppercase">STREAMING</span>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Floating Tidy Action */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">

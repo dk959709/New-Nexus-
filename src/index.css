@@ -5902,5 +5902,214 @@ button:active .stitch-dice-icon {
   animation: pxAuroraTextFlow 7s linear infinite;
 }
 
+/* ==========================================================================
+   NEXUS // Quantum Synapse Workflow Visualizer & Animations (from Stitch)
+   ========================================================================== */
+
+@keyframes wfConcentricRing {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+
+@keyframes wfRadarScan {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wfEqualizerPulse {
+  0%, 100% {
+    height: 4px;
+    opacity: 0.45;
+  }
+  50% {
+    height: 18px;
+    opacity: 1;
+  }
+}
+
+@keyframes wfHoloShimmer {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+@keyframes wfPipPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(73, 239, 253, 0.7), 0 0 12px rgba(73, 239, 253, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(73, 239, 253, 0), 0 0 20px rgba(73, 239, 253, 0.95);
+  }
+}
+
+@keyframes wfDataPacketFloat {
+  0% {
+    filter: drop-shadow(0 0 4px #00f0ff);
+  }
+  50% {
+    filter: drop-shadow(0 0 10px #7df4ff);
+  }
+  100% {
+    filter: drop-shadow(0 0 4px #00f0ff);
+  }
+}
+
+/* Quantum Canvas Grid & Ambience */
+.wf-quantum-grid {
+  background-color: #0b0c10;
+  background-image: 
+    radial-gradient(circle at 50% 30%, rgba(0, 240, 255, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 85% 70%, rgba(168, 85, 247, 0.06) 0%, transparent 55%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+}
+
+/* Concentric Radar Rings on Running Node */
+.wf-concentric-ring-1 {
+  position: absolute;
+  inset: -8px;
+  border-radius: 1.25rem;
+  border: 1.5px solid rgba(0, 240, 255, 0.6);
+  pointer-events: none;
+  animation: wfConcentricRing 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+.wf-concentric-ring-2 {
+  position: absolute;
+  inset: -16px;
+  border-radius: 1.5rem;
+  border: 1px dashed rgba(73, 239, 253, 0.4);
+  pointer-events: none;
+  animation: wfConcentricRing 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite 0.75s;
+}
+
+/* Equalizer Bars for Active Model Inference */
+.wf-eq-bar {
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #00f0ff, #a855f7);
+  animation: wfEqualizerPulse 1s ease-in-out infinite;
+}
+.wf-eq-bar:nth-child(1) { animation-delay: 0.1s; }
+.wf-eq-bar:nth-child(2) { animation-delay: 0.35s; }
+.wf-eq-bar:nth-child(3) { animation-delay: 0.2s; }
+.wf-eq-bar:nth-child(4) { animation-delay: 0.5s; }
+.wf-eq-bar:nth-child(5) { animation-delay: 0.28s; }
+
+/* Holographic Edge Laser Flow */
+.wf-edge-laser-active {
+  filter: drop-shadow(0 0 6px #00f0ff) drop-shadow(0 0 12px rgba(73, 239, 253, 0.6));
+}
+
+/* Cybernetic Targeting Reticle Corners */
+.wf-reticle-bracket {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: rgba(73, 239, 253, 0.7);
+  pointer-events: none;
+  transition: all 0.25s ease;
+}
+.wf-reticle-bracket-tl { top: -2px; left: -2px; border-top: 2px solid; border-left: 2px solid; border-top-left-radius: 3px; }
+.wf-reticle-bracket-tr { top: -2px; right: -2px; border-top: 2px solid; border-right: 2px solid; border-top-right-radius: 3px; }
+.wf-reticle-bracket-bl { bottom: -2px; left: -2px; border-bottom: 2px solid; border-left: 2px solid; border-bottom-left-radius: 3px; }
+.wf-reticle-bracket-br { bottom: -2px; right: -2px; border-bottom: 2px solid; border-right: 2px solid; border-bottom-right-radius: 3px; }
+
+/* Quantum Canvas Ambient Radar Sweep Beam */
+.wf-radar-beam {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 330deg, rgba(0, 240, 255, 0.035) 360deg);
+  pointer-events: none;
+  animation: wfRadarScan 24s linear infinite;
+}
+
+/* One-shot Success Shockwave Flare */
+@keyframes wfSuccessFlare {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.9), 0 0 30px rgba(16, 185, 129, 0.8);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(16, 185, 129, 0), 0 0 45px rgba(16, 185, 129, 0.4);
+    opacity: 0.6;
+  }
+  100% {
+    box-shadow: 0 0 0 20px rgba(16, 185, 129, 0), 0 0 10px rgba(16, 185, 129, 0);
+    opacity: 0;
+  }
+}
+
+.wf-node-success-flare {
+  position: absolute;
+  inset: -2px;
+  border-radius: 1rem;
+  border: 2px solid #10b981;
+  pointer-events: none;
+  animation: wfSuccessFlare 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* One-shot Error Glitch Flare */
+@keyframes wfErrorFlare {
+  0%, 100% {
+    box-shadow: 0 0 25px rgba(255, 180, 171, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 180, 171, 1), 0 0 0 8px rgba(255, 180, 171, 0.2);
+  }
+}
+
+.wf-node-error-flare {
+  position: absolute;
+  inset: -2px;
+  border-radius: 1rem;
+  border: 2px solid #ffb4ab;
+  pointer-events: none;
+  animation: wfErrorFlare 0.6s ease-in-out infinite;
+}
+
+/* Pipeline Completion Cyber Banner */
+@keyframes wfCelebrationSlide {
+  0% {
+    transform: translate(-50%, -100%) scale(0.9);
+    opacity: 0;
+  }
+  50% {
+    transform: translate(-50%, 0) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+.wf-celebration-banner {
+  animation: wfCelebrationSlide 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+
+
 
 
