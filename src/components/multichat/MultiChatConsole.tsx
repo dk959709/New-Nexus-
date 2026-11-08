@@ -3157,7 +3157,7 @@ export function MultiChatConsole({
                 targetedPersonaIds={directTargetIds}
                 onToggleTargetPersona={handleToggleDirectPersona}
                 telemetry={realReactorTelemetry}
-                theme={theme}
+                theme={activeTheme}
               />
             </div>
 
@@ -3294,7 +3294,7 @@ export function MultiChatConsole({
                 targetedPersonaIds={directTargetIds}
                 onToggleTargetPersona={handleToggleDirectPersona}
                 telemetry={realReactorTelemetry}
-                theme={theme}
+                theme={activeTheme}
               />
             </div>
 

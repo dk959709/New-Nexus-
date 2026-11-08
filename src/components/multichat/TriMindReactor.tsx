@@ -70,7 +70,6 @@ export const TriMindReactor: React.FC<TriMindReactorProps> = ({
       ? 'thinking'
       : 'idle';
 
-  const isIdle = resolvedState === 'idle';
   const isThinking = resolvedState === 'thinking';
   const isDebatingState = resolvedState === 'debating';
   const isSynthesizing = resolvedState === 'synthesizing';
