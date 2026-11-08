@@ -5282,17 +5282,19 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
     }
 
     const cleanedArticleText = cleanFetchedPageText(fullRawText).slice(0, 8000) || fullRawText.slice(0, 8000);
+    const pinnedLinks = buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl);
     const newPinned: WebFetcherPinnedPage = {
       url: fetchedFinalUrl,
       title: (fetchedTitle || getPinnedPageDomain(fetchedFinalUrl)).trim(),
       text: cleanedArticleText,
-      links: buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl),
+      links: pinnedLinks,
     };
     setWebFetcherPinnedPage(newPinned);
 
     setSpecialistProgress(70);
     setSpecialistPhase('Answering from full article...');
     const currentLanguage = storage.getAssistantLanguage();
+    const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
 
     const articlePrompt = `You are answering the user's question from the full article text below.
 Use ONLY the article text provided below (max 8,000 characters).
@@ -5312,13 +5314,14 @@ STRICT RULES:
 I don't see that on the page.`;
 
     let finalAnswerText = '';
+    let aiReasoning = '';
     try {
       const aiRes = await Promise.race([
         api.aiChat(
           articlePrompt,
           [],
           '',
-          undefined,
+          sessionProvider,
           false,
           { language: currentLanguage, skillsText: buildActiveSkillsText() }
         ),
@@ -5328,6 +5331,7 @@ I don't see that on the page.`;
       ]);
       if (webFetcherCancelledRef.current) return;
       finalAnswerText = stripTierLabels(aiRes.answer).trim() || "I don't see that on the page.";
+      aiReasoning = aiRes.reasoning?.trim() || '';
     } catch {
       if (webFetcherCancelledRef.current) return;
       finalAnswerText = "I don't see that on the page.";
@@ -5335,9 +5339,22 @@ I don't see that on the page.`;
 
     if (webFetcherCancelledRef.current) return;
 
+    const reasoningTrace = [
+      `[Web Fetcher Thinking]`,
+      `• Action: Read Full Article & Answer Question`,
+      `• Article Title: ${newPinned.title}`,
+      `• Article URL: ${newPinned.url}`,
+      `• Extracted Content: ${newPinned.text.length} chars pinned (${pinnedLinks.length} links indexed)`,
+      `• Question: "${questionText}"`,
+      aiReasoning ? `\n[Model Reasoning]\n${aiReasoning}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
     const assistantMessage: Message = {
       role: 'assistant',
       content: finalAnswerText,
+      reasoning: reasoningTrace,
       tool: 'webfetcher',
       webFetcherCanBackToList: true,
     };
@@ -5411,6 +5428,13 @@ I don't see that on the page.`;
       const assistantMessage: Message = {
         role: 'assistant',
         content: `No matching pages found on ${cleanDomain} for "${cleanTopic}".`,
+        reasoning: [
+          `[Web Fetcher Thinking]`,
+          `• Action: Domain-Restricted Topic Search`,
+          `• Target Domain: ${cleanDomain}`,
+          `• Query: "${siteQuery}"`,
+          `• Result: 0 matching HTTPS pages found on ${cleanDomain}.`,
+        ].join('\n'),
         tool: 'webfetcher',
       };
       setMessages((current) => [...current, assistantMessage]);
@@ -5463,6 +5487,13 @@ I don't see that on the page.`;
     const assistantMessage: Message = {
       role: 'assistant',
       content: lines.join('\n').trim(),
+      reasoning: [
+        `[Web Fetcher Thinking]`,
+        `• Action: Domain-Restricted Topic Search`,
+        `• Target Domain: ${cleanDomain}`,
+        `• Topic Query: "${cleanTopic}"`,
+        `• Filtered Results: ${items.length} matching HTTPS page(s) on ${cleanDomain} (from ${rawResults.length} raw search results)`,
+      ].join('\n'),
       tool: 'webfetcher',
       sources: items.map((i) => ({ title: i.title, url: i.url, domain: i.domain })),
       searchedWeb: true,
@@ -5994,17 +6025,20 @@ I don't see that on the page.`;
 
           if (pageContent) {
             const cleanedPinText = cleanFetchedPageText(fullRawText);
+            const pinnedLinks = buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl);
+            const pinnedTitle = (fetchedTitle || getPinnedPageDomain(fetchedFinalUrl)).trim();
             setWebFetcherPinnedPage({
               url: fetchedFinalUrl,
-              title: (fetchedTitle || getPinnedPageDomain(fetchedFinalUrl)).trim(),
+              title: pinnedTitle,
               text: cleanedPinText || pageContent,
-              links: buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl),
+              links: pinnedLinks,
             });
 
             setSpecialistProgress(70);
             setSpecialistPhase('Synthesizing answer from webpage content...');
             const currentLanguage = storage.getAssistantLanguage();
             const currentPermanentMemories = storage.getPermanentMemories();
+            const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
 
             const aiPrompt = `You are the FINAL SYNTHESIZER agent.
 Your task is to analyze the extracted webpage content and deliver a direct, comprehensive, and well-structured final agent answer for the user.
@@ -6024,6 +6058,7 @@ DIRECTIVES:
 5. Provide ONLY the definitive final agent answer. Do NOT output internal agent labels, system steps, JSON schemas, or tool logs.`;
 
             let finalAnswerText = '';
+            let aiReasoning = '';
             console.log('[Web Fetcher] synthesis start');
             const synthStart = Date.now();
 
@@ -6033,7 +6068,7 @@ DIRECTIVES:
                   aiPrompt,
                   [],
                   '',
-                  undefined,
+                  sessionProvider,
                   false,
                   { language: currentLanguage, permanentMemories: currentPermanentMemories, skillsText: buildActiveSkillsText() }
                 ),
@@ -6045,6 +6080,7 @@ DIRECTIVES:
               const synthTime = Date.now() - synthStart;
               console.log(`[Web Fetcher] synthesis done (${synthTime} ms)`);
               finalAnswerText = stripTierLabels(aiRes.answer);
+              aiReasoning = aiRes.reasoning?.trim() || '';
             } catch (synthErr: unknown) {
               if (webFetcherCancelledRef.current) return;
               const sErr = synthErr as Error;
@@ -6065,9 +6101,22 @@ DIRECTIVES:
 
             if (webFetcherCancelledRef.current) return;
 
+            const reasoningTrace = [
+              `[Web Fetcher Thinking]`,
+              `• Action: Direct URL Fetch & Synthesis`,
+              `• Target URL: ${fetchedFinalUrl}`,
+              `• Page Title: ${pinnedTitle}`,
+              `• Extracted Content: ${pageContent.length} chars analyzed (${(cleanedPinText || pageContent).length} chars pinned, ${pinnedLinks.length} links indexed)`,
+              `• Synthesis: Grounded response generated from extracted webpage text.`,
+              aiReasoning ? `\n[Model Reasoning]\n${aiReasoning}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+
             const assistantMessage: Message = {
               role: 'assistant',
               content: finalAnswerText,
+              reasoning: reasoningTrace,
               tool: 'webfetcher',
             };
 
@@ -6162,17 +6211,20 @@ DIRECTIVES:
 
           if (pageContent) {
             const cleanedPinText = cleanFetchedPageText(fullRawText);
+            const pinnedLinks = buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl);
+            const pinnedTitle = (fetchedTitle || pickedItem.title || getPinnedPageDomain(fetchedFinalUrl)).trim();
             setWebFetcherPinnedPage({
               url: fetchedFinalUrl,
-              title: (fetchedTitle || pickedItem.title || getPinnedPageDomain(fetchedFinalUrl)).trim(),
+              title: pinnedTitle,
               text: cleanedPinText || pageContent,
-              links: buildPinnedPageLinks(fetchedLinks, fullRawText, fetchedFinalUrl),
+              links: pinnedLinks,
             });
 
             setSpecialistProgress(70);
             setSpecialistPhase('Synthesizing answer from webpage content...');
             const currentLanguage = storage.getAssistantLanguage();
             const currentPermanentMemories = storage.getPermanentMemories();
+            const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
 
             const userRequestText = webFetcherOriginalRequest.trim()
               ? `The user asked for a list of websites with this request: "${webFetcherOriginalRequest}". They picked this page from the list.`
@@ -6196,6 +6248,7 @@ DIRECTIVES:
 5. Provide ONLY the definitive final agent answer. Do NOT output internal agent labels, system steps, JSON schemas, or tool logs.`;
 
             let finalAnswerText = '';
+            let aiReasoning = '';
             console.log('[Web Fetcher] synthesis start');
             const synthStart = Date.now();
 
@@ -6205,7 +6258,7 @@ DIRECTIVES:
                   aiPrompt,
                   [],
                   '',
-                  undefined,
+                  sessionProvider,
                   false,
                   { language: currentLanguage, permanentMemories: currentPermanentMemories, skillsText: buildActiveSkillsText() }
                 ),
@@ -6217,6 +6270,7 @@ DIRECTIVES:
               const synthTime = Date.now() - synthStart;
               console.log(`[Web Fetcher] synthesis done (${synthTime} ms)`);
               finalAnswerText = stripTierLabels(aiRes.answer);
+              aiReasoning = aiRes.reasoning?.trim() || '';
             } catch (synthErr: unknown) {
               if (webFetcherCancelledRef.current) return;
               const sErr = synthErr as Error;
@@ -6237,9 +6291,22 @@ DIRECTIVES:
 
             if (webFetcherCancelledRef.current) return;
 
+            const reasoningTrace = [
+              `[Web Fetcher Thinking]`,
+              `• Action: Read Selected Website (#${pickedNumber})`,
+              `• Selected Page: ${pinnedTitle} (${fetchedFinalUrl})`,
+              webFetcherOriginalRequest.trim() ? `• Original Request: "${webFetcherOriginalRequest.trim()}"` : '',
+              `• Extracted Content: ${pageContent.length} chars analyzed (${(cleanedPinText || pageContent).length} chars pinned, ${pinnedLinks.length} links indexed)`,
+              `• Synthesis: Grounded response generated from webpage content.`,
+              aiReasoning ? `\n[Model Reasoning]\n${aiReasoning}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n');
+
             const assistantMessage: Message = {
               role: 'assistant',
               content: finalAnswerText,
+              reasoning: reasoningTrace,
               tool: 'webfetcher',
             };
 
@@ -6359,6 +6426,13 @@ DIRECTIVES:
             const assistantMessage: Message = {
               role: 'assistant',
               content: 'No websites found. Try different words.',
+              reasoning: [
+                `[Web Fetcher Thinking]`,
+                `• Action: Website Discovery & Ranking`,
+                `• User Request: "${message}"`,
+                `• Cleaned Query: "${cleanedQuery}"`,
+                `• Result: 0 valid HTTPS websites returned.`,
+              ].join('\n'),
               tool: 'webfetcher',
             };
             setMessages((current) => [...current, assistantMessage]);
@@ -6433,6 +6507,14 @@ DIRECTIVES:
           const assistantMessage: Message = {
             role: 'assistant',
             content: listContent,
+            reasoning: [
+              `[Web Fetcher Thinking]`,
+              `• Action: Website Discovery & Ranking`,
+              `• User Request: "${message}"`,
+              `• Cleaned Search Query: "${cleanedQuery}"${cleanedName ? ` (Target Entity: "${cleanedName}")` : ''}`,
+              `• Search Source: ${sourceLabel} (${rawResults.length} raw results → ${validResults.length} valid HTTPS pages)`,
+              `• Ranking & Filtering: ${officialResults.length} official domain match(es), ${standardResults.length} standard result(s); cleaned navigation boilerplate from snippets.`,
+            ].join('\n'),
             tool: 'webfetcher',
             sources: items.map((i) => ({ title: i.title, url: i.url, domain: i.domain })),
             searchedWeb: true,
@@ -6452,10 +6534,12 @@ DIRECTIVES:
           setSpecialistProgress(60);
           setSpecialistPhase(`Answering from pinned page (${getPinnedPageDomain(pinned.url)})...`);
           const currentLanguage = storage.getAssistantLanguage();
+          const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
 
-          const recent4Messages = messages
+          const recentMessageSlice = messages
             .filter((m) => m.content && m.content.trim() && !(m as { isWelcome?: boolean }).isWelcome)
-            .slice(-4)
+            .slice(-4);
+          const recent4Messages = recentMessageSlice
             .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.trim().slice(0, 1200)}`)
             .join('\n\n');
 
@@ -6488,16 +6572,18 @@ I don't see that on the page.
 [OPTION: Likely item 3]`;
 
           let finalAnswerText = '';
+          let aiReasoning = '';
           let followUpOptions: string[] = [];
           let detectedArticleUrl: string | null = null;
           let domainSearchFallback: { domain: string; topic: string } | undefined = undefined;
+          let hasLittleDetail = false;
           try {
             const aiRes = await Promise.race([
               api.aiChat(
                 followUpPrompt,
                 [],
                 '',
-                undefined,
+                sessionProvider,
                 false,
                 { language: currentLanguage, skillsText: buildActiveSkillsText() }
               ),
@@ -6506,6 +6592,7 @@ I don't see that on the page.
               ),
             ]);
             if (webFetcherCancelledRef.current) return;
+            aiReasoning = aiRes.reasoning?.trim() || '';
             const rawAnswer = stripTierLabels(aiRes.answer).trim();
             const extractedOptions: string[] = [];
             const keptLines: string[] = [];
@@ -6527,7 +6614,7 @@ I don't see that on the page.
             followUpOptions = extractedOptions.length >= 2 ? extractedOptions.slice(0, 5) : [];
             finalAnswerText = keptLines.join('\n').trim() || "I don't see that on the page.";
 
-            const hasLittleDetail =
+            hasLittleDetail =
               Boolean(rawLinkCandidate) ||
               /\b(little detail|very little detail|only mentions|briefly|only lists|headline|not much detail|limited detail|only says|does not provide (?:full|more|further) detail|doesn't provide (?:full|more|further) detail|only includes|no further details|short description)\b/i.test(
                 finalAnswerText
@@ -6562,9 +6649,32 @@ I don't see that on the page.
 
           if (webFetcherCancelledRef.current) return;
 
+          const detailSummary = hasLittleDetail
+            ? detectedArticleUrl
+              ? `Limited detail on main page; matched article link (${detectedArticleUrl})`
+              : domainSearchFallback
+              ? `Limited detail on main page; prepared domain search fallback (${domainSearchFallback.domain})`
+              : 'Limited detail on main page'
+            : followUpOptions.length > 0
+            ? `Ambiguous reference detected; generated ${followUpOptions.length} clarification options`
+            : 'Answered directly from pinned page content';
+
+          const reasoningTrace = [
+            `[Web Fetcher Thinking]`,
+            `• Action: Pinned Page Follow-Up Analysis`,
+            `• Pinned Page: ${pinned.title} (${pinned.url})`,
+            `• Context Window: ${Math.min(8000, pinned.text.length)} chars of pinned page text + last ${recentMessageSlice.length} chat message(s)`,
+            `• Question: "${message}"`,
+            `• Resolution: ${detailSummary}`,
+            aiReasoning ? `\n[Model Reasoning]\n${aiReasoning}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n');
+
           const assistantMessage: Message = {
             role: 'assistant',
             content: finalAnswerText,
+            reasoning: reasoningTrace,
             tool: 'webfetcher',
             webFetcherOptions: followUpOptions.length > 0 ? followUpOptions : undefined,
             webFetcherArticleRef: detectedArticleUrl
@@ -10374,6 +10484,54 @@ I don't see that on the page.
                     }`}
                     style={{ width: `${Math.max(8, Math.min(100, specialistProgress))}%` }}
                   />
+                </div>
+              )}
+
+              {/* Live Web Fetcher Thinking Box while loading */}
+              {webFetcherEnabled && (
+                <div
+                  className={`mt-2 rounded-xl border text-xs overflow-hidden transition-all ${
+                    theme === 'classic'
+                      ? 'border-cyan-500/25 bg-slate-950/60'
+                      : theme === 'fulldark'
+                      ? 'border-[#262626] bg-[#141414]'
+                      : 'border-zinc-800/80 bg-zinc-900/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <div className="flex items-center gap-1.5 font-medium">
+                      <span className="text-sm animate-pulse">🧠</span>
+                      <span
+                        className={
+                          theme === 'classic'
+                            ? 'text-cyan-300'
+                            : theme === 'fulldark'
+                            ? 'text-[#cfcfcf]'
+                            : 'text-zinc-300'
+                        }
+                      >
+                        Thinking (Web Fetcher)
+                      </span>
+                    </div>
+                    <span className="text-[10.5px] font-mono text-teal-400">
+                      {specialistProgress > 0 ? `${specialistProgress}%` : 'Active'}
+                    </span>
+                  </div>
+                  <div
+                    className={`px-3.5 py-2 border-t text-[12px] leading-relaxed font-mono whitespace-pre-wrap break-words ${
+                      theme === 'classic'
+                        ? 'border-cyan-500/15 text-slate-300 bg-slate-950/80'
+                        : theme === 'fulldark'
+                        ? 'border-[#222] text-[#aaa] bg-[#101010]'
+                        : 'border-zinc-800/60 text-zinc-400 bg-zinc-950/40'
+                    }`}
+                  >
+                    {`• Step: ${specialistPhase || 'Analyzing request & extracting web content...'}\n${
+                      webFetcherPinnedPage
+                        ? `• Pinned Context: ${webFetcherPinnedPage.title} (${getPinnedPageDomain(webFetcherPinnedPage.url)})`
+                        : '• Mode: Live Webpage Discovery & Content Synthesis'
+                    }`}
+                  </div>
                 </div>
               )}
             </div>

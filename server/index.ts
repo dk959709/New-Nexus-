@@ -3757,7 +3757,7 @@ const aiChatSchema = z.object({
 
 async function startServer() {
   const app = express();
-  const port = 3000;
+  const port = Number(process.env.PORT) || 3000;
 
   app.use(
     helmet({
@@ -5635,7 +5635,11 @@ async function startServer() {
   });
 
   // Development vs Production serving
-  if (process.env.NODE_ENV !== 'production') {
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    fs.existsSync(resolve(process.cwd(), 'dist/index.html'));
+
+  if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
