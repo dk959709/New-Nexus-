@@ -6382,10 +6382,86 @@ button:active .stitch-dice-icon {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.75), 0 0 20px rgba(0, 240, 255, 0.15);
 }
 
+/* =========================================================================
+   TRI-MIND SYNAPSE REACTOR (GOOGLE STITCH SPECIFICATION)
+   ========================================================================= */
 
+@keyframes triStreamInward {
+  0% {
+    stroke-dashoffset: 120;
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.4;
+  }
+}
 
+@keyframes triSparkPulse {
+  0%, 100% {
+    transform: scale(0.85);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+    filter: drop-shadow(0 0 10px #f59e0b) drop-shadow(0 0 16px #00f0ff);
+  }
+}
 
+@keyframes triCoreBloom {
+  0%, 100% {
+    transform: scale(0.95);
+    filter: drop-shadow(0 0 12px rgba(0, 240, 255, 0.7));
+  }
+  50% {
+    transform: scale(1.15);
+    filter: drop-shadow(0 0 25px rgba(52, 211, 153, 0.95)) drop-shadow(0 0 35px rgba(255, 255, 255, 0.8));
+  }
+}
 
+.tri-stream-nova {
+  stroke-dasharray: 8 10;
+  animation: triStreamInward 1.4s linear infinite;
+}
 
+.tri-stream-orbit {
+  stroke-dasharray: 8 10;
+  animation: triStreamInward 1.4s linear infinite;
+  animation-delay: 0.2s;
+}
 
+.tri-stream-cosmos {
+  stroke-dasharray: 8 10;
+  animation: triStreamInward 1.4s linear infinite;
+  animation-delay: 0.4s;
+}
 
+.tri-clash-spark {
+  animation: triSparkPulse 0.9s ease-in-out infinite alternate;
+}
+
+.tri-core-bloom {
+  animation: triCoreBloom 2s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stitch-orbit-spin,
+  .stitch-orbit-reverse,
+  .mc-orbit-cw,
+  .mc-orbit-ccw,
+  .synapse-laser-pulse,
+  .fusion-vortex-spin,
+  .fusion-shockwave-ring,
+  .tri-stream-nova,
+  .tri-stream-orbit,
+  .tri-stream-cosmos,
+  .tri-clash-spark,
+  .tri-core-bloom {
+    animation: none !important;
+  }
+}

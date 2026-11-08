@@ -116,6 +116,7 @@ import {
   executeMultiChatHotSeat,
   executeSinglePersonaRerun,
 } from '@/services/multiChatOrchestrator';
+import { TriMindReactor, type TriMindReactorTelemetry } from '@/components/multichat/TriMindReactor';
 import type {
   MultiChatMessage,
   MultiChatSystemConfig,
@@ -374,6 +375,54 @@ export function MultiChatConsole({
   }, [messages]);
 
   const totalVotesCast = personaVoteCounts.nova + personaVoteCounts.orbit + personaVoteCounts.cosmos;
+
+  // Real telemetry for Tri-Mind Reactor (Rule 7: real data only, N/A if absent)
+  const realReactorTelemetry: TriMindReactorTelemetry = useMemo(() => {
+    if (messages.length === 0) {
+      return {
+        latencySec: null,
+        tokensCount: null,
+        tokensPerSec: null,
+        consensusAgreementsCount: null,
+      };
+    }
+    const latestMsg = messages[messages.length - 1];
+    const completedResponses = (latestMsg?.responses || []).filter(
+      (r) => (r.status === 'completed' || r.status === 'ready') && Boolean((r.text || r.content || '').trim()),
+    );
+    if (completedResponses.length === 0) {
+      return {
+        latencySec: null,
+        tokensCount: null,
+        tokensPerSec: null,
+        consensusAgreementsCount: latestMsg?.consensus?.agreements?.length ?? null,
+      };
+    }
+    const totalWords = completedResponses.reduce(
+      (acc, r) => acc + (r.text || r.content || '').trim().split(/\s+/).filter(Boolean).length,
+      0,
+    );
+    const estTokens = totalWords > 0 ? Math.round(totalWords * 1.32) : null;
+    const durations = completedResponses
+      .map((r) => r.durationMs)
+      .filter((d): d is number => typeof d === 'number' && d > 0);
+    const avgDurationSec =
+      durations.length > 0
+        ? Math.max(0.4, durations.reduce((a, b) => a + b, 0) / durations.length / 1000)
+        : null;
+    const tokPerSec =
+      estTokens != null && avgDurationSec != null && avgDurationSec > 0
+        ? Math.round(estTokens / avgDurationSec)
+        : null;
+    const agreements = latestMsg?.consensus?.agreements?.length ?? null;
+
+    return {
+      latencySec: avgDurationSec,
+      tokensCount: estTokens,
+      tokensPerSec: tokPerSec,
+      consensusAgreementsCount: agreements,
+    };
+  }, [messages]);
 
   // FEATURE 3: PODCAST MODE STATES
   const [isPodcastActive, setIsPodcastActive] = useState(false);
@@ -3097,100 +3146,19 @@ export function MultiChatConsole({
               }`}
             />
 
-            {/* Centerpiece Animated Tri-Mind Neural Reactor SVG Graphic */}
-            <div className="relative w-28 h-28 sm:w-32 sm:h-32 mb-3 sm:mb-4 grid place-items-center">
-              <svg viewBox="0 0 120 120" className="w-full h-full overflow-visible">
-                <defs>
-                  <radialGradient id="mcCoreGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#67e8f9" stopOpacity="0.9" />
-                    <stop offset="55%" stopColor="#6366f1" stopOpacity="0.45" />
-                    <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
-                  </radialGradient>
-                  <linearGradient id="mcTriStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#38bdf8" />
-                    <stop offset="50%" stopColor="#f59e0b" />
-                    <stop offset="100%" stopColor="#c084fc" />
-                  </linearGradient>
-                </defs>
-
-                {/* Google Stitch Outermost Instrumentation Orbit Ring */}
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="58"
-                  fill="none"
-                  stroke="rgba(0, 240, 255, 0.45)"
-                  strokeWidth="1"
-                  strokeDasharray="6 8"
-                  className="stitch-orbit-spin"
-                />
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="49"
-                  fill="none"
-                  stroke="rgba(56, 189, 248, 0.3)"
-                  strokeWidth="1.2"
-                  strokeDasharray="18 10 4 10"
-                  className="stitch-orbit-reverse"
-                />
-
-                {/* Outer Counter-Rotating Ring */}
-                <g className="mc-orbit-ccw">
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="52"
-                    fill="none"
-                    stroke="url(#mcTriStroke)"
-                    strokeWidth="1.2"
-                    strokeDasharray="8 6 2 6"
-                    opacity="0.55"
-                  />
-                </g>
-
-                {/* Inner Clockwise Orbital Ring with 3 Persona Satellite Nodes */}
-                <g className="mc-orbit-cw">
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r="40"
-                    fill="none"
-                    stroke="rgba(148, 163, 184, 0.25)"
-                    strokeWidth="1.2"
-                    strokeDasharray="4 4"
-                  />
-                  {/* NOVA Cyan Node */}
-                  <circle cx="60" cy="20" r="5" fill="#38bdf8" />
-                  <circle cx="60" cy="20" r="9" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.5" />
-                  {/* ORBIT Amber Node */}
-                  <circle cx="94.6" cy="80" r="5" fill="#f59e0b" />
-                  <circle cx="94.6" cy="80" r="9" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.5" />
-                  {/* COSMOS Violet Node */}
-                  <circle cx="25.4" cy="80" r="5" fill="#c084fc" />
-                  <circle cx="25.4" cy="80" r="9" fill="none" stroke="#c084fc" strokeWidth="1" opacity="0.5" />
-                </g>
-
-                {/* Animated Synaptic Triangle Mesh */}
-                <polygon
-                  points="60,26 89,77 31,77"
-                  fill="none"
-                  stroke="url(#mcTriStroke)"
-                  strokeWidth="1.5"
-                  className="mc-synapse-line"
-                  opacity="0.8"
-                />
-
-                {/* Central Pulsing Quantum Core */}
-                <circle cx="60" cy="60" r="22" fill="url(#mcCoreGlow)" className="animate-pulse" />
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="8"
-                  fill="#ffffff"
-                  style={{ filter: 'drop-shadow(0 0 10px #38bdf8)' }}
-                />
-              </svg>
+            {/* Centerpiece Holographic Tri-Mind Synapse Reactor (Google Stitch Specification) */}
+            <div className="w-full max-w-2xl mb-4 sm:mb-6">
+              <TriMindReactor
+                isCompact={false}
+                collapsible={false}
+                isGenerating={isGenerating}
+                isConsensusGenerating={Boolean(consensusLoadingMsgId)}
+                isDebating={Boolean(rebuttalLoadingMsgId)}
+                targetedPersonaIds={directTargetIds}
+                onToggleTargetPersona={handleToggleDirectPersona}
+                telemetry={realReactorTelemetry}
+                theme={theme}
+              />
             </div>
 
             {/* Header Badge */}
@@ -3314,9 +3282,25 @@ export function MultiChatConsole({
             </div>
           </div>
         ) : (
-          messages
-            .filter((m) => (!showPinnedOnly ? true : Boolean(m.pinned)))
-            .map((msg, msgIdx) => {
+          <>
+            {/* Live Holographic Tri-Mind Synapse Reactor Header */}
+            <div className="w-full mb-1">
+              <TriMindReactor
+                isCompact={true}
+                collapsible={true}
+                isGenerating={isGenerating}
+                isConsensusGenerating={Boolean(consensusLoadingMsgId)}
+                isDebating={Boolean(rebuttalLoadingMsgId)}
+                targetedPersonaIds={directTargetIds}
+                onToggleTargetPersona={handleToggleDirectPersona}
+                telemetry={realReactorTelemetry}
+                theme={theme}
+              />
+            </div>
+
+            {messages
+              .filter((m) => (!showPinnedOnly ? true : Boolean(m.pinned)))
+              .map((msg, msgIdx) => {
               const activeTab = selectedPersonaTab[msg.id] || 'all';
 
               return (
@@ -5831,7 +5815,8 @@ export function MultiChatConsole({
                   </div>
                 </div>
               );
-            })
+            })}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
