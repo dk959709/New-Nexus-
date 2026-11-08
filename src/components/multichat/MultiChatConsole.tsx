@@ -56,7 +56,10 @@ import {
   MonitorPlay,
   EyeOff,
   Eye,
+  Mic,
+  MicOff,
 } from 'lucide-react';
+import { useSpeechSearch } from '@/hooks/useSpeechSearch';
 import { storage } from '@/lib/storage';
 import { copyToClipboard } from '@/lib/clipboard';
 import { cleanMarkdownForSpeech } from '@/lib/format';
@@ -1443,6 +1446,11 @@ export function MultiChatConsole({
   const chatTopRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const edgeTtsAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Speech-to-text input via browser Web Speech API
+  const speech = useSpeechSearch((transcript) => {
+    setInputText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  });
 
   // Auto-resize textarea height like AI Assistant page
   useEffect(() => {
@@ -6098,12 +6106,12 @@ export function MultiChatConsole({
               e.preventDefault();
               handleSend();
             }}
-            className={`relative transition-all ${
+            className={`relative transition-all backdrop-blur-xl ${
               isClassic
-                ? 'rounded-2xl bg-slate-950 p-2.5 flex flex-col gap-2'
+                ? 'rounded-2xl bg-slate-950/95 border border-cyan-500/30 p-2.5 flex flex-col gap-2 shadow-[0_0_24px_rgba(6,182,212,0.12)] focus-within:border-cyan-400/60 focus-within:shadow-[0_0_30px_rgba(6,182,212,0.22)]'
                 : isFullDark
-                ? 'rounded-[28px] bg-[#121215] p-3 flex flex-col gap-2'
-                : 'rounded-2xl bg-[#16161a] p-2.5 flex flex-col gap-2'
+                ? 'rounded-[28px] bg-[#0e0e12]/95 border border-[#1f2128] p-3 flex flex-col gap-2 shadow-[0_0_24px_rgba(0,0,0,0.6)] focus-within:border-cyan-500/40 focus-within:shadow-[0_0_24px_rgba(0,240,255,0.15)]'
+                : 'rounded-2xl bg-[#131317]/95 border border-zinc-800/80 p-2.5 flex flex-col gap-2 shadow-2xl focus-within:border-indigo-500/50 focus-within:shadow-[0_0_24px_rgba(99,102,241,0.2)]'
             }`}
           >
             {/* Decorative Graphics & Dual Laser Animation Layer (matches AI Assistant input box) */}
@@ -6529,18 +6537,38 @@ export function MultiChatConsole({
                 )}
               </div>
 
-              {/* Right: Circular Send Button matching AI Assistant */}
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Right: Voice Input + Circular Send Button */}
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                {speech.supported && (
+                  <button
+                    type="button"
+                    onClick={speech.listening ? speech.stop : speech.start}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                      speech.listening
+                        ? 'bg-rose-500 text-white shadow-[0_0_16px_rgba(244,63,94,0.7)] animate-pulse'
+                        : isClassic
+                        ? 'text-cyan-300 hover:text-cyan-100 hover:bg-cyan-950/60 border border-cyan-500/20'
+                        : isFullDark
+                        ? 'text-[#a1a1aa] hover:text-white hover:bg-[#2a2a2a] border border-[#2a2a2a]'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-zinc-800'
+                    }`}
+                    title={speech.listening ? 'Stop listening' : 'Voice input (Speech to Text)'}
+                    aria-label="Voice input"
+                  >
+                    {speech.listening ? <MicOff size={14} /> : <Mic size={14} />}
+                  </button>
+                )}
+
                 <button
                   type="submit"
                   disabled={isGenerating || (!inputText.trim() && attachedFiles.length === 0)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                     (inputText.trim() || attachedFiles.length > 0) && !isGenerating
                       ? isClassic
-                        ? 'bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-950 hover:from-cyan-300 hover:to-blue-500 shadow-[0_0_18px_rgba(6,182,212,0.75)] cursor-pointer scale-105'
+                        ? 'bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-950 hover:from-cyan-300 hover:to-blue-500 shadow-[0_0_18px_rgba(6,182,212,0.75)] cursor-pointer scale-105 active:scale-95'
                         : isFullDark
-                        ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_16px_rgba(255,255,255,0.55)] cursor-pointer scale-105'
-                        : 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-500 text-white hover:brightness-110 cursor-pointer shadow-[0_0_18px_rgba(99,102,241,0.65)] scale-105'
+                        ? 'bg-white text-black hover:bg-neutral-200 shadow-[0_0_16px_rgba(255,255,255,0.55)] cursor-pointer scale-105 active:scale-95'
+                        : 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-500 text-white hover:brightness-110 cursor-pointer shadow-[0_0_18px_rgba(99,102,241,0.65)] scale-105 active:scale-95'
                       : isClassic
                       ? 'bg-cyan-950/40 text-cyan-700 cursor-not-allowed opacity-50 border border-cyan-500/10'
                       : isFullDark
