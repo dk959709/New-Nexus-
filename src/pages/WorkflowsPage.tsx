@@ -27,6 +27,7 @@ import {
   WorkflowCanvas,
   NODE_CONFIG,
 } from '@/components/workflows/WorkflowCanvas';
+import { StitchPipelineGraphic } from '@/components/workflows/StitchPipelineGraphic';
 import {
   Play,
   Square,
@@ -1622,6 +1623,9 @@ export function WorkflowsPage() {
         />
 
         <div className="relative z-10 max-w-[1380px] mx-auto">
+          {/* Responsive High-Tech Node-Based Pipeline Architecture Graphic */}
+          <StitchPipelineGraphic />
+
           {/* Main Workspace Area */}
         {viewMode === 'list' ? (
           /* ================= CYBER PIPELINE LIST VIEW ================= */
