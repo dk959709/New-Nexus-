@@ -89,7 +89,7 @@ function getAgentTheme(agentId: string) {
   return AGENT_THEMES[agentId] || { text: '#38bdf8' };
 }
 
-export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogProps> = ({
+export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogProps> = React.memo(({
   message,
   isRunning = false,
   defaultOpen = true,
@@ -323,4 +323,5 @@ export const JarvisTerminalDiagnosticLog: React.FC<JarvisTerminalDiagnosticLogPr
       )}
     </div>
   );
-};
+});
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from 'react';
+import React, { useId, memo } from 'react';
 import { Sparkles } from 'lucide-react';
 
 interface JarvisQuantumOrbProps {
@@ -12,7 +12,19 @@ interface JarvisQuantumOrbProps {
   className?: string;
 }
 
-export function JarvisQuantumOrb({
+const STATIC_AUDIO_BARS = [45, 75, 90, 60, 95, 80, 50, 85, 65, 100, 70, 88, 58, 82];
+
+const SPECTRUM_COLORS = [
+  '#00f5ff',
+  '#38bdf8',
+  '#a855f7',
+  '#ec4899',
+  '#fbbf24',
+  '#10b981',
+  '#ff007f',
+];
+
+function JarvisQuantumOrbComponent({
   status = 'idle',
   isListening = false,
   isRunning = false,
@@ -22,71 +34,30 @@ export function JarvisQuantumOrb({
   onClick,
   className = '',
 }: JarvisQuantumOrbProps) {
-  const [rotation, setRotation] = useState(0);
-  const [pulse, setPulse] = useState(1);
-  const [corePulse, setCorePulse] = useState(1);
-  const [plasmaPhase, setPlasmaPhase] = useState(0);
-  const [audioBars, setAudioBars] = useState<number[]>([45, 75, 90, 60, 95, 80, 50, 85, 65, 100, 70, 88]);
   const uid = useId().replace(/:/g, '');
+  const hasQuery = Boolean(query);
 
   // Dimensions
   const dim = size === 'xs' ? 36 : size === 'sm' ? 120 : size === 'lg' ? 240 : 175;
   const radius = dim / 2;
   const isMini = size === 'xs';
 
-  // Animation cycle
-  useEffect(() => {
-    let animationFrameId: number;
-    let lastTime = performance.now();
+  // Dynamic rotation cycle duration in seconds (pure GPU CSS animation, 0 React re-renders)
+  const spinDurationSec =
+    isRunning || status === 'synthesizing' || status === 'thinking'
+      ? 2.2
+      : isListening || status === 'listening'
+      ? 3.0
+      : hasQuery
+      ? 4.5
+      : 8.5;
 
-    const animate = (time: number) => {
-      const delta = (time - lastTime) / 1000;
-      lastTime = time;
-
-      // Dynamic rotation speed based on state
-      const speed = isRunning || status === 'synthesizing' || status === 'thinking'
-        ? 190
-        : isListening || status === 'listening'
-        ? 135
-        : query
-        ? 85
-        : 40;
-      setRotation((prev) => (prev + speed * delta) % 360);
-
-      // Phase cycle for energetic shifting plasma
-      setPlasmaPhase((prev) => (prev + delta * 1.5) % (Math.PI * 2));
-
-      // Multi-layer organic breathing and energetic core pulse
-      const breatheRate = isRunning || status === 'synthesizing' ? 4.5 : isListening ? 3.5 : 1.8;
-      const breatheAmp = isRunning ? 0.09 : isListening ? 0.07 : 0.055;
-      
-      // Outer aura breathing
-      const mainBreathe = 1 + breatheAmp * Math.sin(time * 0.0018 * breatheRate);
-      setPulse(mainBreathe);
-
-      // Inner core rapid energetic resonance
-      const coreResonance = 1 + 0.06 * Math.sin(time * 0.0035 * breatheRate + Math.PI / 4);
-      setCorePulse(coreResonance);
-
-      // Cyberpunk audio spectral filaments modulation
-      if (isRunning || isListening || status === 'listening' || status === 'synthesizing') {
-        setAudioBars(
-          Array.from({ length: 14 }, () => Math.floor(30 + Math.random() * 70))
-        );
-      } else {
-        setAudioBars(
-          Array.from({ length: 14 }, (_, i) =>
-            Math.floor(22 + Math.sin(time * 0.0035 + i * 0.55) * 22 + 22)
-          )
-        );
-      }
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isRunning, isListening, query, status]);
+  const pulseDurationSec =
+    isRunning || status === 'synthesizing'
+      ? 1.2
+      : isListening
+      ? 1.5
+      : 2.8;
 
   // Derive active status label
   const activeStatus = isRunning
@@ -95,7 +66,7 @@ export function JarvisQuantumOrb({
     ? 'VOICE LISTENING'
     : status === 'complete'
     ? 'SYNTHESIS COMPLETE'
-    : query
+    : hasQuery
     ? 'QUERY READY'
     : 'ONLINE STANDBY';
 
@@ -119,32 +90,35 @@ export function JarvisQuantumOrb({
     >
       {/* Multi-Layer Cinematic Cyberpunk Atmosphere Aura */}
       <div
-        className="absolute rounded-full pointer-events-none transition-all duration-700"
+        className="absolute rounded-full pointer-events-none transition-opacity duration-500 jarvis-core-pulse"
         style={{
-          width: `${dim * (isMini ? 1.4 : 1.75)}px`,
-          height: `${dim * (isMini ? 1.4 : 1.75)}px`,
+          width: `${dim * (isMini ? 1.35 : 1.65)}px`,
+          height: `${dim * (isMini ? 1.35 : 1.65)}px`,
           background: isRunning
-            ? 'radial-gradient(circle, rgba(0,245,255,0.45) 0%, rgba(168,85,247,0.38) 35%, rgba(244,63,94,0.3) 65%, rgba(16,185,129,0.15) 85%, transparent 100%)'
+            ? 'radial-gradient(circle, rgba(0,245,255,0.42) 0%, rgba(168,85,247,0.34) 35%, rgba(244,63,94,0.26) 58%, transparent 76%)'
             : isListening
-            ? 'radial-gradient(circle, rgba(244,63,94,0.5) 0%, rgba(251,191,36,0.4) 35%, rgba(0,245,255,0.25) 70%, transparent 90%)'
-            : 'radial-gradient(circle, rgba(0,245,255,0.32) 0%, rgba(139,92,246,0.26) 38%, rgba(236,72,153,0.2) 68%, rgba(16,185,129,0.1) 85%, transparent 100%)',
-          filter: `blur(${dim * (isMini ? 0.2 : 0.28)}px)`,
+            ? 'radial-gradient(circle, rgba(244,63,94,0.45) 0%, rgba(251,191,36,0.34) 38%, rgba(0,245,255,0.2) 62%, transparent 78%)'
+            : 'radial-gradient(circle, rgba(0,245,255,0.28) 0%, rgba(139,92,246,0.22) 38%, rgba(236,72,153,0.16) 60%, transparent 76%)',
           opacity: 0.95,
-          transform: `scale(${pulse})`,
+          animationDuration: `${pulseDurationSec}s`,
+          willChange: 'transform, opacity',
         }}
       />
 
       {/* Secondary Plasma Core Flare Ring */}
-      <div
-        className="absolute rounded-full pointer-events-none transition-all duration-500"
-        style={{
-          width: `${dim * (isMini ? 1.1 : 1.25)}px`,
-          height: `${dim * (isMini ? 1.1 : 1.25)}px`,
-          background: 'radial-gradient(circle, rgba(168,85,247,0.4) 0%, rgba(244,63,94,0.25) 45%, rgba(0,245,255,0.2) 75%, transparent 100%)',
-          filter: `blur(${dim * 0.15}px)`,
-          transform: `scale(${corePulse})`,
-        }}
-      />
+      {!isMini && (
+        <div
+          className="absolute rounded-full pointer-events-none transition-opacity duration-500 jarvis-core-pulse"
+          style={{
+            width: `${dim * 1.2}px`,
+            height: `${dim * 1.2}px`,
+            background:
+              'radial-gradient(circle, rgba(168,85,247,0.35) 0%, rgba(244,63,94,0.22) 42%, rgba(0,245,255,0.16) 65%, transparent 78%)',
+            animationDuration: `${pulseDurationSec * 0.85}s`,
+            willChange: 'transform, opacity',
+          }}
+        />
+      )}
 
       {/* SVG Sphere & Orbital Rings */}
       <div
@@ -158,7 +132,7 @@ export function JarvisQuantumOrb({
           className="overflow-visible"
         >
           <defs>
-            {/* 1. Multi-Layered Radial Gradient for Core Sphere: Deep Electric Violet -> Neon Cyan -> Magenta Plasma -> Laser Blue */}
+            {/* 1. Multi-Layered Radial Gradient for Core Sphere */}
             <radialGradient id={coreGradId} cx="32%" cy="28%" r="72%">
               <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
               <stop offset="12%" stopColor="#00f5ff" stopOpacity="0.95" />
@@ -186,7 +160,6 @@ export function JarvisQuantumOrb({
             </linearGradient>
 
             {/* 2. Cyberpunk Dynamic Multi-stop Ring Gradients */}
-            {/* Ring 1: Electric Violet -> Laser Cyan -> Vivid Purple */}
             <linearGradient id={ring1GradId} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#00f5ff" />
               <stop offset="30%" stopColor="#38bdf8" />
@@ -194,7 +167,6 @@ export function JarvisQuantumOrb({
               <stop offset="100%" stopColor="#ec4899" />
             </linearGradient>
 
-            {/* Ring 2: Emerald Green -> Solar Gold -> Laser Cyan Sparks */}
             <linearGradient id={ring2GradId} x1="100%" y1="0%" x2="0%" y2="100%">
               <stop offset="0%" stopColor="#10b981" />
               <stop offset="35%" stopColor="#34d399" />
@@ -202,7 +174,6 @@ export function JarvisQuantumOrb({
               <stop offset="100%" stopColor="#00f5ff" />
             </linearGradient>
 
-            {/* Ring 3: Magenta Plasma -> Neon Pink -> Deep Violet */}
             <linearGradient id={ring3GradId} x1="0%" y1="50%" x2="100%" y2="50%">
               <stop offset="0%" stopColor="#ff007f" />
               <stop offset="45%" stopColor="#f43f5e" />
@@ -210,28 +181,29 @@ export function JarvisQuantumOrb({
               <stop offset="100%" stopColor="#00f5ff" />
             </linearGradient>
 
-            {/* Ring 4: Holographic Aqua -> Gold Spark -> Neon Blue */}
             <linearGradient id={ring4GradId} x1="0%" y1="100%" x2="100%" y2="0%">
               <stop offset="0%" stopColor="#06b6d4" />
               <stop offset="50%" stopColor="#f59e0b" />
               <stop offset="100%" stopColor="#3b82f6" />
             </linearGradient>
 
-            {/* Glow / Bloom Filters */}
-            <filter id={glowFilterId} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation={isMini ? 1.5 : isRunning ? 5.5 : 3.5} result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
+            {/* Optimized Lightweight Glow Filters */}
+            {!isMini && (
+              <>
+                <filter id={glowFilterId} x="-25%" y="-25%" width="150%" height="150%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation={isRunning ? 3.5 : 2.5} result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
 
-            <filter id={intenseGlowFilterId} x="-60%" y="-60%" width="220%" height="220%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation={isMini ? 2 : isRunning ? 8 : 6} result="blur1" />
-              <feGaussianBlur in="SourceGraphic" stdDeviation={isMini ? 1 : 2.5} result="blur2" />
-              <feMerge>
-                <feMergeNode in="blur1" />
-                <feMergeNode in="blur2" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
+                <filter id={intenseGlowFilterId} x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur in="SourceGraphic" stdDeviation={isRunning ? 4.5 : 3.2} result="blur1" />
+                  <feMerge>
+                    <feMergeNode in="blur1" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </>
+            )}
           </defs>
 
           {/* Outer Holographic Reticle Radar Calibration Ring */}
@@ -256,12 +228,13 @@ export function JarvisQuantumOrb({
           )}
 
           {/* ======================================================== */}
-          {/* ORBITAL RING 1 - Tilted 35deg (Electric Cyan -> Violet)  */}
+          {/* ORBITAL RING 1 - Clockwise (Electric Cyan -> Violet)     */}
           {/* ======================================================== */}
           <g
+            className="jarvis-reactor-spin-cw"
             style={{
               transformOrigin: `${radius}px ${radius}px`,
-              transform: `rotate(${rotation}deg)`,
+              animationDuration: `${spinDurationSec}s`,
             }}
           >
             <ellipse
@@ -272,8 +245,8 @@ export function JarvisQuantumOrb({
               fill="none"
               stroke={`url(#${ring1GradId})`}
               strokeWidth={isMini ? 1.4 : isRunning ? 2.8 : 2}
-              strokeDasharray={isMini ? "22 6" : "75 14 30 10"}
-              filter={`url(#${intenseGlowFilterId})`}
+              strokeDasharray={isMini ? '22 6' : '75 14 30 10'}
+              filter={isMini ? undefined : `url(#${intenseGlowFilterId})`}
               opacity="0.9"
             />
             {/* Orbiting Satellite Node 1 (Neon Cyan Spark) */}
@@ -282,7 +255,6 @@ export function JarvisQuantumOrb({
               cy={radius}
               r={isMini ? 2.2 : isRunning ? 5.5 : 4.5}
               fill="#00f5ff"
-              filter={`url(#${intenseGlowFilterId})`}
             />
             {/* Micro-spark node */}
             <circle
@@ -290,17 +262,17 @@ export function JarvisQuantumOrb({
               cy={radius - radius * 0.36 * 0.8}
               r={isMini ? 1.2 : 2.5}
               fill="#ec4899"
-              filter={`url(#${glowFilterId})`}
             />
           </g>
 
           {/* ======================================================== */}
-          {/* ORBITAL RING 2 - Tilted -40deg (Emerald -> Solar Gold)   */}
+          {/* ORBITAL RING 2 - Counter-Clockwise (Emerald -> Gold)     */}
           {/* ======================================================== */}
           <g
+            className="jarvis-reactor-spin-ccw"
             style={{
               transformOrigin: `${radius}px ${radius}px`,
-              transform: `rotate(-${rotation * 1.25}deg)`,
+              animationDuration: `${(spinDurationSec * 0.8).toFixed(2)}s`,
             }}
           >
             <ellipse
@@ -311,8 +283,8 @@ export function JarvisQuantumOrb({
               fill="none"
               stroke={`url(#${ring2GradId})`}
               strokeWidth={isMini ? 1.2 : isRunning ? 2.6 : 1.8}
-              strokeDasharray={isMini ? "16 6" : "50 18 16 14"}
-              filter={`url(#${intenseGlowFilterId})`}
+              strokeDasharray={isMini ? '16 6' : '50 18 16 14'}
+              filter={isMini ? undefined : `url(#${intenseGlowFilterId})`}
               opacity="0.88"
             />
             {/* Orbiting Satellite Node 2 (Solar Gold Spark) */}
@@ -321,7 +293,6 @@ export function JarvisQuantumOrb({
               cy={radius}
               r={isMini ? 2 : isRunning ? 5 : 4}
               fill="#fbbf24"
-              filter={`url(#${intenseGlowFilterId})`}
             />
             {/* Orbiting Satellite Node 2B (Emerald Spark) */}
             <circle
@@ -329,7 +300,6 @@ export function JarvisQuantumOrb({
               cy={radius + radius * 0.31 * 0.71}
               r={isMini ? 1.5 : 3.2}
               fill="#10b981"
-              filter={`url(#${glowFilterId})`}
             />
           </g>
 
@@ -338,9 +308,10 @@ export function JarvisQuantumOrb({
           {/* ======================================================== */}
           {!isMini && (
             <g
+              className="jarvis-reactor-spin-cw"
               style={{
                 transformOrigin: `${radius}px ${radius}px`,
-                transform: `rotate(${rotation * 0.75 + 55}deg)`,
+                animationDuration: `${(spinDurationSec * 1.35).toFixed(2)}s`,
               }}
             >
               <ellipse
@@ -352,8 +323,7 @@ export function JarvisQuantumOrb({
                 stroke={`url(#${ring3GradId})`}
                 strokeWidth="1.6"
                 strokeDasharray="12 18 6 18"
-                filter={`url(#${glowFilterId})`}
-                opacity="0.75"
+                opacity="0.78"
               />
               {/* Satellite Node 3 (Magenta Plasma Spark) */}
               <circle
@@ -361,7 +331,6 @@ export function JarvisQuantumOrb({
                 cy={radius - radius * 0.65 * 0.707}
                 r={isRunning ? 4.5 : 3.5}
                 fill="#ff007f"
-                filter={`url(#${intenseGlowFilterId})`}
               />
             </g>
           )}
@@ -371,9 +340,10 @@ export function JarvisQuantumOrb({
           {/* ======================================================== */}
           {!isMini && (
             <g
+              className="jarvis-reactor-spin-ccw"
               style={{
                 transformOrigin: `${radius}px ${radius}px`,
-                transform: `rotate(-${rotation * 1.6 - 20}deg)`,
+                animationDuration: `${(spinDurationSec * 0.65).toFixed(2)}s`,
               }}
             >
               <ellipse
@@ -393,7 +363,6 @@ export function JarvisQuantumOrb({
                 cy={radius}
                 r="2.8"
                 fill="#00f5ff"
-                filter={`url(#${intenseGlowFilterId})`}
               />
             </g>
           )}
@@ -401,14 +370,20 @@ export function JarvisQuantumOrb({
           {/* ======================================================== */}
           {/* CENTRAL 3D CYBERPUNK MULTI-LAYERED SPHERE CORE           */}
           {/* ======================================================== */}
-          <g style={{ transformOrigin: `${radius}px ${radius}px`, transform: `scale(${corePulse})` }}>
+          <g
+            className="jarvis-core-pulse"
+            style={{
+              transformOrigin: `${radius}px ${radius}px`,
+              animationDuration: `${pulseDurationSec}s`,
+            }}
+          >
             {/* Plasma Shadow Aura behind ball with rich purple/cyan bloom */}
             <circle
               cx={radius}
               cy={radius}
               r={radius * 0.47}
               fill="rgba(168, 85, 247, 0.45)"
-              filter={`url(#${intenseGlowFilterId})`}
+              filter={isMini ? undefined : `url(#${glowFilterId})`}
             />
 
             {/* 3D Main Sphere Body with Multi-layered Radial Shader */}
@@ -439,9 +414,10 @@ export function JarvisQuantumOrb({
               strokeWidth={isMini ? 0.6 : 1.2}
               strokeDasharray="3 6"
               opacity="0.75"
+              className="jarvis-reactor-spin-cw"
               style={{
                 transformOrigin: `${radius}px ${radius}px`,
-                transform: `rotate(${plasmaPhase * 20}deg)`,
+                animationDuration: `${(spinDurationSec * 1.8).toFixed(2)}s`,
               }}
             />
 
@@ -455,9 +431,10 @@ export function JarvisQuantumOrb({
               strokeWidth={isMini ? 0.5 : 1}
               strokeDasharray="2 4"
               opacity="0.7"
+              className="jarvis-reactor-spin-ccw"
               style={{
                 transformOrigin: `${radius}px ${radius}px`,
-                transform: `rotate(-${plasmaPhase * 30}deg)`,
+                animationDuration: `${(spinDurationSec * 1.4).toFixed(2)}s`,
               }}
             />
 
@@ -467,7 +444,7 @@ export function JarvisQuantumOrb({
               cy={radius}
               r={radius * 0.18}
               fill={isRunning ? '#ffffff' : '#00f5ff'}
-              filter={`url(#${intenseGlowFilterId})`}
+              filter={isMini ? undefined : `url(#${intenseGlowFilterId})`}
               opacity={isRunning ? 1 : 0.95}
             />
 
@@ -492,42 +469,42 @@ export function JarvisQuantumOrb({
           </g>
 
           {/* Surrounding Cyberpunk Audio Spectral Beams & Neural Sparks */}
-          {!isMini && audioBars.map((height, idx) => {
-            const angle = (idx / audioBars.length) * Math.PI * 2;
-            const barDist = radius * 0.58;
-            const x1 = radius + Math.cos(angle) * barDist;
-            const y1 = radius + Math.sin(angle) * barDist;
-            const barLength = (height / 100) * (radius * 0.24);
-            const x2 = radius + Math.cos(angle) * (barDist + barLength);
-            const y2 = radius + Math.sin(angle) * (barDist + barLength);
+          {!isMini && (
+            <g
+              className="jarvis-core-pulse"
+              style={{
+                transformOrigin: `${radius}px ${radius}px`,
+                animationDuration: `${(pulseDurationSec * 0.9).toFixed(2)}s`,
+              }}
+            >
+              {STATIC_AUDIO_BARS.map((height, idx) => {
+                const angle = (idx / STATIC_AUDIO_BARS.length) * Math.PI * 2;
+                const barDist = radius * 0.58;
+                const x1 = radius + Math.cos(angle) * barDist;
+                const y1 = radius + Math.sin(angle) * barDist;
+                const barLength =
+                  ((isRunning || isListening ? Math.min(100, height + 12) : height) / 100) *
+                  (radius * 0.24);
+                const x2 = radius + Math.cos(angle) * (barDist + barLength);
+                const y2 = radius + Math.sin(angle) * (barDist + barLength);
+                const strokeCol = SPECTRUM_COLORS[idx % SPECTRUM_COLORS.length];
 
-            // Shifting multi-color spectrum: cyan, electric violet, gold, emerald, magenta, laser-blue
-            const spectrumColors = [
-              '#00f5ff',
-              '#38bdf8',
-              '#a855f7',
-              '#ec4899',
-              '#fbbf24',
-              '#10b981',
-              '#ff007f',
-            ];
-            const strokeCol = spectrumColors[idx % spectrumColors.length];
-
-            return (
-              <line
-                key={idx}
-                x1={x1}
-                y1={y1}
-                x2={x2}
-                y2={y2}
-                stroke={strokeCol}
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                opacity="0.9"
-                filter={`url(#${glowFilterId})`}
-              />
-            );
-          })}
+                return (
+                  <line
+                    key={idx}
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke={strokeCol}
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    opacity="0.9"
+                  />
+                );
+              })}
+            </g>
+          )}
         </svg>
       </div>
 
@@ -580,3 +557,16 @@ export function JarvisQuantumOrb({
     </div>
   );
 }
+
+export const JarvisQuantumOrb = memo(JarvisQuantumOrbComponent, (prev, next) => {
+  return (
+    prev.status === next.status &&
+    prev.isListening === next.isListening &&
+    prev.isRunning === next.isRunning &&
+    Boolean(prev.query) === Boolean(next.query) &&
+    prev.size === next.size &&
+    prev.showBadge === next.showBadge &&
+    prev.className === next.className
+  );
+});
+

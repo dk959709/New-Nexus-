@@ -1924,7 +1924,7 @@ export const FactCheckerMeshAnswerView: React.FC<{
   );
 };
 
-export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswersProps> = ({
+export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswersProps> = React.memo(({
   steps,
   isDeepResearch = false,
 }) => {
@@ -2180,4 +2180,5 @@ export const JarvisDeepResearchMeshAnswers: React.FC<JarvisDeepResearchMeshAnswe
       </div>
     </div>
   );
-};
+});
+

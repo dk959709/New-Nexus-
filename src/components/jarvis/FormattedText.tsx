@@ -1041,7 +1041,7 @@ function renderInline(text: string): React.ReactNode {
   });
 }
 
-export function FormattedText({
+export const FormattedText = React.memo(function FormattedText({
   content,
   enableCopyCode,
   variant = 'default',
@@ -1635,4 +1635,5 @@ export function FormattedText({
       {elements}
     </div>
   );
-}
+});
+

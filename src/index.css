@@ -7021,3 +7021,10 @@ button:active .stitch-dice-icon {
     display: none;
   }
 }
+
+/* Offscreen layout & paint optimization for JARVIS multi-agent synthesis cards */
+.jarvis-message-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 320px;
+}
+

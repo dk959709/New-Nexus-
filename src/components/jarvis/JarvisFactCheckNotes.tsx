@@ -12,7 +12,7 @@ interface JarvisFactCheckNotesProps {
  * Distinctly styled frontend note panel appended to Final Synthesis
  * when Fact Checker reports issues or older/unknown date statuses.
  */
-export const JarvisFactCheckNotes: React.FC<JarvisFactCheckNotesProps> = ({
+export const JarvisFactCheckNotes: React.FC<JarvisFactCheckNotesProps> = React.memo(({
   steps,
   className = '',
 }) => {
@@ -103,7 +103,9 @@ export const JarvisFactCheckNotes: React.FC<JarvisFactCheckNotesProps> = ({
 
       {/* ℹ️ Recency / Date status disclaimer */}
       {notes.hasOutdatedOrUnknownDate && (
-        <div className="flex items-start gap-2.5 px-3.5 py-2 rounded-xl bg-sky-500/10 border border-sky-500/25 text-sky-200/90 text-xs leading-relaxed shadow-sm backdrop-blur-sm">
+        <div
+          className="flex items-start gap-2.5 px-3.5 py-2 rounded-xl bg-sky-500/10 border border-sky-500/25 text-sky-200/90 text-xs leading-relaxed shadow-sm backdrop-blur-sm"
+        >
           <Info
             size={14}
             className="text-sky-400 shrink-0 mt-0.5"
@@ -116,4 +118,5 @@ export const JarvisFactCheckNotes: React.FC<JarvisFactCheckNotesProps> = ({
       )}
     </div>
   );
-};
+});
+

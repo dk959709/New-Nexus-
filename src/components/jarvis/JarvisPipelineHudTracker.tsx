@@ -139,7 +139,7 @@ const OPTIONAL_AGENTS: Record<string, AgentNodeDef> = {
   },
 };
 
-export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> = ({
+export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> = React.memo(({
   message,
   isExpanded,
   onToggleExpand,
@@ -489,4 +489,5 @@ export const JarvisPipelineHudTracker: React.FC<JarvisPipelineHudTrackerProps> =
       </div>
     </div>
   );
-};
+});
+

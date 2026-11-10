@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo } from 'react';
 import {
   Activity,
   Radio,
@@ -14,33 +14,17 @@ interface JarvisCoreVisualizerProps {
   onLaunchPrompt?: (prompt: string) => void;
 }
 
-export function JarvisCoreVisualizer({
+const STATIC_AUDIO_HEIGHTS = [40, 65, 80, 50, 90, 70, 45, 85, 60, 95, 55, 75, 40, 80, 60];
+
+export const JarvisCoreVisualizer = memo(function JarvisCoreVisualizer({
   config,
   isRunning,
   onLaunchPrompt,
 }: JarvisCoreVisualizerProps) {
-  const [pulsePhase, setPulsePhase] = useState(0);
-  const [audioHeights, setAudioHeights] = useState<number[]>([40, 65, 80, 50, 90, 70, 45, 85, 60, 95, 55, 75, 40, 80, 60]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPulsePhase((prev) => (prev + 1) % 100);
-      if (isRunning) {
-        setAudioHeights(
-          Array.from({ length: 15 }, () => Math.floor(25 + Math.random() * 75)),
-        );
-      } else {
-        setAudioHeights(
-          Array.from({ length: 15 }, (_, i) => Math.floor(20 + Math.sin((pulsePhase + i * 5) * 0.1) * 20 + 20)),
-        );
-      }
-    }, 120);
-    return () => clearInterval(interval);
-  }, [isRunning, pulsePhase]);
-
   const activeAgents = config?.agents
     ? Object.values(config.agents).filter((a) => a?.enabled)
     : [];
+
 
   return (
     <div
@@ -196,13 +180,14 @@ export function JarvisCoreVisualizer({
 
           {/* Equalizer Audio / Frequency Visualizer */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '28px', marginTop: '14px' }}>
-            {audioHeights.map((h, i) => (
+            {STATIC_AUDIO_HEIGHTS.map((h, i) => (
               <div
                 key={i}
-                className="jarvis-audio-bar-col"
+                className="jarvis-audio-bar-col mc-wave-bar"
                 style={{
                   height: `${h}%`,
-                  transition: 'height 0.1s ease',
+                  animationDelay: `${(i * 0.08).toFixed(2)}s`,
+                  animationDuration: isRunning ? '0.6s' : '1.4s',
                   background: isRunning
                     ? 'linear-gradient(180deg, #38bdf8 0%, #61d7c9 100%)'
                     : 'linear-gradient(180deg, rgba(97,215,201,0.5) 0%, rgba(56,189,248,0.3) 100%)',
@@ -344,4 +329,5 @@ export function JarvisCoreVisualizer({
       </div>
     </div>
   );
-}
+});
+

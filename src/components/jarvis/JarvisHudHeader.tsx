@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import {
   Activity,
   Cpu,
@@ -20,17 +20,8 @@ interface JarvisHudHeaderProps {
   theme?: ParallaxTheme;
 }
 
-export function JarvisHudHeader({
-  config,
-  isRunning,
-  activeView,
-  onSelectView,
-  messageCount,
-  theme: propTheme,
-}: JarvisHudHeaderProps) {
+const HudLiveClock = memo(function HudLiveClock() {
   const [timeStr, setTimeStr] = useState('');
-  const [fps] = useState('60.0');
-  const activeTheme: ParallaxTheme = propTheme || getSavedParallaxTheme();
 
   useEffect(() => {
     const updateTime = () => {
@@ -41,13 +32,26 @@ export function JarvisHudHeader({
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
-        }) + `.${Math.floor(now.getMilliseconds() / 10).toString().padStart(2, '0')}`,
+        }),
       );
     };
     updateTime();
-    const interval = setInterval(updateTime, 100);
+    const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  return <span>{timeStr || '00:00:00'}</span>;
+});
+
+function JarvisHudHeaderComponent({
+  config,
+  isRunning,
+  activeView,
+  onSelectView,
+  messageCount,
+  theme: propTheme,
+}: JarvisHudHeaderProps) {
+  const activeTheme: ParallaxTheme = propTheme || getSavedParallaxTheme();
 
   const activeAgentsCount = config?.agents
     ? Object.values(config.agents).filter((a) => a?.enabled).length
@@ -88,7 +92,7 @@ export function JarvisHudHeader({
           <div className="hidden md:flex items-center gap-1" title="Refresh Rate">
             <Activity size={11} className="text-[var(--j-muted)]" />
             <span>
-              <strong className="text-[var(--j-text)]">{fps} Hz</strong>
+              <strong className="text-[var(--j-text)]">60.0 Hz</strong>
             </span>
           </div>
 
@@ -96,7 +100,7 @@ export function JarvisHudHeader({
 
           <div className="hidden sm:flex items-center gap-1 text-[var(--j-muted)] tabular-nums">
             <Clock size={11} />
-            <span>{timeStr || '00:00:00.00'}</span>
+            <HudLiveClock />
           </div>
 
           <span className="opacity-40" aria-hidden="true">·</span>
@@ -164,3 +168,6 @@ export function JarvisHudHeader({
     </div>
   );
 }
+
+export const JarvisHudHeader = memo(JarvisHudHeaderComponent);
+
