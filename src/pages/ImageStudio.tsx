@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Image as ImageIcon,
@@ -154,6 +154,291 @@ function parseReferenceImageData(
     rawUrl: dataUrlOrUrl,
   };
 }
+
+interface CreationGalleryCardProps {
+  item: GeneratedImageItem;
+  index: number;
+  isSelected: boolean;
+  isCurrent: boolean;
+  gallerySelectionMode: boolean;
+  isCopied: boolean;
+  heartBurstKey: number;
+  onSelectCard: (item: GeneratedImageItem) => void;
+  onToggleFavorite: (e: React.MouseEvent, id: string) => void;
+  onOpenFullscreen: (e: React.MouseEvent, item: GeneratedImageItem) => void;
+  onDeleteImage: (e: React.MouseEvent, id: string) => void;
+  onCopyPrompt: (e: React.MouseEvent, promptText: string, id: string) => void;
+}
+
+const CreationGalleryCard = memo(function CreationGalleryCard({
+  item,
+  index,
+  isSelected,
+  isCurrent,
+  gallerySelectionMode,
+  isCopied,
+  heartBurstKey,
+  onSelectCard,
+  onToggleFavorite,
+  onOpenFullscreen,
+  onDeleteImage,
+  onCopyPrompt,
+}: CreationGalleryCardProps) {
+  return (
+    <SpotlightCard
+      index={index}
+      onClick={() => onSelectCard(item)}
+      className={`group relative rounded-xl overflow-hidden bg-[#121218] transition-all cursor-pointer stitch-gallery-card ${
+        gallerySelectionMode && isSelected
+          ? 'border-2 border-pink-500 shadow-glow-subtle'
+          : isCurrent
+          ? 'border-2 border-pink-500/80 shadow-glow-subtle'
+          : 'border border-[#232331] hover:border-gray-600'
+      }`}
+      title={`"${item.prompt}" — ${item.providerName} (Seed: ${item.seed})`}
+    >
+      <div className="aspect-square overflow-hidden relative bg-[#0c0c12]">
+        <img
+          src={item.url}
+          alt={item.prompt}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          loading="lazy"
+          decoding="async"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/25 opacity-90 pointer-events-none" />
+
+        {/* Top-left: Selection Checkmark OR Active indicator */}
+        <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
+          {gallerySelectionMode ? (
+            <div
+              className={`w-6 h-6 rounded-md flex items-center justify-center transition-all stitch-check-pop ${
+                isSelected
+                  ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] text-white shadow-md'
+                  : 'bg-black/65 backdrop-blur-md border border-white/30 text-transparent'
+              }`}
+            >
+              <Check size={13} strokeWidth={3} />
+            </div>
+          ) : isCurrent ? (
+            <span className="px-1.5 py-0.5 rounded bg-pink-500/85 text-white text-[9px] font-mono font-bold uppercase tracking-wider shadow">
+              Active
+            </span>
+          ) : null}
+
+          {/* Edit / Enhanced tags */}
+          {(item.isEdit || item.referenceImageUrl) && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-pink-600/90 text-white text-[9px] font-mono font-bold shadow"
+              title="Image Edit (img2img)"
+            >
+              <Wand2 size={9} /> Edit
+            </span>
+          )}
+          {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-600/90 text-white text-[9px] font-mono font-semibold shadow"
+              title="Smart AI Enhanced prompt"
+            >
+              <Wand2 size={9} /> AI
+            </span>
+          )}
+        </div>
+
+        {/* Top-right: Favorite Heart + Fullscreen + Delete */}
+        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+          <button
+            type="button"
+            onClick={(e) => onToggleFavorite(e, item.id)}
+            className={`relative w-6 h-6 rounded-full backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer stitch-heart-btn ${
+              item.isFavorite
+                ? 'bg-pink-500/25 border-pink-500/60 text-pink-400'
+                : 'bg-black/60 border-white/15 text-gray-300 hover:text-pink-400'
+            }`}
+            title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <HeartBurst burstKey={heartBurstKey} />
+            <Heart
+              size={12}
+              className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => onOpenFullscreen(e, item)}
+            className="w-6 h-6 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-gray-300 hover:text-white transition-all cursor-pointer"
+            title="Open fullscreen viewer"
+          >
+            <Maximize2 size={11} />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => onDeleteImage(e, item.id)}
+            className="w-6 h-6 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-gray-300 hover:text-red-400 hover:border-red-500/40 transition-all cursor-pointer"
+            title="Delete this image"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+
+      {/* Card Footer: Real Prompt Snippet + Real Model Tag + Copy Prompt */}
+      <div className="p-2 flex items-center justify-between gap-1.5 bg-[#14141d] border-t border-[#1e1e29]">
+        <span className="truncate text-[10px] font-mono text-gray-300 flex-1 min-w-0">
+          {item.prompt}
+        </span>
+        <span className="text-[9px] font-mono text-pink-300 bg-pink-500/15 border border-pink-500/20 px-1.5 py-0.5 rounded shrink-0 max-w-[88px] truncate">
+          {item.model || item.providerName}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => onCopyPrompt(e, item.prompt, item.id)}
+          className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+            isCopied
+              ? 'bg-emerald-500/20 text-emerald-300'
+              : 'bg-[#1e1e2a] text-gray-400 hover:text-white'
+          }`}
+          title={isCopied ? 'Prompt copied!' : 'Copy prompt'}
+        >
+          {isCopied ? <Check size={10} /> : <Copy size={10} />}
+        </button>
+      </div>
+    </SpotlightCard>
+  );
+});
+
+interface ModalGalleryCardProps {
+  item: GeneratedImageItem;
+  index: number;
+  isSelected: boolean;
+  gallerySelectionMode: boolean;
+  isCopied: boolean;
+  heartBurstKey: number;
+  onSelectCard: (item: GeneratedImageItem) => void;
+  onToggleFavorite: (e: React.MouseEvent, id: string) => void;
+  onCopyPrompt: (e: React.MouseEvent, promptText: string, id: string) => void;
+}
+
+const ModalGalleryCard = memo(function ModalGalleryCard({
+  item,
+  index,
+  isSelected,
+  gallerySelectionMode,
+  isCopied,
+  heartBurstKey,
+  onSelectCard,
+  onToggleFavorite,
+  onCopyPrompt,
+}: ModalGalleryCardProps) {
+  return (
+    <SpotlightCard
+      index={index}
+      onClick={() => onSelectCard(item)}
+      className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer bg-[#121218] transition-all stitch-gallery-card ${
+        gallerySelectionMode && isSelected
+          ? 'border-2 border-pink-500 shadow-glow-subtle'
+          : 'border border-[#232331] hover:border-gray-500'
+      }`}
+      title={
+        gallerySelectionMode
+          ? isSelected
+            ? 'Selected - tap to deselect'
+            : 'Tap to select'
+          : `"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`
+      }
+    >
+      <img
+        src={item.url}
+        alt={item.prompt}
+        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        loading="lazy"
+        decoding="async"
+      />
+
+      {/* Selection Mode Overlay & Checkmark */}
+      {gallerySelectionMode && (
+        <>
+          {isSelected && (
+            <div className="absolute inset-0 bg-pink-500/15 pointer-events-none z-[6]" />
+          )}
+          <div
+            className={`absolute bottom-2 left-2 w-7 h-7 rounded-lg flex items-center justify-center z-[15] backdrop-blur-md transition-all pointer-events-none stitch-check-pop ${
+              isSelected
+                ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] border border-pink-400 text-white shadow-glow-subtle'
+                : 'bg-black/65 border border-white/40 text-transparent'
+            }`}
+          >
+            {isSelected ? (
+              <Check size={15} strokeWidth={3} className="text-white" />
+            ) : (
+              <div className="w-2.5 h-2.5 rounded-xs border border-white/50" />
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Bottom gradient with real prompt + real model & seed */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-85 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2.5 pointer-events-none">
+        <p className="m-0 text-white text-[10px] font-mono leading-snug line-clamp-2">
+          {item.prompt}
+        </p>
+        <div className="flex items-center justify-between gap-1 mt-1 text-[9px] font-mono text-pink-300">
+          <span className="truncate">{item.model || item.providerName || 'AI'}</span>
+          <span className="text-gray-400 shrink-0">#{item.seed}</span>
+        </div>
+      </div>
+
+      {/* Top-left: Edit / Enhanced badge */}
+      <div className="absolute top-2 left-2 flex items-center gap-1 z-10 pointer-events-none">
+        {(item.isEdit || item.referenceImageUrl) && (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-pink-600/90 text-white text-[9px] font-mono font-bold shadow">
+            <Wand2 size={9} /> Edit
+          </span>
+        )}
+        {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-600/90 text-white text-[9px] font-mono font-semibold shadow">
+            <Wand2 size={9} /> Enhanced
+          </span>
+        )}
+      </div>
+
+      {/* Top-right: Copy Prompt Button */}
+      <button
+        type="button"
+        onClick={(e) => onCopyPrompt(e, item.prompt, item.id)}
+        className={`absolute top-2 right-2 w-7 h-7 rounded-lg backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer z-10 ${
+          isCopied
+            ? 'bg-emerald-500/85 border-emerald-400 text-white'
+            : 'bg-black/60 border-white/20 text-white hover:bg-pink-500/80 hover:border-pink-400'
+        }`}
+        title={isCopied ? 'Prompt copied to clipboard!' : 'Copy prompt'}
+        aria-label="Copy prompt"
+      >
+        {isCopied ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+
+      {/* Bottom-right: Favorite Heart Button */}
+      <button
+        type="button"
+        onClick={(e) => onToggleFavorite(e, item.id)}
+        className={`absolute bottom-2 right-2 w-7 h-7 rounded-lg backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer z-10 stitch-heart-btn ${
+          item.isFavorite
+            ? 'bg-pink-500/30 border-pink-400 text-pink-400 shadow-glow-subtle'
+            : 'bg-black/55 border-white/20 text-white/80 hover:text-pink-400'
+        }`}
+        title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        aria-label={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      >
+        <HeartBurst burstKey={heartBurstKey} />
+        <Heart
+          size={14}
+          className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
+        />
+      </button>
+    </SpotlightCard>
+  );
+});
 
 export function ImageStudio() {
   const [searchParams] = useSearchParams();
@@ -342,7 +627,7 @@ export function ImageStudio() {
     setGallerySelectionMode(true);
   };
 
-  const handleToggleSelectImage = (id: string) => {
+  const handleToggleSelectImage = useCallback((id: string) => {
     playTapSound();
     setSelectedImageIds((prev) => {
       const next = new Set(prev);
@@ -353,7 +638,7 @@ export function ImageStudio() {
       }
       return next;
     });
-  };
+  }, []);
 
   const handleSelectAllDisplayed = () => {
     playTapSound();
@@ -600,58 +885,102 @@ export function ImageStudio() {
     }
   };
 
-  const handleCopyGalleryPrompt = (e: React.MouseEvent, promptText: string, id: string) => {
-    e.stopPropagation();
-    playTapSound();
-    navigator.clipboard.writeText(promptText);
-    setCopiedPromptId(id);
-    setTimeout(() => {
-      setCopiedPromptId(null);
-    }, 1800);
-  };
+  const handleCopyGalleryPrompt = useCallback(
+    (e: React.MouseEvent, promptText: string, id: string) => {
+      e.stopPropagation();
+      playTapSound();
+      navigator.clipboard.writeText(promptText);
+      setCopiedPromptId(id);
+      setTimeout(() => {
+        setCopiedPromptId((prev) => (prev === id ? null : prev));
+      }, 1800);
+    },
+    []
+  );
 
-  const handleToggleFavorite = async (e: React.MouseEvent, id: string) => {
+  const handleToggleFavorite = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     playTapSound();
-    const item = history.find((img) => img.id === id);
-    if (!item) return;
-    const newStatus = !item.isFavorite;
-    if (newStatus) {
+
+    let nextFavoriteStatus: boolean | null = null;
+
+    setHistory((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (!target) return prev;
+      nextFavoriteStatus = !target.isFavorite;
+      return prev.map((img) =>
+        img.id === id ? { ...img, isFavorite: Boolean(nextFavoriteStatus) } : img
+      );
+    });
+
+    if (nextFavoriteStatus === null) return;
+    const resolvedStatus = Boolean(nextFavoriteStatus);
+
+    if (resolvedStatus) {
       setHeartBurst((previous) => ({ id, key: (previous?.key ?? 0) + 1 }));
     }
 
-    // Optimistically update React state immediately across all relevant image references
-    setHistory((prev) =>
-      prev.map((img) => (img.id === id ? { ...img, isFavorite: newStatus } : img))
+    setFullscreenImage((prev) =>
+      prev && prev.id === id ? { ...prev, isFavorite: resolvedStatus } : prev
     );
-    if (fullscreenImage && fullscreenImage.id === id) {
-      setFullscreenImage((prev) => (prev ? { ...prev, isFavorite: newStatus } : null));
-    }
-    if (currentImage && currentImage.id === id) {
-      setCurrentImage((prev) => (prev ? { ...prev, isFavorite: newStatus } : null));
-    }
+    setCurrentImage((prev) =>
+      prev && prev.id === id ? { ...prev, isFavorite: resolvedStatus } : prev
+    );
 
     // Persist permanently in IndexedDB
     try {
-      await updateImageFavoriteInIndexedDb(id, newStatus);
+      await updateImageFavoriteInIndexedDb(id, resolvedStatus);
     } catch (err) {
       console.error('[ImageStudio] Error updating favorite status in IndexedDB:', err);
     }
-  };
+  }, []);
+
+  const handleOpenFullscreenCard = useCallback((e: React.MouseEvent, item: GeneratedImageItem) => {
+    e.stopPropagation();
+    playTapSound();
+    setFullscreenImage(item);
+  }, []);
+
+  const handleSelectCreationCard = useCallback(
+    (item: GeneratedImageItem) => {
+      if (gallerySelectionMode) {
+        handleToggleSelectImage(item.id);
+        return;
+      }
+      setCurrentImage(item);
+      playTapSound();
+    },
+    [gallerySelectionMode, handleToggleSelectImage]
+  );
+
+  const handleSelectModalCard = useCallback(
+    (item: GeneratedImageItem) => {
+      if (gallerySelectionMode) {
+        handleToggleSelectImage(item.id);
+        return;
+      }
+      playTapSound();
+      setFullscreenImage(item);
+    },
+    [gallerySelectionMode, handleToggleSelectImage]
+  );
 
   const favoritesCount = useMemo(() => {
     return history.filter((item) => Boolean(item.isFavorite)).length;
   }, [history]);
 
-  const distinctGalleryModels = useMemo(() => {
-    const models = new Set<string>();
+  const { distinctGalleryModels, modelCountsMap } = useMemo(() => {
+    const counts = new Map<string, number>();
     history.forEach((item) => {
-      const m = item.model || item.providerName;
-      if (m && m.trim()) {
-        models.add(m.trim());
+      const m = (item.model || item.providerName || '').trim();
+      if (m) {
+        counts.set(m, (counts.get(m) || 0) + 1);
       }
     });
-    return Array.from(models);
+    return {
+      distinctGalleryModels: Array.from(counts.keys()),
+      modelCountsMap: counts,
+    };
   }, [history]);
 
   const displayedGalleryImages = useMemo(() => {
@@ -1928,22 +2257,20 @@ export function ImageStudio() {
   };
 
   // Delete an individual image from IndexedDB
-  const handleDeleteImage = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteImage = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     playTapSound();
     try {
       await deleteGeneratedImageFromIndexedDb(id);
       setHistory((prev) => {
         const updated = prev.filter((item) => item.id !== id);
-        if (currentImage?.id === id) {
-          setCurrentImage(updated[0] || null);
-        }
+        setCurrentImage((prevCur) => (prevCur?.id === id ? updated[0] || null : prevCur));
         return updated;
       });
     } catch (err) {
       console.error('[ImageStudio] Failed to delete image from IndexedDB:', err);
     }
-  };
+  }, []);
 
   // Download image helper
   const handleDownload = async (item: GeneratedImageItem) => {
@@ -3487,143 +3814,23 @@ export function ImageStudio() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {history.map((item, index) => {
-                  const isSelected = selectedImageIds.has(item.id);
-                  const isCurrent = currentImage?.id === item.id;
-                  return (
-                    <SpotlightCard
-                      key={item.id}
-                      index={index}
-                      onClick={() => {
-                        if (gallerySelectionMode) {
-                          handleToggleSelectImage(item.id);
-                          return;
-                        }
-                        setCurrentImage(item);
-                        playTapSound();
-                      }}
-                      className={`group relative rounded-xl overflow-hidden bg-[#121218] transition-all cursor-pointer stitch-gallery-card ${
-                        gallerySelectionMode && isSelected
-                          ? 'border-2 border-pink-500 shadow-glow-subtle'
-                          : isCurrent
-                          ? 'border-2 border-pink-500/80 shadow-glow-subtle'
-                          : 'border border-[#232331] hover:border-gray-600'
-                      }`}
-                      title={`"${item.prompt}" — ${item.providerName} (Seed: ${item.seed})`}
-                    >
-                      <div className="aspect-square overflow-hidden relative bg-[#0c0c12]">
-                        <img
-                          src={item.url}
-                          alt={item.prompt}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/25 opacity-90 pointer-events-none" />
-
-                        {/* Top-left: Selection Checkmark OR Active indicator */}
-                        <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
-                          {gallerySelectionMode ? (
-                            <div
-                              className={`w-6 h-6 rounded-md flex items-center justify-center transition-all stitch-check-pop ${
-                                isSelected
-                                  ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] text-white shadow-md'
-                                  : 'bg-black/65 backdrop-blur-md border border-white/30 text-transparent'
-                              }`}
-                            >
-                              <Check size={13} strokeWidth={3} />
-                            </div>
-                          ) : isCurrent ? (
-                            <span className="px-1.5 py-0.5 rounded bg-pink-500/85 text-white text-[9px] font-mono font-bold uppercase tracking-wider shadow">
-                              Active
-                            </span>
-                          ) : null}
-
-                          {/* Edit / Enhanced tags */}
-                          {(item.isEdit || item.referenceImageUrl) && (
-                            <span
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-pink-600/90 text-white text-[9px] font-mono font-bold shadow"
-                              title="Image Edit (img2img)"
-                            >
-                              <Wand2 size={9} /> Edit
-                            </span>
-                          )}
-                          {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
-                            <span
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-600/90 text-white text-[9px] font-mono font-semibold shadow"
-                              title="Smart AI Enhanced prompt"
-                            >
-                              <Wand2 size={9} /> AI
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Top-right: Favorite Heart + Fullscreen + Delete */}
-                        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleFavorite(e, item.id)}
-                            className={`relative w-6 h-6 rounded-full backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer stitch-heart-btn ${
-                              item.isFavorite
-                                ? 'bg-pink-500/25 border-pink-500/60 text-pink-400'
-                                : 'bg-black/60 border-white/15 text-gray-300 hover:text-pink-400'
-                            }`}
-                            title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                          >
-                            <HeartBurst burstKey={heartBurst?.id === item.id ? heartBurst.key : 0} />
-                            <Heart
-                              size={12}
-                              className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
-                            />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              playTapSound();
-                              setFullscreenImage(item);
-                            }}
-                            className="w-6 h-6 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-gray-300 hover:text-white transition-all cursor-pointer"
-                            title="Open fullscreen viewer"
-                          >
-                            <Maximize2 size={11} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteImage(e, item.id)}
-                            className="w-6 h-6 rounded-full bg-black/60 backdrop-blur-md border border-white/15 flex items-center justify-center text-gray-300 hover:text-red-400 hover:border-red-500/40 transition-all cursor-pointer"
-                            title="Delete this image"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Card Footer: Real Prompt Snippet + Real Model Tag + Copy Prompt */}
-                      <div className="p-2 flex items-center justify-between gap-1.5 bg-[#14141d] border-t border-[#1e1e29]">
-                        <span className="truncate text-[10px] font-mono text-gray-300 flex-1 min-w-0">
-                          {item.prompt}
-                        </span>
-                        <span className="text-[9px] font-mono text-pink-300 bg-pink-500/15 border border-pink-500/20 px-1.5 py-0.5 rounded shrink-0 max-w-[88px] truncate">
-                          {item.model || item.providerName}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyGalleryPrompt(e, item.prompt, item.id)}
-                          className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-                            copiedPromptId === item.id
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : 'bg-[#1e1e2a] text-gray-400 hover:text-white'
-                          }`}
-                          title={copiedPromptId === item.id ? 'Prompt copied!' : 'Copy prompt'}
-                        >
-                          {copiedPromptId === item.id ? <Check size={10} /> : <Copy size={10} />}
-                        </button>
-                      </div>
-                    </SpotlightCard>
-                  );
-                })}
+                {history.map((item, index) => (
+                  <CreationGalleryCard
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    isSelected={selectedImageIds.has(item.id)}
+                    isCurrent={currentImage?.id === item.id}
+                    gallerySelectionMode={gallerySelectionMode}
+                    isCopied={copiedPromptId === item.id}
+                    heartBurstKey={heartBurst?.id === item.id ? heartBurst.key : 0}
+                    onSelectCard={handleSelectCreationCard}
+                    onToggleFavorite={handleToggleFavorite}
+                    onOpenFullscreen={handleOpenFullscreenCard}
+                    onDeleteImage={handleDeleteImage}
+                    onCopyPrompt={handleCopyGalleryPrompt}
+                  />
+                ))}
               </div>
             )}
 
@@ -3832,7 +4039,7 @@ export function ImageStudio() {
                   >
                     <option value="all">All Models ({history.length})</option>
                     {distinctGalleryModels.map((m) => {
-                      const count = history.filter((item) => (item.model || item.providerName) === m).length;
+                      const count = modelCountsMap.get(m) || 0;
                       return (
                         <option key={`filter-model-${m}`} value={m}>
                           {m} ({count})
@@ -3963,123 +4170,20 @@ export function ImageStudio() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                  {displayedGalleryImages.map((item, index) => {
-                    const isSelected = selectedImageIds.has(item.id);
-                    return (
-                      <SpotlightCard
-                        key={`gallery-grid-${item.id}`}
-                        index={index}
-                        onClick={() => {
-                          if (gallerySelectionMode) {
-                            handleToggleSelectImage(item.id);
-                            return;
-                          }
-                          playTapSound();
-                          setFullscreenImage(item);
-                        }}
-                        className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer bg-[#121218] transition-all stitch-gallery-card ${
-                          gallerySelectionMode && isSelected
-                            ? 'border-2 border-pink-500 shadow-glow-subtle'
-                            : 'border border-[#232331] hover:border-gray-500'
-                        }`}
-                        title={
-                          gallerySelectionMode
-                            ? isSelected
-                              ? 'Selected - tap to deselect'
-                              : 'Tap to select'
-                            : `"${item.prompt}"\nProvider: ${item.providerName || 'AI Studio'} (Seed: ${item.seed})`
-                        }
-                      >
-                        <img
-                          src={item.url}
-                          alt={item.prompt}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          loading="lazy"
-                        />
-
-                        {/* Selection Mode Overlay & Checkmark */}
-                        {gallerySelectionMode && (
-                          <>
-                            {isSelected && (
-                              <div className="absolute inset-0 bg-pink-500/15 pointer-events-none z-[6]" />
-                            )}
-                            <div
-                              className={`absolute bottom-2 left-2 w-7 h-7 rounded-lg flex items-center justify-center z-[15] backdrop-blur-md transition-all pointer-events-none stitch-check-pop ${
-                                isSelected
-                                  ? 'bg-gradient-to-r from-[#ff2d87] to-[#8b2cf5] border border-pink-400 text-white shadow-glow-subtle'
-                                  : 'bg-black/65 border border-white/40 text-transparent'
-                              }`}
-                            >
-                              {isSelected ? (
-                                <Check size={15} strokeWidth={3} className="text-white" />
-                              ) : (
-                                <div className="w-2.5 h-2.5 rounded-xs border border-white/50" />
-                              )}
-                            </div>
-                          </>
-                        )}
-
-                        {/* Bottom gradient with real prompt + real model & seed */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-85 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2.5 pointer-events-none">
-                          <p className="m-0 text-white text-[10px] font-mono leading-snug line-clamp-2">
-                            {item.prompt}
-                          </p>
-                          <div className="flex items-center justify-between gap-1 mt-1 text-[9px] font-mono text-pink-300">
-                            <span className="truncate">{item.model || item.providerName || 'AI'}</span>
-                            <span className="text-gray-400 shrink-0">#{item.seed}</span>
-                          </div>
-                        </div>
-
-                        {/* Top-left: Edit / Enhanced badge */}
-                        <div className="absolute top-2 left-2 flex items-center gap-1 z-10 pointer-events-none">
-                          {(item.isEdit || item.referenceImageUrl) && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-pink-600/90 text-white text-[9px] font-mono font-bold shadow">
-                              <Wand2 size={9} /> Edit
-                            </span>
-                          )}
-                          {item.enhancedPrompt && !(item.isEdit || item.referenceImageUrl) && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-600/90 text-white text-[9px] font-mono font-semibold shadow">
-                              <Wand2 size={9} /> Enhanced
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Top-right: Copy Prompt Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyGalleryPrompt(e, item.prompt, item.id)}
-                          className={`absolute top-2 right-2 w-7 h-7 rounded-lg backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer z-10 ${
-                            copiedPromptId === item.id
-                              ? 'bg-emerald-500/85 border-emerald-400 text-white'
-                              : 'bg-black/60 border-white/20 text-white hover:bg-pink-500/80 hover:border-pink-400'
-                          }`}
-                          title={copiedPromptId === item.id ? 'Prompt copied to clipboard!' : 'Copy prompt'}
-                          aria-label="Copy prompt"
-                        >
-                          {copiedPromptId === item.id ? <Check size={13} /> : <Copy size={13} />}
-                        </button>
-
-                        {/* Bottom-right: Favorite Heart Button */}
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleFavorite(e, item.id)}
-                          className={`absolute bottom-2 right-2 w-7 h-7 rounded-lg backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer z-10 stitch-heart-btn ${
-                            item.isFavorite
-                              ? 'bg-pink-500/30 border-pink-400 text-pink-400 shadow-glow-subtle'
-                              : 'bg-black/55 border-white/20 text-white/80 hover:text-pink-400'
-                          }`}
-                          title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                          aria-label={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                        >
-                          <HeartBurst burstKey={heartBurst?.id === item.id ? heartBurst.key : 0} />
-                          <Heart
-                            size={14}
-                            className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
-                          />
-                        </button>
-                      </SpotlightCard>
-                    );
-                  })}
+                  {displayedGalleryImages.map((item, index) => (
+                    <ModalGalleryCard
+                      key={`gallery-grid-${item.id}`}
+                      item={item}
+                      index={index}
+                      isSelected={selectedImageIds.has(item.id)}
+                      gallerySelectionMode={gallerySelectionMode}
+                      isCopied={copiedPromptId === item.id}
+                      heartBurstKey={heartBurst?.id === item.id ? heartBurst.key : 0}
+                      onSelectCard={handleSelectModalCard}
+                      onToggleFavorite={handleToggleFavorite}
+                      onCopyPrompt={handleCopyGalleryPrompt}
+                    />
+                  ))}
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 type DevelopImageProps = {
   src: string;
@@ -8,7 +8,7 @@ type DevelopImageProps = {
   onClick?: () => void;
 };
 
-export function DevelopImage({
+export const DevelopImage = memo(function DevelopImage({
   src,
   alt,
   className,
@@ -43,6 +43,7 @@ export function DevelopImage({
         ref={imageRef}
         src={src}
         alt={alt}
+        decoding="async"
         onClick={onClick}
         onLoad={() => setLoaded(true)}
         draggable={false}
@@ -56,4 +57,4 @@ export function DevelopImage({
       )}
     </div>
   );
-}
+});

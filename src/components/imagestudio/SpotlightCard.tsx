@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useSpotlight } from './useSpotlight';
 import type { CSSProperties, ReactNode } from 'react';
 
@@ -9,20 +10,21 @@ type SpotlightCardProps = {
   index?: number;
 };
 
-export function SpotlightCard({
+export const SpotlightCard = memo(function SpotlightCard({
   children,
   className,
   onClick,
   title,
   index = 0,
 }: SpotlightCardProps) {
-  const { ref, onPointerMove, onPointerLeave } = useSpotlight<HTMLDivElement>();
+  const { ref, onPointerEnter, onPointerMove, onPointerLeave } = useSpotlight<HTMLDivElement>();
 
   return (
     <div
       ref={ref}
       onClick={onClick}
       title={title}
+      onPointerEnter={onPointerEnter}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
       className={`is-spotlight ${className ?? ''}`}
@@ -38,4 +40,4 @@ export function SpotlightCard({
       <span aria-hidden="true" className="is-spotlight-glow" />
     </div>
   );
-}
+});

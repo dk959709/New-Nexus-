@@ -4772,6 +4772,8 @@ html[data-theme="light"] .settings-category-bar button.selected {
 .stitch-gallery-card {
   animation: stitchCardFadeUp 240ms ease-out both;
   transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px 260px;
 }
 
 .stitch-gallery-card:active {
@@ -6710,12 +6712,12 @@ button:active .stitch-dice-icon {
 
 .is-develop-img {
   opacity: 0;
-  filter: blur(16px) saturate(0.65);
-  transform: scale(1.02);
+  transform: scale(1.015);
+  will-change: opacity, transform;
 }
 
 .is-develop-img.is-developed {
-  animation: isDevelopReveal 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: isDevelopReveal 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .is-develop-scan {
@@ -6743,15 +6745,10 @@ button:active .stitch-dice-icon {
 @keyframes isDevelopReveal {
   0% {
     opacity: 0;
-    filter: blur(16px) saturate(0.65);
-    transform: scale(1.02);
-  }
-  55% {
-    opacity: 1;
+    transform: scale(1.015);
   }
   100% {
     opacity: 1;
-    filter: blur(0) saturate(1);
     transform: scale(1);
   }
 }
@@ -6777,6 +6774,7 @@ button:active .stitch-dice-icon {
 
 /* --- Aurora prompt card -------------------------------------------------- */
 .is-aurora-card {
+  position: relative;
   isolation: isolate;
 }
 
@@ -6787,13 +6785,12 @@ button:active .stitch-dice-icon {
   z-index: 2;
   border-radius: 1rem;
   padding: 1px;
-  background: conic-gradient(
-    from var(--is-aurora-angle),
-    #ff2d87,
-    #8b2cf5 28%,
-    #00f0ff 50%,
-    #8b2cf5 72%,
-    #ff2d87
+  background: linear-gradient(
+    135deg,
+    #ff2d87 0%,
+    #8b2cf5 35%,
+    #00f0ff 68%,
+    #ff2d87 100%
   );
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
@@ -6804,14 +6801,13 @@ button:active .stitch-dice-icon {
     linear-gradient(#000 0 0);
   mask-composite: exclude;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 250ms ease;
   pointer-events: none;
-  animation: isAuroraSpin 7s linear infinite;
 }
 
 .is-aurora-card:focus-within::before,
 .is-aurora-card.is-aurora-active::before {
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 .is-prompt-sparks {
@@ -6831,15 +6827,15 @@ button:active .stitch-dice-icon {
   height: 2px;
   border-radius: 9999px;
   background: #ff8ac0;
-  box-shadow: 0 0 6px rgba(255, 45, 135, 0.8);
   opacity: 0;
   animation: isSparkDrift var(--spark-duration, 6s) ease-in-out var(--spark-delay, 0s)
     infinite;
+  animation-play-state: paused;
 }
 
-.is-aurora-card:focus-within .is-prompt-spark,
-.is-aurora-card.is-aurora-active .is-prompt-spark {
-  opacity: 0.65;
+.is-aurora-card:focus-within .is-prompt-spark {
+  opacity: 0.55;
+  animation-play-state: running;
 }
 
 @keyframes isAuroraSpin {
@@ -6856,19 +6852,13 @@ button:active .stitch-dice-icon {
   }
   50% {
     transform: translate3d(7px, -16px, 0);
-    opacity: 0.8;
+    opacity: 0.7;
   }
 }
 
 /* --- Energy-core generate button ---------------------------------------- */
-.stitch-energy-core:not(:disabled) {
-  animation: isEnergyFlow 3.4s linear infinite;
-}
-
 .stitch-generate-btn-busy.stitch-energy-core {
-  animation:
-    stitchBtnPulseGlow 1.6s ease-in-out infinite,
-    isEnergyFlow 3.4s linear infinite;
+  animation: stitchBtnPulseGlow 1.6s ease-in-out infinite;
 }
 
 .is-energy-ripple {
