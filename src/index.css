@@ -5377,6 +5377,46 @@ button:active .stitch-dice-icon {
   animation: wfModalPanel 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes wfTelemetryScan {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(520%);
+  }
+}
+
+.wf-telemetry-scan {
+  animation: wfTelemetryScan 4.6s linear infinite;
+}
+
+@keyframes wfTelemetryPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.wf-telemetry-pulse {
+  animation: wfTelemetryPulse 2.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes wfTelemetryDash {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+
+.wf-telemetry-dash {
+  animation: wfTelemetryDash 9s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wf-step-card-enter,
   .wf-step-running,
@@ -5390,7 +5430,10 @@ button:active .stitch-dice-icon {
   .wf-popover-enter,
   .wf-drawer-enter,
   .wf-modal-backdrop,
-  .wf-modal-panel {
+  .wf-modal-panel,
+  .wf-telemetry-scan,
+  .wf-telemetry-pulse,
+  .wf-telemetry-dash {
     animation: none !important;
     transition: none !important;
   }

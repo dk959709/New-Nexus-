@@ -28,6 +28,7 @@ import {
   NODE_CONFIG,
 } from '@/components/workflows/WorkflowCanvas';
 import { StitchPipelineGraphic } from '@/components/workflows/StitchPipelineGraphic';
+import { WorkflowTelemetryGraphics } from '@/components/workflows/WorkflowTelemetryGraphics';
 import {
   Play,
   Square,
@@ -1625,6 +1626,9 @@ export function WorkflowsPage() {
         <div className="relative z-10 max-w-[1380px] mx-auto">
           {/* Responsive High-Tech Node-Based Pipeline Architecture Graphic */}
           <StitchPipelineGraphic />
+
+          {/* Live Telemetry Graphics Strip (throughput / mesh health / run timeline) */}
+          <WorkflowTelemetryGraphics isRunning={isRunning} />
 
           {/* Main Workspace Area */}
         {viewMode === 'list' ? (
