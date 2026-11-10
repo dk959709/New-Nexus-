@@ -4810,11 +4810,13 @@ html[data-theme="light"] .settings-category-bar button.selected {
 @keyframes stitchModalPanelZoom {
   0% {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.985);
+    clip-path: inset(4% 5% 4% 5% round 28px);
   }
   100% {
     opacity: 1;
     transform: scale(1);
+    clip-path: inset(0 0 0 0 round 0);
   }
 }
 
@@ -6506,5 +6508,526 @@ button:active .stitch-dice-icon {
   .tri-clash-spark,
   .tri-core-bloom {
     animation: none !important;
+  }
+}
+
+/* ==========================================================================
+   IMAGE STUDIO — CINEMATIC MOTION LAYER
+   Reactor loader, aurora prompt, energy-core action, develop reveal,
+   comparison slider, kinetic gallery, heart burst.
+   ========================================================================== */
+@property --is-aurora-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* --- Synthesis reactor -------------------------------------------------- */
+.is-reactor-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at center, #000 15%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle at center, #000 15%, transparent 72%);
+  opacity: 0.7;
+}
+
+.is-reactor-scan {
+  top: -30%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 45, 135, 0.16),
+    rgba(255, 45, 135, 0.03),
+    transparent
+  );
+  animation: isReactorScan 4.2s ease-in-out infinite;
+}
+
+.is-reactor-ring {
+  animation: isReactorSpin 18s linear infinite;
+}
+
+.is-reactor-ring-dashed {
+  animation-duration: 12s;
+  animation-direction: reverse;
+}
+
+.is-reactor-ring-reverse {
+  animation-duration: 9s;
+  animation-direction: reverse;
+}
+
+.is-reactor-orbit {
+  animation: isReactorSpin 7s linear infinite;
+}
+
+.is-reactor-node {
+  box-shadow: 0 0 8px rgba(255, 45, 135, 0.85);
+  animation: isNodePulse 2.4s ease-in-out infinite;
+}
+
+.is-reactor-node:nth-child(2) {
+  animation-delay: 0.6s;
+}
+
+.is-reactor-node:nth-child(3) {
+  animation-delay: 1.2s;
+}
+
+.is-reactor-node:nth-child(4) {
+  animation-delay: 1.8s;
+}
+
+.is-reactor-core {
+  box-shadow:
+    0 0 24px -2px rgba(255, 45, 135, 0.45),
+    inset 0 0 18px rgba(139, 44, 245, 0.25);
+  animation: isCorePulse 2.6s ease-in-out infinite;
+}
+
+.is-reactor-halo {
+  animation: isHaloPulse 2.8s ease-in-out infinite;
+}
+
+.is-phase-dot {
+  animation: isPhaseBlink 1.15s ease-in-out infinite;
+}
+
+.is-phase-bar {
+  background-size: 180% 100%;
+  animation: isPhaseSweep 1.8s ease-in-out infinite;
+}
+
+@keyframes isReactorSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes isReactorScan {
+  0% {
+    transform: translateY(-20%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(560%);
+    opacity: 0;
+  }
+}
+
+@keyframes isNodePulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes isCorePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 18px -3px rgba(255, 45, 135, 0.4),
+      inset 0 0 14px rgba(139, 44, 245, 0.2);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow:
+      0 0 30px 0 rgba(255, 45, 135, 0.55),
+      inset 0 0 22px rgba(139, 44, 245, 0.3);
+  }
+}
+
+@keyframes isHaloPulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes isPhaseBlink {
+  0%,
+  100% {
+    opacity: 0.35;
+    box-shadow: 0 0 0 0 rgba(255, 45, 135, 0.45);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 8px 2px rgba(255, 45, 135, 0.35);
+  }
+}
+
+@keyframes isPhaseSweep {
+  0% {
+    background-position: 0% 0;
+    opacity: 0.5;
+  }
+  50% {
+    background-position: 100% 0;
+    opacity: 1;
+  }
+  100% {
+    background-position: 0% 0;
+    opacity: 0.5;
+  }
+}
+
+/* --- Develop reveal ------------------------------------------------------ */
+.is-develop-loading {
+  transition: opacity 180ms ease;
+}
+
+.is-develop-shimmer {
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 45, 135, 0.1) 45%,
+    rgba(139, 44, 245, 0.14) 55%,
+    transparent 80%
+  );
+  background-size: 220% 100%;
+  animation: isDevelopShimmer 1.3s ease-in-out infinite;
+}
+
+.is-develop-img {
+  opacity: 0;
+  filter: blur(16px) saturate(0.65);
+  transform: scale(1.02);
+}
+
+.is-develop-img.is-developed {
+  animation: isDevelopReveal 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.is-develop-scan {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 44%,
+    rgba(73, 239, 253, 0.55) 50%,
+    rgba(255, 255, 255, 0.1) 56%,
+    transparent 100%
+  );
+  mix-blend-mode: screen;
+  animation: isDevelopScan 680ms ease-out 1 forwards;
+}
+
+@keyframes isDevelopShimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes isDevelopReveal {
+  0% {
+    opacity: 0;
+    filter: blur(16px) saturate(0.65);
+    transform: scale(1.02);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0) saturate(1);
+    transform: scale(1);
+  }
+}
+
+@keyframes isDevelopScan {
+  0% {
+    transform: translateY(-30%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(560%);
+    opacity: 0;
+  }
+}
+
+/* --- Comparison slider --------------------------------------------------- */
+.is-compare-handle:active {
+  cursor: ew-resize;
+}
+
+/* --- Aurora prompt card -------------------------------------------------- */
+.is-aurora-card {
+  isolation: isolate;
+}
+
+.is-aurora-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: 2;
+  border-radius: 1rem;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--is-aurora-angle),
+    #ff2d87,
+    #8b2cf5 28%,
+    #00f0ff 50%,
+    #8b2cf5 72%,
+    #ff2d87
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+  animation: isAuroraSpin 7s linear infinite;
+}
+
+.is-aurora-card:focus-within::before,
+.is-aurora-card.is-aurora-active::before {
+  opacity: 0.9;
+}
+
+.is-prompt-sparks {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: 1rem;
+  pointer-events: none;
+}
+
+.is-prompt-spark {
+  position: absolute;
+  left: var(--spark-x);
+  top: var(--spark-y);
+  width: 2px;
+  height: 2px;
+  border-radius: 9999px;
+  background: #ff8ac0;
+  box-shadow: 0 0 6px rgba(255, 45, 135, 0.8);
+  opacity: 0;
+  animation: isSparkDrift var(--spark-duration, 6s) ease-in-out var(--spark-delay, 0s)
+    infinite;
+}
+
+.is-aurora-card:focus-within .is-prompt-spark,
+.is-aurora-card.is-aurora-active .is-prompt-spark {
+  opacity: 0.65;
+}
+
+@keyframes isAuroraSpin {
+  to {
+    --is-aurora-angle: 360deg;
+  }
+}
+
+@keyframes isSparkDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.12;
+  }
+  50% {
+    transform: translate3d(7px, -16px, 0);
+    opacity: 0.8;
+  }
+}
+
+/* --- Energy-core generate button ---------------------------------------- */
+.stitch-energy-core:not(:disabled) {
+  animation: isEnergyFlow 3.4s linear infinite;
+}
+
+.stitch-generate-btn-busy.stitch-energy-core {
+  animation:
+    stitchBtnPulseGlow 1.6s ease-in-out infinite,
+    isEnergyFlow 3.4s linear infinite;
+}
+
+.is-energy-ripple {
+  position: absolute;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 22px rgba(255, 255, 255, 0.55);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: isEnergyRipple 620ms ease-out forwards;
+}
+
+.is-energy-ring {
+  position: absolute;
+  inset: 1px;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0) 0deg,
+    rgba(255, 255, 255, 0.85) 55deg,
+    rgba(255, 255, 255, 0) 135deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: isReactorSpin 1.1s linear infinite;
+}
+
+@keyframes isEnergyFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes isEnergyRipple {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(18);
+  }
+}
+
+/* --- Kinetic gallery ----------------------------------------------------- */
+.is-spotlight {
+  transform-style: preserve-3d;
+  transition:
+    transform 190ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .is-spotlight:hover {
+    transform: perspective(900px) rotateX(var(--tilt-x, 0deg))
+      rotateY(var(--tilt-y, 0deg));
+  }
+
+  .is-spotlight:hover .is-spotlight-glow {
+    opacity: 1;
+  }
+}
+
+.is-spotlight-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    210px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+    rgba(255, 45, 135, 0.2),
+    rgba(139, 44, 245, 0.08) 45%,
+    transparent 70%
+  );
+  transition: opacity 180ms ease;
+}
+
+.is-heart-particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px;
+  border-radius: 9999px;
+  background: #ff6fb1;
+  box-shadow: 0 0 8px rgba(255, 45, 135, 0.9);
+  opacity: 0;
+  animation: isHeartBurst 640ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes isHeartBurst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--burst-angle, -45deg)) translateY(0)
+      scale(0.4);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--burst-angle, -45deg))
+      translateY(calc(var(--burst-distance, 20px) * -1)) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-reactor-ring,
+  .is-reactor-orbit,
+  .is-reactor-core,
+  .is-reactor-halo,
+  .is-reactor-scan,
+  .is-reactor-node,
+  .is-phase-dot,
+  .is-phase-bar,
+  .is-prompt-spark,
+  .is-aurora-card::before,
+  .is-develop-shimmer,
+  .is-develop-img.is-developed,
+  .is-develop-scan,
+  .stitch-energy-core,
+  .stitch-generate-btn-busy.stitch-energy-core,
+  .is-energy-ripple,
+  .is-energy-ring,
+  .is-heart-particle {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .is-develop-img {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+
+  .is-develop-loading,
+  .is-heart-particle {
+    display: none;
   }
 }

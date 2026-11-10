@@ -19,7 +19,6 @@ import {
   Wand2,
   UploadCloud,
   Upload,
-  ImagePlus,
   ArrowRightLeft,
   Columns,
   ChevronLeft,
@@ -28,6 +27,11 @@ import {
   Heart,
   CheckSquare,
 } from 'lucide-react';
+import { SynthesisReactor } from '@/components/imagestudio/SynthesisReactor';
+import { DevelopImage } from '@/components/imagestudio/DevelopImage';
+import { BeforeAfterSlider } from '@/components/imagestudio/BeforeAfterSlider';
+import { HeartBurst } from '@/components/imagestudio/HeartBurst';
+import { SpotlightCard } from '@/components/imagestudio/SpotlightCard';
 import { storage } from '@/lib/storage';
 import { playTapSound } from '@/lib/audio';
 import { enhanceImagePromptWithAI } from '@/services/imageGenerationService';
@@ -193,6 +197,12 @@ export function ImageStudio() {
   const [galleryModelFilter, setGalleryModelFilter] = useState<string | null>(null);
   const [galleryFavoritesOnly, setGalleryFavoritesOnly] = useState<boolean>(false);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+  const [generateRipple, setGenerateRipple] = useState<{
+    x: number;
+    y: number;
+    key: number;
+  } | null>(null);
+  const [heartBurst, setHeartBurst] = useState<{ id: string; key: number } | null>(null);
 
   // Gallery Selection Mode states
   const [gallerySelectionMode, setGallerySelectionMode] = useState<boolean>(false);
@@ -606,6 +616,9 @@ export function ImageStudio() {
     const item = history.find((img) => img.id === id);
     if (!item) return;
     const newStatus = !item.isFavorite;
+    if (newStatus) {
+      setHeartBurst((previous) => ({ id, key: (previous?.key ?? 0) + 1 }));
+    }
 
     // Optimistically update React state immediately across all relevant image references
     setHistory((prev) =>
@@ -2364,12 +2377,31 @@ export function ImageStudio() {
                 handleImageFile(e.dataTransfer.files[0]);
               }
             }}
-            className={`bg-[#121218] border rounded-2xl p-3.5 flex flex-col gap-3 shadow-lg transition-all duration-300 ${
+            className={`is-aurora-card bg-[#121218] border rounded-2xl p-3.5 flex flex-col gap-3 shadow-lg transition-all duration-300 ${
+              prompt.trim() ? 'is-aurora-active' : ''
+            } ${
               isDraggingImage
                 ? 'border-[#ff2d87] shadow-glow-pink'
                 : 'border-[#1e1e29]'
             }`}
           >
+            <span aria-hidden="true" className="is-prompt-sparks">
+              {Array.from({ length: 8 }, (_, index) => (
+                <span
+                  key={index}
+                  className="is-prompt-spark"
+                  style={
+                    {
+                      '--spark-x': `${(index * 13 + 7) % 92}%`,
+                      '--spark-y': `${(index * 29 + 9) % 88}%`,
+                      '--spark-delay': `${(index % 5) * 0.7}s`,
+                      '--spark-duration': `${5 + index * 0.45}s`,
+                    } as React.CSSProperties
+                  }
+                />
+              ))}
+            </span>
+
             {/* Hidden Reference Image File Input */}
             <input
               ref={fileInputRef}
@@ -2402,9 +2434,41 @@ export function ImageStudio() {
                 >
                   <Dice5 size={12} /> Surprise Me
                 </button>
-                <span className="text-[10px] font-mono text-gray-500">
-                  {prompt.length} chars • Ctrl+Enter
-                </span>
+                <div
+                  className="flex items-center gap-1.5"
+                  title={`${prompt.length} characters • Ctrl+Enter to generate`}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                    className="-rotate-90"
+                  >
+                    <defs>
+                      <linearGradient id="is-prompt-ring-gradient" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#ff2d87" />
+                        <stop offset="100%" stopColor="#8b2cf5" />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="10" cy="10" r="8" fill="none" stroke="#242434" strokeWidth="2" />
+                    <circle
+                      cx="10"
+                      cy="10"
+                      r="8"
+                      fill="none"
+                      stroke="url(#is-prompt-ring-gradient)"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 8}
+                      strokeDashoffset={2 * Math.PI * 8 * (1 - Math.min(prompt.length / 500, 1))}
+                      className="transition-[stroke-dashoffset] duration-300"
+                    />
+                  </svg>
+                  <span className="text-[10px] font-mono text-gray-500 tabular-nums">
+                    {prompt.length} • Ctrl+Enter
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -2923,13 +2987,31 @@ export function ImageStudio() {
             <button
               id="generate-image-btn"
               type="button"
-              onClick={() => handleGenerate()}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setGenerateRipple({
+                  x: event.clientX - rect.left,
+                  y: event.clientY - rect.top,
+                  key: Date.now(),
+                });
+                handleGenerate();
+              }}
               disabled={loading || !prompt.trim()}
-              className={`stitch-generate-btn w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#ff2d87] via-[#d42cf5] to-[#8b2cf5] text-white font-mono font-bold text-sm tracking-wide shadow-glow-pink hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center gap-2 relative overflow-hidden group border-0 cursor-pointer disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed ${
+              className={`stitch-generate-btn stitch-energy-core w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#ff2d87] via-[#d42cf5] to-[#8b2cf5] text-white font-mono font-bold text-sm tracking-wide shadow-glow-pink hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center gap-2 relative overflow-hidden group border-0 cursor-pointer disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed ${
                 loading ? 'stitch-generate-btn-busy' : ''
               }`}
             >
               <span className="absolute inset-0 w-full h-full bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+              {generateRipple && (
+                <span
+                  key={generateRipple.key}
+                  aria-hidden="true"
+                  className="is-energy-ripple"
+                  style={{ left: generateRipple.x, top: generateRipple.y }}
+                  onAnimationEnd={() => setGenerateRipple(null)}
+                />
+              )}
+              {loading && <span aria-hidden="true" className="is-energy-ring" />}
               {loading ? (
                 loadingPhase === 'enhancing' ? (
                   <>
@@ -3015,7 +3097,7 @@ export function ImageStudio() {
                           : 'bg-transparent text-gray-400 hover:text-gray-200'
                       }`}
                     >
-                      <Columns size={10} /> Side-by-Side
+                      <Columns size={10} /> Split Slider
                     </button>
                     <button
                       type="button"
@@ -3048,82 +3130,26 @@ export function ImageStudio() {
             {/* Render Card Container */}
             <div className="relative rounded-2xl overflow-hidden bg-[#121218] border border-[#232332] shadow-2xl flex flex-col">
               {loading ? (
-                <div
-                  className="w-full min-h-[340px] flex flex-col items-center justify-center gap-4 p-6 text-center bg-[#0c0c12]"
-                  style={{
-                    aspectRatio: `${ASPECT_RATIOS[selectedRatioIndex]?.width || 1024} / ${
-                      ASPECT_RATIOS[selectedRatioIndex]?.height || 1024
-                    }`,
-                    maxHeight: '480px',
-                  }}
-                >
-                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#ff2d87]/20 to-[#8b2cf5]/20 border border-pink-500/40 flex items-center justify-center text-pink-400 shadow-glow-subtle">
-                    {loadingPhase === 'enhancing' ? (
-                      <Wand2 size={26} className="animate-spin" />
-                    ) : (
-                      <RotateCw size={26} className="animate-spin" />
-                    )}
-                  </div>
-                  <div className="max-w-xs">
-                    <h4 className="m-0 text-sm font-mono font-bold text-white uppercase tracking-wide">
-                      {loadingPhase === 'enhancing'
-                        ? 'Refining Prompt with Smart AI...'
-                        : 'Synthesizing Visual Output...'}
-                    </h4>
-                    <p
-                      className={`mt-1.5 mb-0 text-xs font-mono leading-relaxed ${
-                        failoverNotice ? 'text-amber-300 font-semibold' : 'text-gray-400'
-                      }`}
-                    >
-                      {loadingPhase === 'enhancing'
-                        ? 'Rewriting scene description with lighting & detail...'
-                        : failoverNotice ||
-                          `Active Engine: ${activeProvider?.name || 'Image Provider'}`}
-                    </p>
-                  </div>
-                </div>
+                <SynthesisReactor
+                  phase={loadingPhase === 'enhancing' ? 'enhancing' : 'generating'}
+                  aspectRatio={`${ASPECT_RATIOS[selectedRatioIndex]?.width || 1024} / ${
+                    ASPECT_RATIOS[selectedRatioIndex]?.height || 1024
+                  }`}
+                  maxHeight={480}
+                  providerName={activeProvider?.name}
+                  failoverNotice={failoverNotice}
+                />
               ) : currentImage ? (
                 <div className="flex flex-col stitch-result-fade-in">
-                  {/* Image Display: Side-by-Side Comparison vs Single View */}
+                  {/* Image Display: Split Comparison vs Single View */}
                   {currentImage.referenceImageUrl && comparisonLayout === 'side-by-side' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-2.5 bg-[#0a0a0f]">
-                      {/* Before: Reference Image */}
-                      <div className="rounded-xl overflow-hidden bg-[#121218] border border-[#232332] flex flex-col">
-                        <div className="px-2.5 py-1.5 bg-[#161620] border-b border-[#232332] text-[10px] font-mono text-gray-400 flex items-center justify-between">
-                          <span className="inline-flex items-center gap-1 font-semibold">
-                            <ImagePlus size={11} className="text-gray-400" /> BEFORE (Reference)
-                          </span>
-                          <span>Input</span>
-                        </div>
-                        <div className="relative flex-1 flex items-center justify-center min-h-[220px] max-h-[420px] bg-[#070709] overflow-hidden">
-                          <img
-                            src={currentImage.referenceImageUrl}
-                            alt="Reference Before"
-                            className="w-full h-full max-h-[420px] object-contain block"
-                          />
-                        </div>
-                      </div>
-
-                      {/* After: AI Edited Result */}
-                      <div className="rounded-xl overflow-hidden bg-[#121218] border border-pink-500/40 shadow-glow-subtle flex flex-col relative">
-                        <div className="px-2.5 py-1.5 bg-pink-500/10 border-b border-pink-500/25 text-[10px] font-mono text-pink-300 flex items-center justify-between">
-                          <span className="inline-flex items-center gap-1 font-bold">
-                            <Sparkles size={11} className="text-pink-400" /> AFTER (Edited)
-                          </span>
-                          <span className="bg-pink-500/20 px-1.5 py-0.5 rounded text-[9px]">
-                            {currentImage.model || 'kontext'}
-                          </span>
-                        </div>
-                        <div className="relative flex-1 flex items-center justify-center min-h-[220px] max-h-[420px] bg-[#070709] overflow-hidden">
-                          <img
-                            src={currentImage.url}
-                            alt={currentImage.prompt}
-                            className="w-full h-full max-h-[420px] object-contain block cursor-pointer"
-                            onClick={() => setFullscreenImage(currentImage)}
-                          />
-                        </div>
-                      </div>
-                    </div>
+                    <BeforeAfterSlider
+                      beforeSrc={currentImage.referenceImageUrl}
+                      afterSrc={currentImage.url}
+                      alt={currentImage.prompt}
+                      modelLabel={currentImage.model || 'kontext'}
+                      onExpand={() => setFullscreenImage(currentImage)}
+                    />
                   ) : (
                     /* Single Render Preview Container following image/selected aspect ratio */
                     <div
@@ -3136,7 +3162,8 @@ export function ImageStudio() {
                         maxHeight: '520px',
                       }}
                     >
-                      <img
+                      <DevelopImage
+                        key={currentImage.url}
                         src={currentImage.url}
                         alt={currentImage.prompt}
                         className="w-full h-full object-contain block cursor-pointer"
@@ -3263,7 +3290,7 @@ export function ImageStudio() {
                       <button
                         type="button"
                         onClick={(e) => handleToggleFavorite(e, currentImage.id)}
-                        className={`py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer ${
+                        className={`relative py-2 px-1 rounded-xl border flex flex-col items-center justify-center gap-1 transition active:scale-95 cursor-pointer ${
                           currentImage.isFavorite
                             ? 'bg-pink-500/20 border-pink-500/50 text-pink-300'
                             : 'bg-[#181822] hover:bg-[#222230] border-[#262635] text-gray-200'
@@ -3272,6 +3299,9 @@ export function ImageStudio() {
                           currentImage.isFavorite ? 'Remove from favorites' : 'Add to favorites'
                         }
                       >
+                        <HeartBurst
+                          burstKey={heartBurst?.id === currentImage.id ? heartBurst.key : 0}
+                        />
                         <Heart
                           size={14}
                           className={`stitch-heart-icon ${
@@ -3457,12 +3487,13 @@ export function ImageStudio() {
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {history.map((item) => {
+                {history.map((item, index) => {
                   const isSelected = selectedImageIds.has(item.id);
                   const isCurrent = currentImage?.id === item.id;
                   return (
-                    <div
+                    <SpotlightCard
                       key={item.id}
+                      index={index}
                       onClick={() => {
                         if (gallerySelectionMode) {
                           handleToggleSelectImage(item.id);
@@ -3531,13 +3562,14 @@ export function ImageStudio() {
                           <button
                             type="button"
                             onClick={(e) => handleToggleFavorite(e, item.id)}
-                            className={`w-6 h-6 rounded-full backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer stitch-heart-btn ${
+                            className={`relative w-6 h-6 rounded-full backdrop-blur-md border flex items-center justify-center transition-all cursor-pointer stitch-heart-btn ${
                               item.isFavorite
                                 ? 'bg-pink-500/25 border-pink-500/60 text-pink-400'
                                 : 'bg-black/60 border-white/15 text-gray-300 hover:text-pink-400'
                             }`}
                             title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
                           >
+                            <HeartBurst burstKey={heartBurst?.id === item.id ? heartBurst.key : 0} />
                             <Heart
                               size={12}
                               className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
@@ -3589,7 +3621,7 @@ export function ImageStudio() {
                           {copiedPromptId === item.id ? <Check size={10} /> : <Copy size={10} />}
                         </button>
                       </div>
-                    </div>
+                    </SpotlightCard>
                   );
                 })}
               </div>
@@ -3931,11 +3963,12 @@ export function ImageStudio() {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-                  {displayedGalleryImages.map((item) => {
+                  {displayedGalleryImages.map((item, index) => {
                     const isSelected = selectedImageIds.has(item.id);
                     return (
-                      <div
+                      <SpotlightCard
                         key={`gallery-grid-${item.id}`}
+                        index={index}
                         onClick={() => {
                           if (gallerySelectionMode) {
                             handleToggleSelectImage(item.id);
@@ -4038,12 +4071,13 @@ export function ImageStudio() {
                           title={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
                           aria-label={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
                         >
+                          <HeartBurst burstKey={heartBurst?.id === item.id ? heartBurst.key : 0} />
                           <Heart
                             size={14}
                             className={item.isFavorite ? 'fill-current stitch-heart-pop' : ''}
                           />
                         </button>
-                      </div>
+                      </SpotlightCard>
                     );
                   })}
                 </div>
@@ -4346,7 +4380,7 @@ export function ImageStudio() {
                   <button
                     type="button"
                     onClick={() => {
-                      handleUseAsReference(fullscreenImage);
+                      handleUseAsReference(fullscreenImage.url);
                       setFullscreenImage(null);
                       setGalleryModalOpen(false);
                     }}
