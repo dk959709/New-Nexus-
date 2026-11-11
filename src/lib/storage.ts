@@ -27,6 +27,7 @@ import type {
   Workflow,
   WorkflowRunRecord,
   Skill,
+  TutorSession,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { isValidSwarmSize, type ParallaxSwarmSize } from '@/lib/parallaxSwarmSize';
@@ -2498,6 +2499,22 @@ export const storage = {
 
   setAssistantScholarEnabled(enabled: boolean): void {
     write('nexus-ai-scholar-toggle', enabled);
+  },
+
+  getAssistantTutorEnabled(): boolean {
+    return read<boolean>('nexus-ai-tutor-toggle', false);
+  },
+
+  setAssistantTutorEnabled(enabled: boolean): void {
+    write('nexus-ai-tutor-toggle', enabled);
+  },
+
+  getTutorSessions(): Record<string, TutorSession> {
+    return read<Record<string, TutorSession>>('nexus-ai-tutor-sessions-v1', {});
+  },
+
+  saveTutorSessions(sessions: Record<string, TutorSession>): void {
+    write('nexus-ai-tutor-sessions-v1', sessions);
   },
 
   getAssistantNewAgentEnabled(): boolean {

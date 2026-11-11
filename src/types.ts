@@ -1786,3 +1786,18 @@ export interface Skill {
   kind?: 'github' | 'pasted';
 }
 
+export type TutorLevel = 'beginner' | 'intermediate' | 'advanced';
+
+export type TutorGoal = 'learn' | 'exam' | 'refresh';
+
+export type TutorStage = 'explain' | 'example' | 'practice' | 'quiz';
+
+export interface TutorSession {
+  sessionId: string;
+  topic: string;
+  level: TutorLevel;
+  goal: TutorGoal;
+  stage: TutorStage;
+  startedAt: number;
+  updatedAt: number;
+}

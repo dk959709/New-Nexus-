@@ -5,6 +5,7 @@ import {
   Plus,
   Brain,
   BookOpen,
+  GraduationCap,
   Globe,
   Image as ImageIcon,
   Sparkles,
@@ -84,6 +85,17 @@ import {
   extractArtifactsFromMessage,
   type CanvasArtifact,
 } from '@/components/assistant/LiveArtifactCanvas';
+import { TutorSessionCard } from '@/components/assistant/TutorSessionCard';
+import {
+  buildTutorDirective,
+  buildTutorKickoff,
+  buildTutorQuickPrompt,
+  capTutorSessions,
+  createTutorSession,
+  getTutorStageForAction,
+  normalizeTutorSessions,
+  type TutorQuickAction,
+} from '@/lib/tutor';
 import { getTargetProviderConfig } from '@/services/commanderOrchestrator';
 import {
   enhanceCommanderPlan,
@@ -113,6 +125,9 @@ import type {
   CommanderConfig,
   AIProviderConfig,
   Skill,
+  TutorGoal,
+  TutorLevel,
+  TutorSession,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -143,7 +158,7 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'scholar' | 'webfetcher' | 'swarmlive' | 'commander';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'scholar' | 'tutor' | 'webfetcher' | 'swarmlive' | 'commander';
   sources?: AISource[];
   scholarPapers?: ScholarPaperItem[];
   weather?: unknown;
@@ -2025,6 +2040,7 @@ export function AssistantPage() {
       webFetcher: storage.getAssistantWebFetcherEnabled(),
       wikimedia: storage.getAssistantWikimediaEnabled(),
       scholar: storage.getAssistantScholarEnabled(),
+      tutor: storage.getAssistantTutorEnabled(),
       newAgent: storage.getAssistantNewAgentEnabled(),
       swarmLive: storage.getAssistantSwarmLiveEnabled(),
       commander: storage.getAssistantCommanderEnabled(),
@@ -2040,6 +2056,7 @@ export function AssistantPage() {
       'webFetcher',
       'wikimedia',
       'scholar',
+      'tutor',
       'newAgent',
       'swarmLive',
       'commander',
@@ -2056,6 +2073,7 @@ export function AssistantPage() {
           else if (key === 'webFetcher') storage.setAssistantWebFetcherEnabled(false);
           else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
           else if (key === 'scholar') storage.setAssistantScholarEnabled(false);
+          else if (key === 'tutor') storage.setAssistantTutorEnabled(false);
           else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
           else if (key === 'swarmLive') storage.setAssistantSwarmLiveEnabled(false);
           else if (key === 'commander') storage.setAssistantCommanderEnabled(false);
@@ -2075,6 +2093,14 @@ export function AssistantPage() {
   const [webFetcherEnabled, setWebFetcherEnabled] = useState<boolean>(initialSpecialists.webFetcher);
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
   const [scholarEnabled, setScholarEnabled] = useState<boolean>(initialSpecialists.scholar);
+  const [tutorEnabled, setTutorEnabled] = useState<boolean>(initialSpecialists.tutor);
+  const [tutorSessions, setTutorSessions] = useState<Record<string, TutorSession>>(() =>
+    normalizeTutorSessions(storage.getTutorSessions()),
+  );
+  const [tutorTopicDraft, setTutorTopicDraft] = useState<string>('');
+  const [tutorLevel, setTutorLevel] = useState<TutorLevel>('intermediate');
+  const [tutorGoal, setTutorGoal] = useState<TutorGoal>('learn');
+  const tutorSessionsRef = useRef<Record<string, TutorSession>>({});
   const [newAgentEnabled, setNewAgentEnabled] = useState<boolean>(initialSpecialists.newAgent);
   const [swarmLiveEnabled, setSwarmLiveEnabled] = useState<boolean>(initialSpecialists.swarmLive);
   const [commanderEnabled, setCommanderEnabled] = useState<boolean>(initialSpecialists.commander);
@@ -2088,6 +2114,12 @@ export function AssistantPage() {
   const voiceAiAudioRef = useRef<HTMLAudioElement | null>(null);
   const voiceAiHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
   const voiceAiHoldTriggeredRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    tutorSessionsRef.current = tutorSessions;
+  }, [tutorSessions]);
+
+  const activeTutorSession = tutorSessions[activeSessionId] ?? null;
 
   // Audio Section: Auto-speak answers settings
   const [autoSpeakEnabled, setAutoSpeakEnabled] = useState<boolean>(() => storage.getAssistantAudioAutoSpeak());
@@ -3202,7 +3234,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
 
   // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'scholar' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'scholar' | 'tutor' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -3235,6 +3267,10 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
     if (except !== 'scholar') {
       setScholarEnabled(false);
       storage.setAssistantScholarEnabled(false);
+    }
+    if (except !== 'tutor') {
+      setTutorEnabled(false);
+      storage.setAssistantTutorEnabled(false);
     }
     if (except !== 'newAgent') {
       setNewAgentEnabled(false);
@@ -3549,6 +3585,30 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
       next
         ? 'Scholar Mode enabled: real papers from your Scholar API'
         : 'Scholar Mode disabled',
+    );
+  };
+
+  const toggleTutor = () => {
+    const next = !tutorEnabled;
+    if (next) {
+      disableOtherSpecialistModes('tutor');
+      setWebSearchEnabled(false);
+      setDeepResearchEnabled(false);
+      setImageGenEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+        localStorage.setItem(DEEP_RESEARCH_PREF_KEY, 'false');
+        localStorage.setItem(IMAGE_GEN_PREF_KEY, 'false');
+      } catch {
+        // Ignore
+      }
+    }
+    setTutorEnabled(next);
+    storage.setAssistantTutorEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Tutor Mode enabled: guided Socratic lessons active'
+        : 'Tutor Mode disabled',
     );
   };
 
@@ -4000,6 +4060,17 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
             ? 'text-amber-300 border-amber-500/40 bg-[#281e13] hover:bg-[#382b1a]'
             : 'text-amber-300 border-amber-500/40 bg-amber-950/50 hover:bg-amber-900/60',
       }
+    : tutorEnabled
+    ? {
+        name: 'Tutor',
+        toggle: toggleTutor,
+        color:
+          theme === 'classic'
+            ? 'text-lime-300 border-lime-500/50 bg-lime-950/60 hover:bg-lime-900/70 shadow-[0_0_8px_rgba(132,204,22,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-lime-300 border-lime-500/40 bg-[#1c2410] hover:bg-[#283218]'
+            : 'text-lime-300 border-lime-500/40 bg-lime-950/50 hover:bg-lime-900/60',
+      }
     : newAgentEnabled
     ? {
         name: 'New Agent',
@@ -4157,7 +4228,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const handleImagePointerDown = () => {
-    if (deepResearchEnabled) return;
+    if (deepResearchEnabled || tutorEnabled) return;
     longPressTriggeredRef.current = false;
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -4204,7 +4275,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const handleImageClick = (e: React.MouseEvent) => {
-    if (deepResearchEnabled) return;
+    if (deepResearchEnabled || tutorEnabled) return;
 
     if (longPressTriggeredRef.current) {
       longPressTriggeredRef.current = false;
@@ -4231,6 +4302,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const toggleDeepResearch = () => {
+    if (tutorEnabled) return;
     setDeepResearchEnabled((prev) => {
       const next = !prev;
       try {
@@ -4387,7 +4459,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   }, [messages, loading, scrollToBottom]);
 
   const handleWebSearchPointerDown = () => {
-    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled) return;
+    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled) return;
     webSearchLongPressTriggeredRef.current = false;
     if (webSearchLongPressTimerRef.current) {
       clearTimeout(webSearchLongPressTimerRef.current);
@@ -4437,7 +4509,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const handleWebSearchClick = (e: React.MouseEvent) => {
-    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled) return;
+    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled) return;
 
     if (webSearchLongPressTriggeredRef.current) {
       webSearchLongPressTriggeredRef.current = false;
@@ -7039,6 +7111,15 @@ I don't see that on the page.
       const currentLanguage = storage.getAssistantLanguage();
       const currentPermanentMemories = storage.getPermanentMemories();
 
+      let tutorSessionForTurn: TutorSession | null = null;
+      if (tutorEnabled) {
+        const base =
+          tutorSessionsRef.current[activeSessionId] ??
+          createTutorSession(activeSessionId, message, tutorLevel, tutorGoal);
+        tutorSessionForTurn = { ...base, updatedAt: Date.now() };
+        persistTutorSession(tutorSessionForTurn);
+      }
+
       const isCustomSearchActive = webApiMode === 'custom' && Boolean(customSearchKey.trim() && customSearchUrl.trim());
       const customKeyPayload = isCustomSearchActive ? customSearchKey.trim() : undefined;
       const customUrlPayload = isCustomSearchActive ? customSearchUrl.trim() : undefined;
@@ -7064,7 +7145,7 @@ I don't see that on the page.
         historyForRequest,
         smartMemory,
         sessionProvider,
-        isWebSearchForced,
+        tutorEnabled ? false : isWebSearchForced,
         {
           language: currentLanguage,
           permanentMemories: currentPermanentMemories,
@@ -7073,20 +7154,26 @@ I don't see that on the page.
           extendedSearch: webSearchExtendedEnabled,
           searchMaxResults: webSearchExtendedEnabled ? 20 : 10,
           image: fileToSend?.type === 'image' ? fileToSend.dataUrl : undefined,
-          skillsText: buildActiveSkillsText(),
+          skillsText: [
+            buildActiveSkillsText(),
+            tutorSessionForTurn ? buildTutorDirective(tutorSessionForTurn) : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
         },
       );
 
       const usedWebSearch =
-        isWebSearchForced ||
-        response.tool === 'search' ||
-        Boolean(response.sources && response.sources.length > 0);
+        !tutorEnabled &&
+        (isWebSearchForced ||
+          response.tool === 'search' ||
+          Boolean(response.sources && response.sources.length > 0));
 
       const assistantMessage: Message = {
         role: 'assistant',
         content: stripTierLabels(response.answer),
         reasoning: response.reasoning,
-        tool: response.tool,
+        tool: tutorSessionForTurn ? 'tutor' : response.tool,
         sources: response.sources,
         weather: response.weather,
         searchedWeb: usedWebSearch,
@@ -7152,6 +7239,57 @@ I don't see that on the page.
     } catch {
       // Ignore
     }
+  };
+
+  const persistTutorSession = (session: TutorSession) => {
+    const next = capTutorSessions({
+      ...tutorSessionsRef.current,
+      [session.sessionId]: session,
+    });
+    tutorSessionsRef.current = next;
+    storage.saveTutorSessions(next);
+    setTutorSessions(next);
+  };
+
+  const removeTutorSession = (sessionId: string) => {
+    const next = { ...tutorSessionsRef.current };
+    delete next[sessionId];
+    tutorSessionsRef.current = next;
+    storage.saveTutorSessions(next);
+    setTutorSessions(next);
+  };
+
+  const startTutorSession = () => {
+    const topic = tutorTopicDraft.trim();
+    if (!topic || loading) return;
+    const session = createTutorSession(activeSessionId, topic, tutorLevel, tutorGoal);
+    persistTutorSession(session);
+    setTutorTopicDraft('');
+    playTapSound();
+    sendMessage(buildTutorKickoff(session));
+  };
+
+  const handleTutorQuickAction = (action: TutorQuickAction) => {
+    if (!activeTutorSession || loading) return;
+    const nextStage = getTutorStageForAction(action);
+    const session: TutorSession = {
+      ...activeTutorSession,
+      stage: nextStage ?? activeTutorSession.stage,
+      updatedAt: Date.now(),
+    };
+    persistTutorSession(session);
+    playTapSound();
+    sendMessage(buildTutorQuickPrompt(action, session));
+  };
+
+  const handleTutorNewTopic = () => {
+    if (activeTutorSession) {
+      removeTutorSession(activeTutorSession.sessionId);
+    }
+    setTutorTopicDraft('');
+    setTutorLevel(activeTutorSession?.level ?? 'intermediate');
+    setTutorGoal(activeTutorSession?.goal ?? 'learn');
+    playTapSound();
   };
 
   const handleNewChatClick = () => {
@@ -8576,6 +8714,25 @@ I don't see that on the page.
             </div>
           )}
 
+          {/* Tutor Mode Active Card */}
+          {tutorEnabled && (
+            <TutorSessionCard
+              theme={theme}
+              session={activeTutorSession}
+              level={tutorLevel}
+              goal={tutorGoal}
+              topicDraft={tutorTopicDraft}
+              loading={loading}
+              onTopicDraftChange={setTutorTopicDraft}
+              onLevelChange={setTutorLevel}
+              onGoalChange={setTutorGoal}
+              onStart={startTutorSession}
+              onQuickAction={handleTutorQuickAction}
+              onNewTopic={handleTutorNewTopic}
+              onDisable={toggleTutor}
+            />
+          )}
+
           {/* New Agent Mode Active Indicator Banner */}
           {newAgentEnabled && (
             <div
@@ -9114,6 +9271,24 @@ I don't see that on the page.
                                 )}
                               </button>
                             )}
+                          </div>
+                        )}
+
+                        {/* Tutor Indicator Tag */}
+                        {message.tool === 'tutor' && (
+                          <div className="flex items-center gap-2 pt-1 pb-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                                theme === 'classic'
+                                  ? 'bg-lime-950/70 text-lime-300 border-lime-500/40'
+                                  : theme === 'fulldark'
+                                  ? 'bg-[#1e1e1e] text-lime-300 border-[#2e2e2e]'
+                                  : 'bg-zinc-800 text-lime-300 border-zinc-700/60'
+                              }`}
+                            >
+                              <GraduationCap size={11} className="text-lime-400" />
+                              <span>Tutor</span>
+                            </span>
                           </div>
                         )}
 
@@ -10867,6 +11042,8 @@ I don't see that on the page.
                     ? 'Ask a deep research question (JARVIS Multi-Agent will investigate)...'
                     : imageGenEnabled
                     ? 'Describe the image you want to generate...'
+                    : tutorEnabled
+                    ? 'Ask your tutor a question...'
                     : 'Ask NEXUS AI anything...'
                 }
                 aria-label={
@@ -10874,6 +11051,8 @@ I don't see that on the page.
                     ? 'Ask a deep research question'
                     : imageGenEnabled
                     ? 'Describe image prompt'
+                    : tutorEnabled
+                    ? 'Message your tutor'
                     : 'Message NEXUS AI'
                 }
                 rows={1}
@@ -10945,7 +11124,7 @@ I don't see that on the page.
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || tutorEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -10960,7 +11139,7 @@ I don't see that on the page.
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, Scholar, New Agent, Swarm Live, Commander'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, Scholar, Tutor, New Agent, Swarm Live, Commander'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -10971,7 +11150,7 @@ I don't see that on the page.
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || tutorEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -11622,6 +11801,53 @@ I don't see that on the page.
                       </div>
                     </button>
 
+                    {/* 6.6 Tutor Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleTutor}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        tutorEnabled
+                          ? 'border-lime-500/40 bg-lime-950/30 text-lime-200 shadow-[0_0_10px_rgba(132,204,22,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            tutorEnabled
+                              ? 'bg-lime-500/20 text-lime-300 border border-lime-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <GraduationCap size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>🎓 Tutor</span>
+                            {tutorEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-lime-950 text-lime-400 border border-lime-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Socratic lessons with stages
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          tutorEnabled ? 'bg-lime-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            tutorEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
                     {/* 7. New Agent Toggle */}
                     <button
                       type="button"
@@ -11805,8 +12031,11 @@ I don't see that on the page.
                 <button
                   type="button"
                   onClick={toggleDeepResearch}
+                  disabled={tutorEnabled}
                   className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
-                    deepResearchEnabled
+                    tutorEnabled
+                      ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
+                      : deepResearchEnabled
                       ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 font-medium shadow-[0_0_10px_rgba(16,185,129,0.15)]'
                       : theme === 'classic'
                       ? 'text-cyan-300/70 border-transparent hover:text-cyan-200 hover:bg-cyan-950/40'
@@ -11815,7 +12044,9 @@ I don't see that on the page.
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title={
-                    deepResearchEnabled
+                    tutorEnabled
+                      ? 'Disabled while Tutor is ON (turn off Tutor to use Deep Research)'
+                      : deepResearchEnabled
                       ? 'Deep Research is ON: routes queries through JARVIS multi-agent research pipeline (Planner → Researcher → Fact Checker → Advisor → Reviewer → Synthesizer)'
                       : 'Deep Research is OFF: standard assistant responses'
                   }
@@ -11839,10 +12070,10 @@ I don't see that on the page.
                   onPointerLeave={cancelWebSearchPointer}
                   onPointerCancel={cancelWebSearchPointer}
                   onContextMenu={(e) => e.preventDefault()}
-                  disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled}
+                  disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 select-none ${
-                    deepResearchEnabled || architectEnabled || dataAnalysisEnabled
+                    deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : webSearchEnabled && webSearchExtendedEnabled
                       ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.25)] font-medium'
@@ -11861,6 +12092,8 @@ I don't see that on the page.
                       ? 'Disabled while Architect is ON (Specialist diagram agent active without automatic search)'
                       : dataAnalysisEnabled
                       ? 'Disabled while Data Analysis is ON (Specialist data agent active without automatic search)'
+                      : tutorEnabled
+                      ? 'Disabled while Tutor is ON (Socratic lessons run without automatic search)'
                       : webSearchEnabled && webSearchExtendedEnabled
                       ? 'Web Search is ON (Extended Mode: 20 sources). Tap to toggle • Hold for Standard Search (10 sources).'
                       : webSearchEnabled
@@ -11871,7 +12104,7 @@ I don't see that on the page.
                   <Globe
                     size={12}
                     className={
-                      !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled
+                      !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && webSearchEnabled
                         ? webSearchExtendedEnabled
                           ? 'text-cyan-300'
                           : 'text-cyan-400'
@@ -11879,7 +12112,7 @@ I don't see that on the page.
                     }
                   />
                   <span>Web Search</span>
-                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled && (
+                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && webSearchEnabled && (
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${
                         webSearchExtendedEnabled
@@ -11888,7 +12121,7 @@ I don't see that on the page.
                       }`}
                     />
                   )}
-                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && webSearchEnabled && webSearchExtendedEnabled && (
+                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && webSearchEnabled && webSearchExtendedEnabled && (
                     <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 leading-none shrink-0">
                       20
                     </span>
@@ -11904,10 +12137,10 @@ I don't see that on the page.
                   onPointerLeave={cancelImagePointer}
                   onPointerCancel={cancelImagePointer}
                   onContextMenu={(e) => e.preventDefault()}
-                  disabled={deepResearchEnabled}
+                  disabled={deepResearchEnabled || tutorEnabled}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 select-none ${
-                    deepResearchEnabled
+                    deepResearchEnabled || tutorEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : imageGenEnabled
                       ? 'bg-purple-500/15 text-purple-300 border-purple-500/40 font-medium shadow-[0_0_10px_rgba(168,85,247,0.15)]'
@@ -11917,7 +12150,11 @@ I don't see that on the page.
                       ? 'text-[#a1a1aa] border-transparent hover:text-[#ececec] hover:bg-[#2a2a2a]'
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
-                  title="Tap: use my exact prompt. Hold: Smart AI Enhance."
+                  title={
+                    tutorEnabled
+                      ? 'Disabled while Tutor is ON (turn off Tutor to generate images)'
+                      : 'Tap: use my exact prompt. Hold: Smart AI Enhance.'
+                  }
                 >
                   <ImageIcon
                     size={12}
@@ -11966,6 +12203,8 @@ I don't see that on the page.
                         ? 'bg-gradient-to-br from-emerald-400 to-teal-600 text-white hover:from-emerald-300 hover:to-teal-500 cursor-pointer shadow-[0_0_18px_rgba(16,185,129,0.7)] scale-105'
                         : imageGenEnabled
                         ? 'bg-gradient-to-br from-purple-500 to-fuchsia-600 text-white hover:from-purple-400 hover:to-fuchsia-500 cursor-pointer shadow-[0_0_18px_rgba(168,85,247,0.7)] scale-105'
+                        : tutorEnabled
+                        ? 'bg-gradient-to-br from-lime-400 to-emerald-500 text-[#08120a] hover:from-lime-300 hover:to-emerald-400 cursor-pointer shadow-[0_0_18px_rgba(132,204,22,0.7)] scale-105'
                         : 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-500 text-white hover:brightness-110 cursor-pointer shadow-[0_0_18px_rgba(99,102,241,0.65)] scale-105'
                       : theme === 'classic'
                       ? 'bg-cyan-950/40 text-cyan-700 cursor-not-allowed opacity-50 border border-cyan-500/10'
@@ -13189,7 +13428,7 @@ I don't see that on the page.
                         )}
                       </div>
                       <p className="text-[11.5px] text-zinc-400 mt-0.5 truncate">
-                        Multi Chat, Architect, Data Analysis, Coder, Web Fetcher, Wikimedia
+                        Multi Chat, Architect, Data Analysis, Coder, Web Fetcher, Wikimedia, Scholar, Tutor
                       </p>
                     </div>
                   </div>
@@ -13966,6 +14205,81 @@ I don't see that on the page.
                           <div
                             className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                               scholarEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 6.6 Tutor Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <GraduationCap size={15} className="text-lime-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            🎓 Tutor
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            tutorEnabled
+                              ? 'bg-lime-950/80 text-lime-300 border-lime-500/50 shadow-[0_0_8px_rgba(132,204,22,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {tutorEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        When enabled, AI Assistant becomes a Socratic tutor: guided Explain → Example → Practice → Quiz stages, level-aware explanations, and one check question per turn.
+                      </p>
+
+                      <div
+                        onClick={toggleTutor}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          tutorEnabled
+                            ? 'border-lime-500/40 bg-lime-950/20 shadow-[0_0_15px_rgba(132,204,22,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              tutorEnabled
+                                ? 'bg-lime-500/20 border border-lime-500/40 text-lime-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <GraduationCap size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Tutor</span>
+                              {tutorEnabled && (
+                                <span className="text-[10px] font-mono text-lime-400 bg-lime-950/80 px-1.5 py-0.2 rounded border border-lime-500/40">
+                                  Socratic Lessons
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {tutorEnabled
+                                ? 'Guided lesson stages with progress saved per chat'
+                                : 'Standard conversational responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            tutorEnabled ? 'bg-lime-500 shadow-[0_0_8px_rgba(132,204,22,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              tutorEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>
