@@ -31,8 +31,21 @@ export class AppBoundary extends Component<Props, State> {
   }
 
   private handleTryAgain = () => {
+    // A failed dynamic import can only be fixed by fetching the new HTML,
+    // so reload instead of re-rendering the same broken module graph.
+    if (this.isChunkLoadError()) {
+      window.location.reload();
+      return;
+    }
     this.setState({ hasError: false, error: null, errorInfo: null });
   };
+
+  private isChunkLoadError(): boolean {
+    const message = this.state.error?.message || '';
+    return /dynamically imported module|Importing a module script failed|ChunkLoadError/i.test(
+      message,
+    );
+  }
 
   private handleReload = () => {
     this.setState({ hasError: false, error: null, errorInfo: null });
@@ -66,7 +79,9 @@ export class AppBoundary extends Component<Props, State> {
             </h2>
 
             <p className="text-sm text-slate-300 mb-6 leading-relaxed">
-              {this.state.error?.message || 'An unexpected rendering error occurred in this view.'}
+              {this.isChunkLoadError()
+                ? 'A new version of Nexus was deployed while this page was open. Reload to continue.'
+                : this.state.error?.message || 'An unexpected rendering error occurred in this view.'}
             </p>
 
             <div className="flex items-center justify-center gap-3 flex-wrap mb-4">

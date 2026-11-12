@@ -39,6 +39,40 @@ if (typeof document !== 'undefined') {
 }
 startDeviceAgent();
 
+// ---------------------------------------------------------------------------
+// Stale-deploy recovery: after a new deploy the old hashed chunks no longer
+// exist, so a lazy route import fails. Reload once to pick up the new HTML.
+// ---------------------------------------------------------------------------
+const CHUNK_RELOAD_AT_KEY = 'nexus-chunk-reload-at';
+const CHUNK_ERROR_PATTERN =
+  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|dynamically imported module/i;
+
+function reloadOnceForChunkError(): boolean {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_AT_KEY) || 0);
+    // Avoid a reload loop if the chunk is genuinely missing.
+    if (Date.now() - last < 15000) return false;
+    sessionStorage.setItem(CHUNK_RELOAD_AT_KEY, String(Date.now()));
+  } catch {
+    // sessionStorage unavailable (private mode) - still try a single reload.
+  }
+  window.location.reload();
+  return true;
+}
+
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault();
+  reloadOnceForChunkError();
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason as { message?: string } | string | undefined;
+  const message = typeof reason === 'string' ? reason : reason?.message || '';
+  if (CHUNK_ERROR_PATTERN.test(message) && reloadOnceForChunkError()) {
+    event.preventDefault();
+  }
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <div
