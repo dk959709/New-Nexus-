@@ -28,6 +28,9 @@ import { documentsRouter } from './routes/documents.js';
 import { skillsRouter } from './routes/skills.js';
 import { fluxSchnellRouter } from './routes/fluxSchnell.js';
 import { fluxDevRouter } from './routes/fluxDev.js';
+import { integrationsRouter } from './routes/integrations.js';
+import { automationRouter } from './routes/automation.js';
+import { startAutomationScheduler } from './automationScheduler.js';
 
 
 function sanitizeChatMessages(
@@ -3825,6 +3828,8 @@ async function startServer() {
             true,
         ),
         wallpapers: Boolean(getBackendApiKey('PEXELS_API_KEY')),
+        emailIntegrations: Boolean(process.env.RESEND_API_KEY || getBackendApiKey('RESEND_API_KEY')),
+        automations: true,
       },
     }),
   );
@@ -3844,6 +3849,8 @@ async function startServer() {
   app.use(telegramRouter);
   app.use(fluxSchnellRouter);
   app.use(fluxDevRouter);
+  app.use(integrationsRouter);
+  app.use(automationRouter);
 
   // Connect Telegram AI chat handler
   setTelegramAiHandler(async (msg) => {
@@ -5693,6 +5700,7 @@ async function startServer() {
 
   app.listen(port, '0.0.0.0', () => {
     console.log(`NEXUS API listening on http://0.0.0.0:${port}`);
+    startAutomationScheduler(`http://127.0.0.1:${port}`);
   });
 }
 

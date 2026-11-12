@@ -1701,7 +1701,19 @@ export interface CommanderFeedSavedState {
   deletedStageIds?: string[];
 }
 
-export type WorkflowNodeType = 'input' | 'webSearch' | 'webFetch' | 'scholar' | 'ai' | 'image' | 'weather' | 'nasa' | 'if';
+export type WorkflowNodeType =
+  | 'input'
+  | 'webSearch'
+  | 'webFetch'
+  | 'scholar'
+  | 'ai'
+  | 'image'
+  | 'weather'
+  | 'nasa'
+  | 'if'
+  | 'document'
+  | 'email'
+  | 'webhook';
 
 export interface WorkflowNode {
   id: string;
@@ -1721,12 +1733,31 @@ export interface WorkflowEdge {
   branch?: 'yes' | 'no';
 }
 
+export interface WorkflowVariable {
+  key: string;
+  label: string;
+  description?: string;
+  example?: string;
+  defaultValue?: string;
+  required?: boolean;
+}
+
+export interface WorkflowAutomationMeta {
+  goal: string;
+  summary: string;
+  variables: WorkflowVariable[];
+  assumptions: string[];
+}
+
 export interface Workflow {
   id: string;
   name: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   updatedAt: number;
+  description?: string;
+  tags?: string[];
+  automation?: WorkflowAutomationMeta;
 }
 
 export interface WorkflowOutput {
@@ -1770,6 +1801,97 @@ export interface WorkflowRunRecord {
   durationMs: number;
   steps: WorkflowRunStepRecord[];
   finalOutput?: string;
+}
+
+export interface AutomationDraftVersion {
+  id: string;
+  label: string;
+  goal: string;
+  summary: string;
+  workflow: Workflow;
+  variables: WorkflowVariable[];
+  assumptions: string[];
+  at: number;
+}
+
+export interface AutomationDraft {
+  id: string;
+  sessionId: string;
+  goal: string;
+  summary: string;
+  workflow: Workflow;
+  variables: WorkflowVariable[];
+  assumptions: string[];
+  createdAt: number;
+  updatedAt: number;
+  versions: AutomationDraftVersion[];
+}
+
+export interface AutomationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  goal: string;
+  workflow: Workflow;
+  variables: WorkflowVariable[];
+  assumptions: string[];
+}
+
+export type AutomationScheduleKind = 'once' | 'daily' | 'interval';
+
+export interface AutomationScheduleSpec {
+  kind: AutomationScheduleKind;
+  runAt?: string;
+  time?: string;
+  everyMinutes?: number;
+}
+
+export type AutomationScheduleStatus = 'success' | 'error' | 'running';
+
+export interface PublicAutomationSchedule {
+  id: string;
+  name: string;
+  sourceId: string;
+  goal: string;
+  workflowName: string;
+  nodeCount: number;
+  variables: Record<string, string>;
+  spec: AutomationScheduleSpec;
+  enabled: boolean;
+  nextRunAt: number;
+  lastRunAt?: number;
+  lastStatus?: AutomationScheduleStatus;
+  lastError?: string;
+  lastDurationMs?: number;
+  lastOutput?: string;
+  createdAt: number;
+  updatedAt: number;
+  webhookPath: string;
+}
+
+export interface CreateAutomationScheduleInput {
+  name?: string;
+  sourceId?: string;
+  goal?: string;
+  workflow: Workflow;
+  variables?: Record<string, string>;
+  spec: AutomationScheduleSpec;
+  enabled?: boolean;
+}
+
+export interface IntegrationStatus {
+  webhook: boolean;
+  email: boolean;
+  emailFromConfigured: boolean;
+}
+
+export interface DocumentExtractionResult {
+  url: string;
+  finalUrl: string;
+  contentType: string;
+  text: string;
+  charCount: number;
+  isTruncated: boolean;
 }
 
 export interface Skill {

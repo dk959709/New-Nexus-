@@ -25,6 +25,10 @@ import type {
   ApiCatalogItem,
   CustomApiCallResult,
   ScholarPaper,
+  PublicAutomationSchedule,
+  CreateAutomationScheduleInput,
+  IntegrationStatus,
+  DocumentExtractionResult,
 } from '@/types';
 export type { ScholarPaper } from '@/types';
 import { storage, getAssistantThinkingEffort } from '@/lib/storage';
@@ -81,6 +85,20 @@ export interface WebFetchResponse {
   data?: WebFetchResult;
   error?: string;
   statusCode?: number;
+}
+
+export const AUTOMATION_ADMIN_TOKEN_KEY = 'nexus_automation_admin_token';
+
+function automationAdminHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (typeof window === 'undefined') return headers;
+  try {
+    const token = window.localStorage.getItem(AUTOMATION_ADMIN_TOKEN_KEY) || '';
+    if (token) headers['x-automation-token'] = token;
+  } catch {
+    // Ignore storage access errors.
+  }
+  return headers;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1253,6 +1271,63 @@ export const api = {
         error: err instanceof Error ? err.message : 'Scholar search request failed',
       };
     }
+  },
+
+  listAutomationSchedules(): Promise<PublicAutomationSchedule[]> {
+    return call<PublicAutomationSchedule[]>('/api/automation/schedules', {
+      headers: automationAdminHeaders(),
+    });
+  },
+
+  createAutomationSchedule(input: CreateAutomationScheduleInput): Promise<PublicAutomationSchedule> {
+    return call<PublicAutomationSchedule>('/api/automation/schedules', {
+      method: 'POST',
+      headers: automationAdminHeaders(),
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateAutomationSchedule(
+    id: string,
+    input: Partial<CreateAutomationScheduleInput>,
+  ): Promise<PublicAutomationSchedule> {
+    return call<PublicAutomationSchedule>(`/api/automation/schedules/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: automationAdminHeaders(),
+      body: JSON.stringify(input),
+    });
+  },
+
+  deleteAutomationSchedule(id: string): Promise<{ deleted: boolean }> {
+    return call<{ deleted: boolean }>(`/api/automation/schedules/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: automationAdminHeaders(),
+    });
+  },
+
+  runAutomationSchedule(
+    id: string,
+    variables?: Record<string, string>,
+  ): Promise<{ accepted: boolean; message: string }> {
+    return call<{ accepted: boolean; message: string }>(
+      `/api/automation/schedules/${encodeURIComponent(id)}/run`,
+      {
+        method: 'POST',
+        headers: automationAdminHeaders(),
+        body: JSON.stringify(variables ? { variables } : {}),
+      },
+    );
+  },
+
+  getIntegrationStatus(): Promise<IntegrationStatus> {
+    return call<IntegrationStatus>('/api/integrations/status');
+  },
+
+  extractDocumentUrl(url: string): Promise<DocumentExtractionResult> {
+    return call<DocumentExtractionResult>('/api/documents/extract-url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
   },
 };
 

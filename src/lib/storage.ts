@@ -28,6 +28,7 @@ import type {
   WorkflowRunRecord,
   Skill,
   TutorSession,
+  AutomationDraft,
 } from '@/types';
 import { DEFAULT_PARALLAX_VOICES } from '@/data/parallaxVoices';
 import { isValidSwarmSize, type ParallaxSwarmSize } from '@/lib/parallaxSwarmSize';
@@ -2515,6 +2516,22 @@ export const storage = {
 
   saveTutorSessions(sessions: Record<string, TutorSession>): void {
     write('nexus-ai-tutor-sessions-v1', sessions);
+  },
+
+  getAssistantAutomationEnabled(): boolean {
+    return read<boolean>('nexus-ai-automation-toggle', false);
+  },
+
+  setAssistantAutomationEnabled(enabled: boolean): void {
+    write('nexus-ai-automation-toggle', enabled);
+  },
+
+  getAutomationDrafts(): Record<string, AutomationDraft> {
+    return read<Record<string, AutomationDraft>>('nexus-ai-automation-drafts-v1', {});
+  },
+
+  saveAutomationDrafts(drafts: Record<string, AutomationDraft>): void {
+    write('nexus-ai-automation-drafts-v1', drafts);
   },
 
   getAssistantNewAgentEnabled(): boolean {

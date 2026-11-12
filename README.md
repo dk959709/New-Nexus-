@@ -149,6 +149,16 @@ ENABLE_HEADLESS_RENDER=
 HEADLESS_RENDER_TIMEOUT_MS=
 RENDER_PROXY_URL=
 RENDER_PROXY_API_KEY=
+
+# Automation Studio integrations (Phase 3)
+# Email delivery uses Resend; set both to enable the Email node.
+RESEND_API_KEY=
+EMAIL_FROM=
+# Optional: require x-automation-token on /api/automation management endpoints.
+AUTOMATION_ADMIN_TOKEN=
+# Optional: override the internal URL the scheduler uses to call this server.
+AUTOMATION_INTERNAL_URL=
+RENDER_PROXY_API_KEY=
 ```
 
 ---

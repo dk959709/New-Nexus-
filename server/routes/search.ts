@@ -7,6 +7,7 @@ import {
   isResultTopicallyRelevant,
   applyTopicalRelevanceFilter,
 } from '../../src/lib/searchFilter.js';
+import { fetchWithSafeRedirects, isPrivateOrLocalHostname } from '../networkSafety.js';
 
 export {
   extractSignificantQueryWords,
@@ -2333,6 +2334,12 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { ok: false, error: `Unsupported protocol: "${parsed.protocol}" (only HTTP and HTTPS are supported)` };
   }
+  if (parsed.username || parsed.password) {
+    return { ok: false, error: 'URLs with embedded credentials are not allowed' };
+  }
+  if (isPrivateOrLocalHostname(parsed.hostname)) {
+    return { ok: false, error: 'Local and private network URLs are not allowed' };
+  }
 
   console.log(`[Server WebFetch] Initiating fetch for: ${normalizedUrl}`);
 
@@ -2340,7 +2347,7 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    const response = await fetch(normalizedUrl, {
+    const response = await fetchWithSafeRedirects(normalizedUrl, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (compatible; NEXUS-Intelligence/1.0; +https://nexus.app)',
@@ -2353,7 +2360,6 @@ export async function fetchDirectWebPage(targetUrl: string): Promise<{
         'Upgrade-Insecure-Requests': '1',
       },
       signal: controller.signal,
-      redirect: 'follow',
     });
 
     clearTimeout(timeoutId);

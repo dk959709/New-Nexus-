@@ -402,6 +402,67 @@ async function executeStep(
       return { output: { type: 'text', value: text } };
     }
 
+    case 'document': {
+      const url = (resolvedSettings.url ?? '').trim();
+      if (!url) throw new Error('Document URL is empty');
+      const data = await withRetry(async () => {
+        const res = await fetch(BASE + '/api/documents/extract-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error || 'Document extraction failed.');
+        }
+        return json.data || {};
+      });
+      const text = String(data.text || '').trim().slice(0, 8000);
+      if (!text) throw new Error('Document contained no readable text.');
+      return { output: { type: 'text', value: text } };
+    }
+
+    case 'email': {
+      const to = (resolvedSettings.to ?? '').trim();
+      const subject = (resolvedSettings.subject ?? '').trim() || 'NEXUS Automation result';
+      const body = (resolvedSettings.body ?? '').trim();
+      if (!to) throw new Error('Email recipient is empty.');
+      if (!body) throw new Error('Email body is empty.');
+      const data = await withRetry(async () => {
+        const res = await fetch(BASE + '/api/integrations/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to, subject, body }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error || 'Email delivery failed.');
+        }
+        return json.data || {};
+      });
+      const recipients = Array.isArray(data.recipients) ? data.recipients.join(', ') : to;
+      return { output: { type: 'text', value: `Email sent to ${recipients}.` } };
+    }
+
+    case 'webhook': {
+      const url = (resolvedSettings.url ?? '').trim();
+      const body = (resolvedSettings.body ?? '').trim();
+      if (!url) throw new Error('Webhook URL is empty.');
+      const data = await withRetry(async () => {
+        const res = await fetch(BASE + '/api/integrations/webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, body }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error || 'Webhook delivery failed.');
+        }
+        return json.data || {};
+      });
+      return { output: { type: 'text', value: `Webhook delivered (HTTP ${data.status || 200}).` } };
+    }
+
     case 'if': {
       const v1 = resolvedSettings.value1 ?? '';
       const v2 = resolvedSettings.value2 ?? '';

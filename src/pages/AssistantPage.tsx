@@ -51,7 +51,7 @@ import {
   History,
 } from 'lucide-react';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '@/services/api';
 import { storage, DEFAULT_COMMANDER_CONFIG, getAssistantThinkingEffort, setAssistantThinkingEffort, MAX_ENABLED_SKILLS } from '@/lib/storage';
 import { buildActiveSkillsText, estimateTokens } from '@/lib/skills';
@@ -86,6 +86,7 @@ import {
   type CanvasArtifact,
 } from '@/components/assistant/LiveArtifactCanvas';
 import { TutorSessionCard } from '@/components/assistant/TutorSessionCard';
+import { AutomationStudioCard } from '@/components/assistant/automation/AutomationStudioCard';
 import {
   buildTutorDirective,
   buildTutorKickoff,
@@ -96,6 +97,14 @@ import {
   normalizeTutorSessions,
   type TutorQuickAction,
 } from '@/lib/tutor';
+import {
+  capAutomationDrafts,
+  createAutomationDraft,
+  diffWorkflows,
+  normalizeAutomationDrafts,
+  updateAutomationDraft,
+} from '@/lib/automation';
+import { createAutomationPlan, editAutomationPlan } from '@/services/automationPlanner';
 import { getTargetProviderConfig } from '@/services/commanderOrchestrator';
 import {
   enhanceCommanderPlan,
@@ -128,6 +137,7 @@ import type {
   TutorGoal,
   TutorLevel,
   TutorSession,
+  AutomationDraft,
 } from '@/types';
 
 export interface AssistantGeneratedImage {
@@ -158,7 +168,7 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   reasoning?: string;
-  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'scholar' | 'tutor' | 'webfetcher' | 'swarmlive' | 'commander';
+  tool?: 'none' | 'search' | 'weather' | 'image' | 'multichat' | 'architect' | 'dataAnalyst' | 'agent' | 'coder' | 'wikimedia' | 'scholar' | 'tutor' | 'automation' | 'webfetcher' | 'swarmlive' | 'commander';
   sources?: AISource[];
   scholarPapers?: ScholarPaperItem[];
   weather?: unknown;
@@ -1678,6 +1688,7 @@ function AssistantImageCard({
 }
 
 export function AssistantPage() {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [sessions, setSessions] = useState<ArchivedChatSession[]>(() => initializeAndDeduplicateSessions());
   const [activeSessionId, setActiveSessionId] = useState<string>(() => loadActiveSessionId());
@@ -2041,6 +2052,7 @@ export function AssistantPage() {
       wikimedia: storage.getAssistantWikimediaEnabled(),
       scholar: storage.getAssistantScholarEnabled(),
       tutor: storage.getAssistantTutorEnabled(),
+      automation: storage.getAssistantAutomationEnabled(),
       newAgent: storage.getAssistantNewAgentEnabled(),
       swarmLive: storage.getAssistantSwarmLiveEnabled(),
       commander: storage.getAssistantCommanderEnabled(),
@@ -2057,6 +2069,7 @@ export function AssistantPage() {
       'wikimedia',
       'scholar',
       'tutor',
+      'automation',
       'newAgent',
       'swarmLive',
       'commander',
@@ -2074,6 +2087,7 @@ export function AssistantPage() {
           else if (key === 'wikimedia') storage.setAssistantWikimediaEnabled(false);
           else if (key === 'scholar') storage.setAssistantScholarEnabled(false);
           else if (key === 'tutor') storage.setAssistantTutorEnabled(false);
+          else if (key === 'automation') storage.setAssistantAutomationEnabled(false);
           else if (key === 'newAgent') storage.setAssistantNewAgentEnabled(false);
           else if (key === 'swarmLive') storage.setAssistantSwarmLiveEnabled(false);
           else if (key === 'commander') storage.setAssistantCommanderEnabled(false);
@@ -2094,6 +2108,11 @@ export function AssistantPage() {
   const [wikimediaEnabled, setWikimediaEnabled] = useState<boolean>(initialSpecialists.wikimedia);
   const [scholarEnabled, setScholarEnabled] = useState<boolean>(initialSpecialists.scholar);
   const [tutorEnabled, setTutorEnabled] = useState<boolean>(initialSpecialists.tutor);
+  const [automationEnabled, setAutomationEnabled] = useState<boolean>(initialSpecialists.automation);
+  const [automationDrafts, setAutomationDrafts] = useState<Record<string, AutomationDraft>>(() =>
+    normalizeAutomationDrafts(storage.getAutomationDrafts()),
+  );
+  const [automationGenerating, setAutomationGenerating] = useState(false);
   const [tutorSessions, setTutorSessions] = useState<Record<string, TutorSession>>(() =>
     normalizeTutorSessions(storage.getTutorSessions()),
   );
@@ -2120,6 +2139,12 @@ export function AssistantPage() {
   }, [tutorSessions]);
 
   const activeTutorSession = tutorSessions[activeSessionId] ?? null;
+  const activeAutomationDraft = automationDrafts[activeSessionId] ?? null;
+  const automationDraftsRef = useRef<Record<string, AutomationDraft>>(automationDrafts);
+
+  useEffect(() => {
+    automationDraftsRef.current = automationDrafts;
+  }, [automationDrafts]);
 
   // Audio Section: Auto-speak answers settings
   const [autoSpeakEnabled, setAutoSpeakEnabled] = useState<boolean>(() => storage.getAssistantAudioAutoSpeak());
@@ -3234,7 +3259,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
 
   // Helper to ensure mutual exclusivity among the Specialist Modes
   const disableOtherSpecialistModes = (
-    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'scholar' | 'tutor' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
+    except: 'architect' | 'dataAnalysis' | 'multiChat' | 'coder' | 'webFetcher' | 'wikimedia' | 'scholar' | 'tutor' | 'automation' | 'newAgent' | 'swarmLive' | 'commander' | 'voiceAi',
   ) => {
     if (except !== 'multiChat') {
       setMultiChatEnabled(false);
@@ -3271,6 +3296,10 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
     if (except !== 'tutor') {
       setTutorEnabled(false);
       storage.setAssistantTutorEnabled(false);
+    }
+    if (except !== 'automation') {
+      setAutomationEnabled(false);
+      storage.setAssistantAutomationEnabled(false);
     }
     if (except !== 'newAgent') {
       setNewAgentEnabled(false);
@@ -3610,6 +3639,79 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
         ? 'Tutor Mode enabled: guided Socratic lessons active'
         : 'Tutor Mode disabled',
     );
+  };
+
+  const toggleAutomation = () => {
+    const next = !automationEnabled;
+    if (next) {
+      disableOtherSpecialistModes('automation');
+      setWebSearchEnabled(false);
+      setDeepResearchEnabled(false);
+      setImageGenEnabled(false);
+      try {
+        localStorage.setItem(WEB_SEARCH_PREF_KEY, 'false');
+        localStorage.setItem(DEEP_RESEARCH_PREF_KEY, 'false');
+        localStorage.setItem(IMAGE_GEN_PREF_KEY, 'false');
+      } catch {
+        // Ignore
+      }
+    }
+    setAutomationEnabled(next);
+    storage.setAssistantAutomationEnabled(next);
+    triggerSettingsToast(
+      next
+        ? 'Automation Studio enabled: plan, review, and run workflows'
+        : 'Automation Studio disabled',
+    );
+  };
+
+  const persistAutomationDraft = (draft: AutomationDraft) => {
+    const next = capAutomationDrafts({
+      ...automationDraftsRef.current,
+      [draft.sessionId]: draft,
+    });
+    automationDraftsRef.current = next;
+    setAutomationDrafts(next);
+    storage.saveAutomationDrafts(next);
+  };
+
+  const discardAutomationDraft = () => {
+    const next = { ...automationDraftsRef.current };
+    delete next[activeSessionId];
+    automationDraftsRef.current = next;
+    setAutomationDrafts(next);
+    storage.saveAutomationDrafts(next);
+  };
+
+  const handleAutomationGenerate = async (
+    goal: string,
+    attachmentText?: string,
+    addUserMessage = false,
+  ) => {
+    if (automationGenerating) return;
+    setAutomationGenerating(true);
+    setLoading(true);
+    setError('');
+    if (addUserMessage) {
+      setMessages((current) => [...current, { role: 'user', content: goal }]);
+    }
+    try {
+      const result = await createAutomationPlan(goal, attachmentText);
+      const draft = createAutomationDraft(activeSessionId, goal, result.plan);
+      persistAutomationDraft(draft);
+      const content = result.usedFallback
+        ? `I built a starter automation with ${draft.workflow.nodes.length} steps because the AI plan could not be validated${result.error ? `: ${result.error}` : '.'} Review it below, then run when ready.`
+        : `Automation plan ready: ${draft.workflow.nodes.length} steps. Review the steps and inputs below, then run when ready.`;
+      setMessages((current) => [...current, { role: 'assistant', content, tool: 'automation' }]);
+      if (result.usedFallback && result.error) setError(result.error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'The automation could not be planned.';
+      setError(message);
+      setMessages((current) => [...current, { role: 'assistant', content: `Automation planning failed: ${message}`, tool: 'automation' }]);
+    } finally {
+      setAutomationGenerating(false);
+      setLoading(false);
+    }
   };
 
   const toggleNewAgent = () => {
@@ -4071,6 +4173,17 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
             ? 'text-lime-300 border-lime-500/40 bg-[#1c2410] hover:bg-[#283218]'
             : 'text-lime-300 border-lime-500/40 bg-lime-950/50 hover:bg-lime-900/60',
       }
+    : automationEnabled
+    ? {
+        name: 'Automation',
+        toggle: toggleAutomation,
+        color:
+          theme === 'classic'
+            ? 'text-cyan-300 border-cyan-500/50 bg-cyan-950/60 hover:bg-cyan-900/70 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
+            : theme === 'fulldark'
+            ? 'text-cyan-300 border-cyan-500/40 bg-[#102428] hover:bg-[#163339]'
+            : 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50 hover:bg-cyan-900/60',
+      }
     : newAgentEnabled
     ? {
         name: 'New Agent',
@@ -4228,7 +4341,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const handleImagePointerDown = () => {
-    if (deepResearchEnabled || tutorEnabled) return;
+    if (deepResearchEnabled || tutorEnabled || automationEnabled) return;
     longPressTriggeredRef.current = false;
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -4275,7 +4388,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const handleImageClick = (e: React.MouseEvent) => {
-    if (deepResearchEnabled || tutorEnabled) return;
+    if (deepResearchEnabled || tutorEnabled || automationEnabled) return;
 
     if (longPressTriggeredRef.current) {
       longPressTriggeredRef.current = false;
@@ -4302,7 +4415,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const toggleDeepResearch = () => {
-    if (tutorEnabled) return;
+    if (tutorEnabled || automationEnabled) return;
     setDeepResearchEnabled((prev) => {
       const next = !prev;
       try {
@@ -4459,7 +4572,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   }, [messages, loading, scrollToBottom]);
 
   const handleWebSearchPointerDown = () => {
-    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled) return;
+    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled || automationEnabled) return;
     webSearchLongPressTriggeredRef.current = false;
     if (webSearchLongPressTimerRef.current) {
       clearTimeout(webSearchLongPressTimerRef.current);
@@ -4509,7 +4622,7 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const handleWebSearchClick = (e: React.MouseEvent) => {
-    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled) return;
+    if (deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled || automationEnabled) return;
 
     if (webSearchLongPressTriggeredRef.current) {
       webSearchLongPressTriggeredRef.current = false;
@@ -5623,6 +5736,35 @@ I don't see that on the page.`;
     setMessages((current) => [...current, userMessage]);
     setLoading(true);
     webFetcherCancelledRef.current = false;
+
+    // Automation Studio (goal -> plan -> reviewed run)
+    if (automationEnabled) {
+      try {
+        const existing = automationDraftsRef.current[activeSessionId];
+        if (existing) {
+          const plan = await editAutomationPlan(existing, message);
+          const next = updateAutomationDraft(existing, plan, 'Chat edit');
+          const changes = diffWorkflows(existing.workflow, next.workflow);
+          persistAutomationDraft(next);
+          const content = changes.length > 0
+            ? `Automation updated: ${changes.join(' · ')}. Review the plan below.`
+            : 'The planner kept the automation unchanged. Review the plan below.';
+          setMessages((current) => [...current, { role: 'assistant', content, tool: 'automation' }]);
+        } else {
+          await handleAutomationGenerate(
+            message,
+            fileToSend?.type === 'document' ? fileToSend.content : undefined,
+          );
+        }
+      } catch (err) {
+        const messageText = err instanceof Error ? err.message : 'The automation could not be updated.';
+        setError(messageText);
+        setMessages((current) => [...current, { role: 'assistant', content: `Automation update failed: ${messageText}`, tool: 'automation' }]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     // Swarm Live Specialist Mode (20+ Agent Live Debate Feed)
     if (swarmLiveEnabled) {
@@ -7165,6 +7307,7 @@ I don't see that on the page.
 
       const usedWebSearch =
         !tutorEnabled &&
+        !automationEnabled &&
         (isWebSearchForced ||
           response.tool === 'search' ||
           Boolean(response.sources && response.sources.length > 0));
@@ -8730,6 +8873,23 @@ I don't see that on the page.
               onQuickAction={handleTutorQuickAction}
               onNewTopic={handleTutorNewTopic}
               onDisable={toggleTutor}
+            />
+          )}
+
+          {/* Automation Studio Active Card */}
+          {automationEnabled && (
+            <AutomationStudioCard
+              theme={theme}
+              sessionId={activeSessionId}
+              draft={activeAutomationDraft}
+              generating={automationGenerating}
+              onGenerate={(goal) => {
+                void handleAutomationGenerate(goal, undefined, true);
+              }}
+              onDraftChange={persistAutomationDraft}
+              onDiscard={discardAutomationDraft}
+              onDisable={toggleAutomation}
+              onOpenWorkflows={(workflowId) => navigate(`/workflows?workflow=${encodeURIComponent(workflowId)}`)}
             />
           )}
 
@@ -11044,6 +11204,8 @@ I don't see that on the page.
                     ? 'Describe the image you want to generate...'
                     : tutorEnabled
                     ? 'Ask your tutor a question...'
+                    : automationEnabled
+                    ? 'Describe a goal to automate, or ask for a plan change...'
                     : 'Ask NEXUS AI anything...'
                 }
                 aria-label={
@@ -11053,6 +11215,8 @@ I don't see that on the page.
                     ? 'Describe image prompt'
                     : tutorEnabled
                     ? 'Message your tutor'
+                    : automationEnabled
+                    ? 'Describe your automation'
                     : 'Message NEXUS AI'
                 }
                 rows={1}
@@ -11124,7 +11288,7 @@ I don't see that on the page.
                   type="button"
                   onClick={() => setMoreOptionsOpen((prev) => !prev)}
                   className={`text-xs p-1.5 rounded-lg border transition-all flex items-center justify-center gap-1 ${
-                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || tutorEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
+                    moreOptionsOpen || architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || tutorEnabled || automationEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled
                       ? theme === 'classic'
                         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
                         : theme === 'fulldark'
@@ -11139,7 +11303,7 @@ I don't see that on the page.
                   title={
                     moreOptionsOpen
                       ? 'Close quick modes menu'
-                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, Scholar, Tutor, New Agent, Swarm Live, Commander'
+                      : 'Specialist Modes (mutually exclusive): Architect, Data Analysis, Multi Chat, Voice AI, Coder, Web Fetcher, Wikimedia, Scholar, Tutor, Automation, New Agent, Swarm Live, Commander'
                   }
                   aria-label="More options"
                   aria-expanded={moreOptionsOpen}
@@ -11150,7 +11314,7 @@ I don't see that on the page.
                       moreOptionsOpen ? 'rotate-180 text-cyan-400' : ''
                     }`}
                   />
-                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || tutorEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
+                  {(architectEnabled || dataAnalysisEnabled || multiChatEnabled || voiceAiEnabled || coderEnabled || webFetcherEnabled || wikimediaEnabled || scholarEnabled || tutorEnabled || automationEnabled || newAgentEnabled || swarmLiveEnabled || commanderEnabled) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
                   )}
                 </button>
@@ -11848,6 +12012,53 @@ I don't see that on the page.
                       </div>
                     </button>
 
+                    {/* 6.7 Automation Toggle */}
+                    <button
+                      type="button"
+                      onClick={toggleAutomation}
+                      className={`w-full p-2 rounded-xl border text-left flex items-center justify-between transition-all ${
+                        automationEnabled
+                          ? 'border-cyan-500/40 bg-cyan-950/30 text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.15)]'
+                          : 'border-transparent hover:bg-zinc-800/60 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${
+                            automationEnabled
+                              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                              : 'bg-zinc-800 text-zinc-400'
+                          }`}
+                        >
+                          <Bot size={13} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-zinc-100 flex items-center gap-1.5">
+                            <span>Automation</span>
+                            {automationEnabled && (
+                              <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-400 border border-cyan-500/40">
+                                ON
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10.5px] text-zinc-400 truncate">
+                            Goal to reviewed workflow
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                          automationEnabled ? 'bg-cyan-500' : 'bg-zinc-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                            automationEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </button>
+
                     {/* 7. New Agent Toggle */}
                     <button
                       type="button"
@@ -12031,9 +12242,9 @@ I don't see that on the page.
                 <button
                   type="button"
                   onClick={toggleDeepResearch}
-                  disabled={tutorEnabled}
+                  disabled={tutorEnabled || automationEnabled}
                   className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 ${
-                    tutorEnabled
+                    tutorEnabled || automationEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : deepResearchEnabled
                       ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40 font-medium shadow-[0_0_10px_rgba(16,185,129,0.15)]'
@@ -12044,8 +12255,10 @@ I don't see that on the page.
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title={
-                    tutorEnabled
-                      ? 'Disabled while Tutor is ON (turn off Tutor to use Deep Research)'
+                    tutorEnabled || automationEnabled
+                      ? automationEnabled
+                        ? 'Disabled while Automation is ON (turn off Automation to use Deep Research)'
+                        : 'Disabled while Tutor is ON (turn off Tutor to use Deep Research)'
                       : deepResearchEnabled
                       ? 'Deep Research is ON: routes queries through JARVIS multi-agent research pipeline (Planner → Researcher → Fact Checker → Advisor → Reviewer → Synthesizer)'
                       : 'Deep Research is OFF: standard assistant responses'
@@ -12070,10 +12283,10 @@ I don't see that on the page.
                   onPointerLeave={cancelWebSearchPointer}
                   onPointerCancel={cancelWebSearchPointer}
                   onContextMenu={(e) => e.preventDefault()}
-                  disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled}
+                  disabled={deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled || automationEnabled}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 select-none ${
-                    deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled
+                    deepResearchEnabled || architectEnabled || dataAnalysisEnabled || tutorEnabled || automationEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : webSearchEnabled && webSearchExtendedEnabled
                       ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.25)] font-medium'
@@ -12094,6 +12307,8 @@ I don't see that on the page.
                       ? 'Disabled while Data Analysis is ON (Specialist data agent active without automatic search)'
                       : tutorEnabled
                       ? 'Disabled while Tutor is ON (Socratic lessons run without automatic search)'
+                      : automationEnabled
+                      ? 'Disabled while Automation is ON (workflows manage their own web steps)'
                       : webSearchEnabled && webSearchExtendedEnabled
                       ? 'Web Search is ON (Extended Mode: 20 sources). Tap to toggle • Hold for Standard Search (10 sources).'
                       : webSearchEnabled
@@ -12104,7 +12319,7 @@ I don't see that on the page.
                   <Globe
                     size={12}
                     className={
-                      !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && webSearchEnabled
+                      !deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && !automationEnabled && webSearchEnabled
                         ? webSearchExtendedEnabled
                           ? 'text-cyan-300'
                           : 'text-cyan-400'
@@ -12112,7 +12327,7 @@ I don't see that on the page.
                     }
                   />
                   <span>Web Search</span>
-                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && webSearchEnabled && (
+                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && !automationEnabled && webSearchEnabled && (
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${
                         webSearchExtendedEnabled
@@ -12121,7 +12336,7 @@ I don't see that on the page.
                       }`}
                     />
                   )}
-                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && webSearchEnabled && webSearchExtendedEnabled && (
+                  {!deepResearchEnabled && !architectEnabled && !dataAnalysisEnabled && !tutorEnabled && !automationEnabled && webSearchEnabled && webSearchExtendedEnabled && (
                     <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-cyan-500/30 text-cyan-200 border border-cyan-400/40 leading-none shrink-0">
                       20
                     </span>
@@ -12137,10 +12352,10 @@ I don't see that on the page.
                   onPointerLeave={cancelImagePointer}
                   onPointerCancel={cancelImagePointer}
                   onContextMenu={(e) => e.preventDefault()}
-                  disabled={deepResearchEnabled || tutorEnabled}
+                  disabled={deepResearchEnabled || tutorEnabled || automationEnabled}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
                   className={`text-[11px] sm:text-xs px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg border transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 select-none ${
-                    deepResearchEnabled || tutorEnabled
+                    deepResearchEnabled || tutorEnabled || automationEnabled
                       ? 'opacity-35 cursor-not-allowed border-transparent text-zinc-500 pointer-events-none'
                       : imageGenEnabled
                       ? 'bg-purple-500/15 text-purple-300 border-purple-500/40 font-medium shadow-[0_0_10px_rgba(168,85,247,0.15)]'
@@ -12151,8 +12366,10 @@ I don't see that on the page.
                       : 'text-zinc-400 border-transparent hover:text-zinc-300 hover:bg-zinc-800/60'
                   }`}
                   title={
-                    tutorEnabled
-                      ? 'Disabled while Tutor is ON (turn off Tutor to generate images)'
+                    tutorEnabled || automationEnabled
+                      ? automationEnabled
+                        ? 'Disabled while Automation is ON (turn off Automation to generate images)'
+                        : 'Disabled while Tutor is ON (turn off Tutor to generate images)'
                       : 'Tap: use my exact prompt. Hold: Smart AI Enhance.'
                   }
                 >
@@ -12205,6 +12422,8 @@ I don't see that on the page.
                         ? 'bg-gradient-to-br from-purple-500 to-fuchsia-600 text-white hover:from-purple-400 hover:to-fuchsia-500 cursor-pointer shadow-[0_0_18px_rgba(168,85,247,0.7)] scale-105'
                         : tutorEnabled
                         ? 'bg-gradient-to-br from-lime-400 to-emerald-500 text-[#08120a] hover:from-lime-300 hover:to-emerald-400 cursor-pointer shadow-[0_0_18px_rgba(132,204,22,0.7)] scale-105'
+                        : automationEnabled
+                        ? 'bg-gradient-to-br from-cyan-400 to-teal-500 text-[#041316] hover:from-cyan-300 hover:to-teal-400 cursor-pointer shadow-[0_0_18px_rgba(34,211,238,0.7)] scale-105'
                         : 'bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-500 text-white hover:brightness-110 cursor-pointer shadow-[0_0_18px_rgba(99,102,241,0.65)] scale-105'
                       : theme === 'classic'
                       ? 'bg-cyan-950/40 text-cyan-700 cursor-not-allowed opacity-50 border border-cyan-500/10'
@@ -14280,6 +14499,81 @@ I don't see that on the page.
                           <div
                             className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
                               tutorEnabled ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-zinc-800/80" />
+
+                    {/* 6.7 Automation Toggle */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Bot size={15} className="text-cyan-400" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Automation
+                          </h4>
+                        </div>
+                        <span
+                          className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${
+                            automationEnabled
+                              ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                              : 'bg-zinc-800 text-zinc-500 border-zinc-700/60'
+                          }`}
+                        >
+                          {automationEnabled ? 'ACTIVE' : 'DISABLED'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 leading-relaxed">
+                        Turn a goal into a reviewed, editable multi-step workflow. Supports variables, batch runs, live progress, retries, repair, history, templates, and import/export.
+                      </p>
+
+                      <div
+                        onClick={toggleAutomation}
+                        className={`p-3.5 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                          automationEnabled
+                            ? 'border-cyan-500/40 bg-cyan-950/20 shadow-[0_0_15px_rgba(6,182,212,0.12)]'
+                            : 'border-zinc-800 bg-zinc-900/60 hover:bg-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-9 h-9 rounded-xl grid place-items-center transition-colors ${
+                              automationEnabled
+                                ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-300'
+                                : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                            }`}
+                          >
+                            <Bot size={18} />
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold text-zinc-100 flex items-center gap-2">
+                              <span>Enable Automation</span>
+                              {automationEnabled && (
+                                <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-500/40">
+                                  Reviewed Workflows
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              {automationEnabled
+                                ? 'Plan, review, and run workflows from this chat'
+                                : 'Standard conversational responses'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div
+                          className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                            automationEnabled ? 'bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.4)]' : 'bg-zinc-700'
+                          }`}
+                        >
+                          <div
+                            className={`w-5 h-5 rounded-full bg-white shadow-md transition-transform duration-200 ${
+                              automationEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
                         </div>

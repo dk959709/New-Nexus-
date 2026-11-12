@@ -37,6 +37,9 @@ import {
   CloudSun,
   Rocket,
   GitFork,
+  Mail,
+  Webhook,
+  FileText,
   CheckCircle2,
   AlertCircle,
   Loader2,
@@ -152,6 +155,27 @@ export const NODE_CONFIG: Record<
     color: 'text-emerald-400 bg-emerald-500/10',
     textColor: 'text-emerald-300',
     desc: 'Branch execution based on rule',
+  },
+  document: {
+    label: 'Document',
+    icon: FileText,
+    color: 'text-orange-400 bg-orange-500/10',
+    textColor: 'text-orange-300',
+    desc: 'Extract text from a public document URL',
+  },
+  email: {
+    label: 'Email',
+    icon: Mail,
+    color: 'text-cyan-400 bg-cyan-500/10',
+    textColor: 'text-cyan-300',
+    desc: 'Send the result through the server email integration',
+  },
+  webhook: {
+    label: 'Webhook',
+    icon: Webhook,
+    color: 'text-lime-400 bg-lime-500/10',
+    textColor: 'text-lime-300',
+    desc: 'Deliver JSON to a public HTTPS webhook',
   },
 };
 

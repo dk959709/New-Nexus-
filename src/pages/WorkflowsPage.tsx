@@ -56,6 +56,9 @@ import {
   Clock,
   History,
   Rocket,
+  FileText,
+  Mail,
+  Webhook,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -283,6 +286,15 @@ export function WorkflowsPage() {
 
   const [activeWorkflowId, setActiveWorkflowId] = useState<string>(() => {
     const list = storage.getWorkflows();
+    let requestedId = '';
+    try {
+      requestedId = typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('workflow') || ''
+        : '';
+    } catch {
+      requestedId = '';
+    }
+    if (requestedId && list.some((workflow) => workflow.id === requestedId)) return requestedId;
     if (list && list.length > 0) return list[0].id;
     return 'workflow-default';
   });
@@ -293,7 +305,15 @@ export function WorkflowsPage() {
   }, [workflows, activeWorkflowId]);
 
   // View mode
-  const [viewMode, setViewMode] = useState<'list' | 'canvas'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'canvas'>(() => {
+    try {
+      return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('workflow')
+        ? 'canvas'
+        : 'list';
+    } catch {
+      return 'list';
+    }
+  });
 
   // Execution state
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -3865,6 +3885,97 @@ export function StepSettingsForm({
           <span>
             Fetches the latest Astronomy Picture of the Day (APOD) directly from NASA telemetry. No fields required.
           </span>
+        </div>
+      )}
+
+      {node.type === 'document' && (
+        <div className="space-y-3">
+          <VariableField
+            label="Document URL"
+            value={settings.url || ''}
+            onChange={(val) => handleChange('url', val)}
+            placeholder="https://example.com/report.pdf"
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
+          <div className="py-2.5 px-3 rounded-lg bg-orange-500/10 border border-orange-400/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
+            <FileText size={15} className="text-orange-300 flex-shrink-0" />
+            <span>Extracts text from PDF, DOCX, TXT, MD, CSV, JSON, or HTML. 8 MB / 24k character limit.</span>
+          </div>
+        </div>
+      )}
+
+      {node.type === 'email' && (
+        <div className="space-y-3">
+          <VariableField
+            label="Recipients"
+            value={settings.to || ''}
+            onChange={(val) => handleChange('to', val)}
+            placeholder="person@example.com, team@example.com"
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
+          <VariableField
+            label="Subject"
+            value={settings.subject || ''}
+            onChange={(val) => handleChange('subject', val)}
+            placeholder="NEXUS Automation result"
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
+          <VariableField
+            label="Email Body"
+            value={settings.body || ''}
+            onChange={(val) => handleChange('body', val)}
+            placeholder="e.g. {{AI.output}}"
+            multiline
+            rows={5}
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
+          <div className="py-2.5 px-3 rounded-lg bg-cyan-500/10 border border-cyan-400/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
+            <Mail size={15} className="text-cyan-300 flex-shrink-0" />
+            <span>Sent server-side through Resend. Requires RESEND_API_KEY and EMAIL_FROM on the server.</span>
+          </div>
+        </div>
+      )}
+
+      {node.type === 'webhook' && (
+        <div className="space-y-3">
+          <VariableField
+            label="Webhook URL (HTTPS)"
+            value={settings.url || ''}
+            onChange={(val) => handleChange('url', val)}
+            placeholder="https://hooks.example.com/incoming/..."
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
+          <VariableField
+            label="Payload"
+            value={settings.body || ''}
+            onChange={(val) => handleChange('body', val)}
+            placeholder='e.g. {"result": "{{AI.output}}"}'
+            multiline
+            rows={5}
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+          />
+          <div className="py-2.5 px-3 rounded-lg bg-lime-500/10 border border-lime-400/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
+            <Webhook size={15} className="text-lime-300 flex-shrink-0" />
+            <span>POSTs to a public HTTPS endpoint. Private and local addresses are blocked.</span>
+          </div>
         </div>
       )}
 
