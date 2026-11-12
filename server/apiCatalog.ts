@@ -91,7 +91,7 @@ export interface CatalogItemDefinition {
   fallbackEnvVars?: string[];
   description: string;
   docsUrl: string;
-  category: 'news' | 'search' | 'weather' | 'space' | 'media' | 'general';
+  category: 'news' | 'search' | 'weather' | 'space' | 'media' | 'integration' | 'general';
 }
 
 export const PREDEFINED_CATALOG: CatalogItemDefinition[] = [
@@ -160,6 +160,14 @@ export const PREDEFINED_CATALOG: CatalogItemDefinition[] = [
     description: 'Neural semantic web search engine for high-density academic and deep-topic synthesis.',
     docsUrl: 'https://exa.ai',
     category: 'search',
+  },
+  {
+    id: 'resend',
+    name: 'Resend Email',
+    envVar: 'RESEND_API_KEY',
+    description: 'Server-side email delivery for automation results. The key is encrypted in the local vault; the sender address is configured with EMAIL_FROM.',
+    docsUrl: 'https://resend.com/api-keys',
+    category: 'integration',
   },
 ];
 
@@ -906,6 +914,18 @@ export async function testServiceApiKey(id: string): Promise<{ success: boolean;
       if (res.ok) return { success: true, message: 'Exa.ai API connection verified successfully!' };
       if (res.status === 401 || res.status === 403) return { success: false, message: 'Invalid Exa API Key.' };
       return { success: false, message: `Exa returned HTTP ${res.status}.` };
+    }
+
+    if (normalized === 'resend' || normalized === 'resend_api_key') {
+      const res = await fetch('https://api.resend.com/domains', {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) return { success: true, message: 'Resend API key verified successfully!' };
+      if (res.status === 401 || res.status === 403) {
+        return { success: false, message: 'Invalid Resend API key (401/403).' };
+      }
+      return { success: false, message: `Resend returned HTTP ${res.status}.` };
     }
 
     // Check if custom or stored record has a configured Base URL to test

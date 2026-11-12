@@ -152,6 +152,7 @@ RENDER_PROXY_API_KEY=
 
 # Automation Studio integrations (Phase 3)
 # Email delivery uses Resend; set both to enable the Email node.
+# RESEND_API_KEY can also be saved from Settings -> API Keys -> Email & Automation.
 RESEND_API_KEY=
 EMAIL_FROM=
 # Optional: require x-automation-token on /api/automation management endpoints.

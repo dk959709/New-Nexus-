@@ -17,6 +17,7 @@ import {
   Rocket,
   Image as ImageIcon,
   Search,
+  Mail,
   Lock,
   Server,
   Edit2,
@@ -1021,6 +1022,8 @@ export function ApiCatalogSettings() {
         return <Rocket size={14} className="text-purple-400" />;
       case 'media':
         return <ImageIcon size={14} className="text-emerald-400" />;
+      case 'integration':
+        return <Mail size={14} className="text-rose-400" />;
       default:
         return <Globe size={14} className="text-indigo-400" />;
     }
@@ -1033,6 +1036,7 @@ export function ApiCatalogSettings() {
     { id: 'weather', label: 'Atmospheric & Maps' },
     { id: 'space', label: 'Space & Astronomy' },
     { id: 'media', label: 'Media & Wallpapers' },
+    { id: 'integration', label: 'Email & Automation' },
     { id: 'custom', label: 'Custom APIs' },
   ];
 
