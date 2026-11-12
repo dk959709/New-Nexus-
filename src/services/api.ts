@@ -28,6 +28,7 @@ import type {
   PublicAutomationSchedule,
   CreateAutomationScheduleInput,
   IntegrationStatus,
+  EmailConfig,
   DocumentExtractionResult,
 } from '@/types';
 export type { ScholarPaper } from '@/types';
@@ -1321,6 +1322,17 @@ export const api = {
 
   getIntegrationStatus(): Promise<IntegrationStatus> {
     return call<IntegrationStatus>('/api/integrations/status');
+  },
+
+  getEmailConfig(): Promise<EmailConfig> {
+    return call<EmailConfig>('/api/integrations/email-config');
+  },
+
+  saveEmailConfig(from: string): Promise<EmailConfig> {
+    return call<EmailConfig>('/api/integrations/email-config', {
+      method: 'POST',
+      body: JSON.stringify({ from }),
+    });
   },
 
   extractDocumentUrl(url: string): Promise<DocumentExtractionResult> {

@@ -27,10 +27,12 @@ import {
   Plug,
   RotateCcw,
   BookOpen,
+  Save,
+  Loader2,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
-import type { ApiCatalogItem } from '@/types';
+import type { ApiCatalogItem, EmailConfig } from '@/types';
 
 export const SCHOLAR_PROVIDERS_CONFIG: Record<
   string,
@@ -156,6 +158,13 @@ export function ApiCatalogSettings() {
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [actionNotice, setActionNotice] = useState<{ id?: string; type: 'success' | 'error'; message: string } | null>(null);
 
+  // Automation email sender state
+  const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
+  const [emailFromInput, setEmailFromInput] = useState('');
+  const [savingEmailFrom, setSavingEmailFrom] = useState(false);
+  const [emailConfigError, setEmailConfigError] = useState<string | null>(null);
+  const [emailConfigNotice, setEmailConfigNotice] = useState('');
+
   // Custom API Modal state
   const [showAddCustom, setShowAddCustom] = useState<boolean>(false);
   const [showCustomKeyMask, setShowCustomKeyMask] = useState<boolean>(false);
@@ -269,6 +278,37 @@ export function ApiCatalogSettings() {
     }
   };
 
+  const fetchEmailConfig = async () => {
+    try {
+      setEmailConfigError(null);
+      const config = await api.getEmailConfig();
+      setEmailConfig(config);
+      setEmailFromInput(config.source === 'config' ? config.emailFrom : '');
+    } catch (err: unknown) {
+      setEmailConfigError(err instanceof Error ? err.message : 'Could not load email sender settings.');
+    }
+  };
+
+  const handleSaveEmailFrom = async () => {
+    setSavingEmailFrom(true);
+    setEmailConfigError(null);
+    setEmailConfigNotice('');
+    try {
+      const config = await api.saveEmailConfig(emailFromInput);
+      setEmailConfig(config);
+      setEmailFromInput(config.source === 'config' ? config.emailFrom : '');
+      setEmailConfigNotice(
+        config.source === 'env'
+          ? 'Saved, but EMAIL_FROM in the environment still takes priority.'
+          : 'Sender address saved.',
+      );
+    } catch (err: unknown) {
+      setEmailConfigError(err instanceof Error ? err.message : 'Could not save sender address.');
+    } finally {
+      setSavingEmailFrom(false);
+    }
+  };
+
   const fetchScholarSearchConfig = async () => {
     try {
       const res = await api.getScholarSearchConfig();
@@ -286,6 +326,7 @@ export function ApiCatalogSettings() {
     fetchCatalog();
     fetchGlobalSearchConfig();
     fetchScholarSearchConfig();
+    fetchEmailConfig();
   }, []);
 
   const handleSelectGlobalSearchMode = async (mode: 'default' | 'custom') => {
@@ -1180,6 +1221,91 @@ export function ApiCatalogSettings() {
             </p>
           </div>
         </div>
+      </section>
+
+      {/* Automation Email Sender Section */}
+      <section
+        style={{
+          background: 'linear-gradient(135deg, rgba(30,20,38,0.9) 0%, rgba(20,16,30,0.9) 100%)',
+          border: '1px solid rgba(244,114,182,0.25)',
+          borderRadius: '12px',
+          padding: '20px',
+        }}
+        className="space-y-3 shadow-lg"
+      >
+        <div className="border-b border-slate-800/80 pb-3">
+          <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2 m-0">
+            <Mail size={16} className="text-rose-400" />
+            Automation Email Sender
+          </h3>
+          <p className="text-xs text-slate-400 m-0 mt-0.5">
+            The From address used by Email automation steps and scheduled runs.
+          </p>
+        </div>
+
+        {emailConfig && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-slate-400">Current sender:</span>
+            <code className="px-1.5 py-0.5 rounded bg-slate-950/70 border border-slate-800 text-slate-200">
+              {emailConfig.effectiveFrom}
+            </code>
+            <span
+              className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${
+                emailConfig.source === 'env'
+                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                  : emailConfig.source === 'config'
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                    : 'bg-slate-800/60 text-slate-400 border-slate-700'
+              }`}
+            >
+              {emailConfig.source === 'env'
+                ? 'environment'
+                : emailConfig.source === 'config'
+                  ? 'saved'
+                  : 'default'}
+            </span>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={emailFromInput}
+            onChange={(event) => {
+              setEmailFromInput(event.target.value);
+              setEmailConfigNotice('');
+            }}
+            disabled={emailConfig?.source === 'env' || savingEmailFrom}
+            placeholder="NEXUS <automation@yourdomain.com>"
+            className="flex-1 rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-200 outline-none focus:border-rose-400/60 disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => void handleSaveEmailFrom()}
+            disabled={savingEmailFrom || emailConfig?.source === 'env'}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/20 disabled:opacity-50"
+          >
+            {savingEmailFrom ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            Save sender
+          </button>
+        </div>
+
+        <p className="text-[11px] text-slate-500 m-0">
+          Use a bare address or a display name like <code>NEXUS &lt;automation@yourdomain.com&gt;</code>.
+          Leave empty to reset to the default test sender. The address must be verified in Resend.
+        </p>
+
+        {emailConfig?.source === 'env' && (
+          <p className="text-[11px] text-amber-300/90 m-0">
+            EMAIL_FROM is set in the environment, so it overrides the value saved here.
+          </p>
+        )}
+        {emailConfigError && (
+          <p className="text-[11px] text-rose-300 m-0">{emailConfigError}</p>
+        )}
+        {emailConfigNotice && (
+          <p className="text-[11px] text-emerald-300 m-0">{emailConfigNotice}</p>
+        )}
       </section>
 
       {/* Global Web Search API Section */}

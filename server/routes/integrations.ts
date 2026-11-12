@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import fs from 'node:fs';
+import { resolve } from 'node:path';
 import { getBackendApiKey } from '../apiCatalog.js';
 import { fetchWithSafeRedirects, readResponseBuffer, requirePublicUrl } from '../networkSafety.js';
 import { errorResponse } from '../shared.js';
@@ -8,6 +10,90 @@ export const integrationsRouter = Router();
 const MAX_WEBHOOK_BODY = 20000;
 const MAX_EMAIL_BODY = 50000;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SENDER_PATTERN = /^(?:(.{1,80}?)\s*<([^<>\s@]+@[^<>\s@]+\.[^<>\s@]+)>|([^<>\s@]+@[^<>\s@]+\.[^<>\s@]+))$/;
+const DEFAULT_EMAIL_FROM = 'NEXUS Automation <onboarding@resend.dev>';
+
+const DATA_DIR = resolve(process.cwd(), 'data');
+const INTEGRATION_CONFIG_FILE = resolve(DATA_DIR, 'integrations.json');
+
+interface IntegrationConfig {
+  emailFrom?: string;
+}
+
+let cachedConfig: IntegrationConfig | null = null;
+
+function loadIntegrationConfig(): IntegrationConfig {
+  if (cachedConfig) return cachedConfig;
+  try {
+    if (!fs.existsSync(INTEGRATION_CONFIG_FILE)) {
+      cachedConfig = {};
+      return cachedConfig;
+    }
+    const raw = JSON.parse(fs.readFileSync(INTEGRATION_CONFIG_FILE, 'utf8')) as unknown;
+    cachedConfig = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? (raw as IntegrationConfig)
+      : {};
+  } catch (err) {
+    console.warn('[Integrations] Failed to load config:', err);
+    cachedConfig = {};
+  }
+  return cachedConfig;
+}
+
+function saveIntegrationConfig(config: IntegrationConfig): void {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tempPath = `${INTEGRATION_CONFIG_FILE}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(config, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    fs.renameSync(tempPath, INTEGRATION_CONFIG_FILE);
+    cachedConfig = config;
+  } catch (err) {
+    console.error('[Integrations] Failed to save config:', err);
+    throw new Error('Could not save integration settings.');
+  }
+}
+
+/**
+ * Resolve the sender address. Environment variables take priority over the
+ * UI-saved value so deployment configuration remains authoritative.
+ */
+export function getEffectiveEmailFrom(): {
+  from: string;
+  source: 'env' | 'config' | 'default';
+} {
+  const envFrom = (process.env.EMAIL_FROM || process.env.RESEND_FROM || '').trim();
+  if (envFrom) return { from: envFrom, source: 'env' };
+  const saved = (loadIntegrationConfig().emailFrom || '').trim();
+  if (saved) return { from: saved, source: 'config' };
+  return { from: DEFAULT_EMAIL_FROM, source: 'default' };
+}
+
+function normalizeSender(value: unknown): { ok: true; value: string } | { ok: false; error: string } {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return { ok: true, value: '' };
+  if (raw.length > 160) return { ok: false, error: 'Sender address is too long (160 characters max).' };
+  if (/[\r\n]/.test(raw)) return { ok: false, error: 'Sender address cannot contain line breaks.' };
+
+  const match = raw.match(SENDER_PATTERN);
+  if (!match) {
+    return {
+      ok: false,
+      error: 'Use an email address like name@example.com or a display name like NEXUS <name@example.com>.',
+    };
+  }
+  const name = (match[1] || '').trim().replace(/^"|"$/g, '').trim();
+  const address = (match[2] || match[3] || '').trim().toLowerCase();
+  if (!EMAIL_PATTERN.test(address)) {
+    return { ok: false, error: 'Enter a valid sender email address.' };
+  }
+  return {
+    ok: true,
+    value: name ? `${name} <${address}>` : address,
+  };
+}
 
 function cleanText(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -121,10 +207,7 @@ integrationsRouter.post('/api/integrations/email', async (req, res) => {
       'Email is not configured. Add RESEND_API_KEY and EMAIL_FROM on the server.',
     );
   }
-  const from =
-    process.env.EMAIL_FROM ||
-    process.env.RESEND_FROM ||
-    'NEXUS Automation <onboarding@resend.dev>';
+  const from = getEffectiveEmailFrom().from;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -176,14 +259,57 @@ integrationsRouter.post('/api/integrations/email', async (req, res) => {
 });
 
 /**
+ * GET /api/integrations/email-config - Current sender configuration.
+ */
+integrationsRouter.get('/api/integrations/email-config', (_req, res) => {
+  const effective = getEffectiveEmailFrom();
+  res.json({
+    data: {
+      emailFrom: effective.source === 'config' ? effective.from : '',
+      effectiveFrom: effective.from,
+      source: effective.source,
+      defaultFrom: DEFAULT_EMAIL_FROM,
+    },
+  });
+});
+
+/**
+ * POST /api/integrations/email-config - Save the sender used for automation
+ * email. An empty value clears the saved sender and falls back to env/default.
+ */
+integrationsRouter.post('/api/integrations/email-config', (req, res) => {
+  const normalized = normalizeSender(req.body?.from);
+  if (!normalized.ok) return errorResponse(res, 400, normalized.error);
+  try {
+    const config = { ...loadIntegrationConfig(), emailFrom: normalized.value || undefined };
+    if (!normalized.value) delete config.emailFrom;
+    saveIntegrationConfig(config);
+    const effective = getEffectiveEmailFrom();
+    return res.json({
+      data: {
+        emailFrom: normalized.value,
+        effectiveFrom: effective.from,
+        source: effective.source,
+        defaultFrom: DEFAULT_EMAIL_FROM,
+      },
+    });
+  } catch (err) {
+    return errorResponse(res, 500, err instanceof Error ? err.message : 'Could not save sender address.');
+  }
+});
+
+/**
  * GET /api/integrations/status - Tells the UI whether delivery is configured.
  */
 integrationsRouter.get('/api/integrations/status', (_req, res) => {
+  const effective = getEffectiveEmailFrom();
   res.json({
     data: {
       webhook: true,
       email: Boolean(process.env.RESEND_API_KEY || getBackendApiKey('RESEND_API_KEY')),
-      emailFromConfigured: Boolean(process.env.EMAIL_FROM || process.env.RESEND_FROM),
+      emailFromConfigured: effective.source !== 'default',
+      emailFromSource: effective.source,
+      emailFrom: effective.from,
     },
   });
 });

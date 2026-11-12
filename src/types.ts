@@ -1883,6 +1883,15 @@ export interface IntegrationStatus {
   webhook: boolean;
   email: boolean;
   emailFromConfigured: boolean;
+  emailFromSource?: 'env' | 'config' | 'default';
+  emailFrom?: string;
+}
+
+export interface EmailConfig {
+  emailFrom: string;
+  effectiveFrom: string;
+  source: 'env' | 'config' | 'default';
+  defaultFrom: string;
 }
 
 export interface DocumentExtractionResult {
