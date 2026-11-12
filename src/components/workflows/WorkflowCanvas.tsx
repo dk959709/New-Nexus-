@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -56,6 +56,7 @@ import {
   X,
   Maximize2,
   Snowflake,
+  Box,
 } from 'lucide-react';
 
 export interface WorkflowCanvasProps {
@@ -1005,6 +1006,42 @@ export function WorkflowCanvas({
 }: WorkflowCanvasProps) {
   const [peekNodeId, setPeekNodeId] = useState<string | null>(null);
 
+  // ---- 3D perspective stage -------------------------------------------------
+  const [is3D, setIs3D] = useState(true);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const tiltFrameRef = useRef<number | null>(null);
+
+  const handleStagePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!is3D) return;
+      const el = stageRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const px = (e.clientX - rect.left) / rect.width - 0.5;
+      const py = (e.clientY - rect.top) / rect.height - 0.5;
+      if (tiltFrameRef.current !== null) cancelAnimationFrame(tiltFrameRef.current);
+      tiltFrameRef.current = requestAnimationFrame(() => {
+        el.style.setProperty('--wf-rx', `${(9 - py * 10).toFixed(2)}deg`);
+        el.style.setProperty('--wf-ry', `${(px * 13).toFixed(2)}deg`);
+      });
+    },
+    [is3D],
+  );
+
+  const resetStageTilt = useCallback(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    el.style.setProperty('--wf-rx', '9deg');
+    el.style.setProperty('--wf-ry', '0deg');
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (tiltFrameRef.current !== null) cancelAnimationFrame(tiltFrameRef.current);
+    };
+  }, []);
+
   const handleClosePeek = useCallback(() => {
     setPeekNodeId(null);
   }, []);
@@ -1140,42 +1177,68 @@ export function WorkflowCanvas({
   );
 
   return (
-    <div className="w-full h-full min-h-[540px] relative overflow-hidden bg-[#0b0c10] wf-quantum-grid">
+    <div
+      className={`w-full h-full min-h-[540px] relative overflow-hidden bg-[#0b0c10] ${
+        is3D ? 'wf-3d-scene' : 'wf-quantum-grid'
+      }`}
+    >
       {/* Ambient Quantum Radar Sweep Beam (Stitch Spec) */}
       <div className="wf-radar-beam" />
 
-      <ReactFlow
-        nodes={rfNodes}
-        edges={rfEdges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodeClick={handleNodeClick}
-        onPaneClick={handlePaneClick}
-        onNodeDragStop={handleNodeDragStop}
-        onConnect={onConnect}
-        onEdgeClick={handleEdgeClick}
-        fitView
-        fitViewOptions={{ padding: 0.25 }}
-        minZoom={0.2}
-        maxZoom={2}
-        proOptions={{ hideAttribution: true }}
+      {is3D && (
+        <>
+          <div className="wf-3d-horizon" aria-hidden="true" />
+          <div className="wf-3d-vignette" aria-hidden="true" />
+        </>
+      )}
+
+      <div
+        ref={stageRef}
+        className={`wf-3d-stage ${is3D ? 'is-3d' : ''}`}
+        onPointerMove={handleStagePointerMove}
+        onPointerLeave={resetStageTilt}
       >
-        <Background variant={BackgroundVariant.Dots} gap={28} size={1.2} color="#3b494b" />
-        <Controls className="!bg-[#1b1b1f]/95 !border !border-[#2a292e] !rounded-xl !overflow-hidden !shadow-2xl !backdrop-blur-xl [&>button]:!bg-transparent [&>button]:!border-b [&>button]:!border-[#2a292e] [&>button]:!text-[#b9cacb] hover:[&>button]:!bg-[#2a292e] hover:[&>button]:!text-[#49effd]" />
-        <div className="hidden md:block">
-          <MiniMap
-            nodeColor={(n) => {
-              const nodeData = n.data as NodeDataPayload | undefined;
-              if (nodeData?.status === 'running') return '#49effd';
-              if (nodeData?.status === 'done') return '#10b981';
-              if (nodeData?.status === 'error') return '#ffb4ab';
-              return '#3b494b';
-            }}
-            maskColor="rgba(11, 12, 16, 0.85)"
-            className="!bg-[#1b1b1f]/90 !border !border-[#2a292e] !rounded-xl overflow-hidden backdrop-blur-xl"
-          />
-        </div>
-      </ReactFlow>
+        {is3D && (
+          <>
+            <div className="wf-3d-floor" aria-hidden="true" />
+            <div className="wf-3d-depth-layer wf-3d-depth-near" aria-hidden="true" />
+            <div className="wf-3d-depth-layer wf-3d-depth-far" aria-hidden="true" />
+          </>
+        )}
+
+        <ReactFlow
+          nodes={rfNodes}
+          edges={rfEdges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodeClick={handleNodeClick}
+          onPaneClick={handlePaneClick}
+          onNodeDragStop={handleNodeDragStop}
+          onConnect={onConnect}
+          onEdgeClick={handleEdgeClick}
+          fitView
+          fitViewOptions={{ padding: 0.25 }}
+          minZoom={0.2}
+          maxZoom={2}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={28} size={1.2} color="#3b494b" />
+          <Controls className="!bg-[#1b1b1f]/95 !border !border-[#2a292e] !rounded-xl !overflow-hidden !shadow-2xl !backdrop-blur-xl [&>button]:!bg-transparent [&>button]:!border-b [&>button]:!border-[#2a292e] [&>button]:!text-[#b9cacb] hover:[&>button]:!bg-[#2a292e] hover:[&>button]:!text-[#49effd]" />
+          <div className="hidden md:block">
+            <MiniMap
+              nodeColor={(n) => {
+                const nodeData = n.data as NodeDataPayload | undefined;
+                if (nodeData?.status === 'running') return '#49effd';
+                if (nodeData?.status === 'done') return '#10b981';
+                if (nodeData?.status === 'error') return '#ffb4ab';
+                return '#3b494b';
+              }}
+              maskColor="rgba(11, 12, 16, 0.85)"
+              className="!bg-[#1b1b1f]/90 !border !border-[#2a292e] !rounded-xl overflow-hidden backdrop-blur-xl"
+            />
+          </div>
+        </ReactFlow>
+      </div>
 
       {/* Floating Canvas Quantum Telemetry HUD Bar (Stitch Inspired) */}
       <div className="nodrag nopan absolute bottom-4 left-4 z-10 flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#131317]/95 border border-[#3b494b]/60 shadow-[0_12px_32px_rgba(0,0,0,0.7),0_0_15px_rgba(0,240,255,0.12)] backdrop-blur-xl text-xs font-mono pointer-events-auto">
@@ -1211,6 +1274,20 @@ export function WorkflowCanvas({
 
       {/* Floating Tidy Action */}
       <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIs3D((v) => !v)}
+          aria-pressed={is3D}
+          className={`px-3 py-2 rounded-lg border font-mono text-[11px] font-bold uppercase tracking-wider backdrop-blur-xl transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 active:scale-95 ${
+            is3D
+              ? 'bg-[#49effd]/15 border-[#49effd]/60 text-[#49effd] shadow-[0_0_18px_rgba(73,239,253,0.35)]'
+              : 'bg-[#1b1b1f]/95 hover:bg-[#2a292e] border-[#3b494b]/60 hover:border-[#49effd]/45 text-[#e4e1e7]'
+          }`}
+          title={is3D ? 'Switch to flat 2D canvas' : 'Switch to 3D perspective canvas'}
+        >
+          <Box size={13} className={is3D ? 'text-[#49effd]' : 'text-[#b9cacb]'} />
+          <span>{is3D ? '3D' : '2D'}</span>
+        </button>
         <button
           type="button"
           onClick={onTidy}

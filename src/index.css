@@ -6018,6 +6018,152 @@ button:active .stitch-dice-icon {
   }
 }
 
+/* ============================================================
+   3D Perspective Workflow Stage
+   ============================================================ */
+.wf-3d-scene {
+  background:
+    radial-gradient(circle at 50% 12%, rgba(0, 240, 255, 0.1) 0%, transparent 55%),
+    radial-gradient(circle at 82% 78%, rgba(168, 85, 247, 0.1) 0%, transparent 58%),
+    linear-gradient(to bottom, #070a11 0%, #0b0c10 45%, #05070c 100%);
+  perspective: 1500px;
+  perspective-origin: 50% 42%;
+  touch-action: pan-x pan-y;
+}
+
+.wf-3d-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 38%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(73, 239, 253, 0.55) 30%,
+    rgba(168, 85, 247, 0.45) 70%,
+    transparent 100%
+  );
+  box-shadow: 0 0 26px rgba(73, 239, 253, 0.35);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.wf-3d-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 38%, rgba(3, 5, 9, 0.78) 100%);
+}
+
+.wf-3d-stage {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.wf-3d-stage.is-3d {
+  transform: rotateX(var(--wf-rx, 9deg)) rotateY(var(--wf-ry, 0deg)) scale(1.04);
+  transform-origin: 50% 45%;
+}
+
+/* Receding holographic floor plane */
+.wf-3d-floor {
+  position: absolute;
+  left: -40%;
+  right: -40%;
+  top: 55%;
+  height: 140%;
+  pointer-events: none;
+  transform-origin: 50% 0%;
+  transform: rotateX(90deg) translateZ(-30px);
+  background-image:
+    linear-gradient(to right, rgba(73, 239, 253, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(73, 239, 253, 0.16) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 72%);
+  mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 72%);
+  animation: wf3dFloorDrift 18s linear infinite;
+  opacity: 0.85;
+}
+
+/* Parallax depth dust layers */
+.wf-3d-depth-layer {
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(73, 239, 253, 0.5) 1px, transparent 1px);
+  background-size: 90px 90px;
+  opacity: 0.18;
+}
+
+.wf-3d-depth-near {
+  transform: translateZ(140px);
+  background-size: 130px 130px;
+  animation: wf3dDustDrift 42s linear infinite;
+}
+
+.wf-3d-depth-far {
+  transform: translateZ(-180px);
+  background-size: 60px 60px;
+  opacity: 0.12;
+  animation: wf3dDustDrift 66s linear infinite reverse;
+}
+
+/* Card depth treatment while in 3D mode */
+.wf-3d-stage.is-3d .react-flow__node .wf-cyber-card {
+  box-shadow:
+    0 26px 48px -18px rgba(0, 0, 0, 0.9),
+    0 10px 22px -12px rgba(0, 240, 255, 0.28);
+}
+
+.wf-3d-stage.is-3d .react-flow__node:hover .wf-cyber-card {
+  transform: translateY(-3px) scale(1.015);
+}
+
+.wf-3d-stage.is-3d .react-flow__edge-path {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
+}
+
+@keyframes wf3dFloorDrift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 0 72px, 0 72px;
+  }
+}
+
+@keyframes wf3dDustDrift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 240px 160px;
+  }
+}
+
+@media (max-width: 640px) {
+  .wf-3d-stage.is-3d {
+    transform: rotateX(6deg) rotateY(0deg) scale(1.03);
+  }
+  .wf-3d-floor {
+    background-size: 56px 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-3d-stage {
+    transition: none;
+  }
+  .wf-3d-floor,
+  .wf-3d-depth-layer {
+    animation: none;
+  }
+}
+
 /* Quantum Canvas Grid & Ambience */
 .wf-quantum-grid {
   background-color: #0b0c10;
