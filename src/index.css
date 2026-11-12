@@ -2190,6 +2190,385 @@
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+/* =========================================================
+   JARVIS 3D HOLOGRAPHIC DECK
+   ========================================================= */
+.jarvis-page-wrapper.jarvis-3d-on {
+  background-color: #05070c;
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% 0%, rgba(0, 240, 255, 0.09) 0%, transparent 62%),
+    radial-gradient(ellipse 60% 40% at 82% 78%, rgba(168, 85, 247, 0.09) 0%, transparent 60%),
+    linear-gradient(to bottom, #05070c 0%, #070a11 52%, #04060a 100%);
+}
+
+.j3d-deck {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  perspective: 1200px;
+  perspective-origin: 50% 30%;
+  z-index: 0;
+}
+
+.j3d-deck-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 55% 32% at 50% 18%, rgba(73, 239, 253, 0.16) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 26% at 50% 62%, rgba(168, 85, 247, 0.12) 0%, transparent 72%);
+}
+
+.j3d-deck-floor {
+  position: absolute;
+  left: -30%;
+  right: -30%;
+  bottom: -18%;
+  height: 72%;
+  transform-origin: 50% 0%;
+  transform: rotateX(72deg);
+  background-image:
+    linear-gradient(to right, rgba(73, 239, 253, 0.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(168, 85, 247, 0.11) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse 62% 70% at 50% 8%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(ellipse 62% 70% at 50% 8%, #000 0%, transparent 78%);
+  animation: j3dFloorDrift 22s linear infinite;
+  opacity: 0.9;
+}
+
+.j3d-deck-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 34%;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(73, 239, 253, 0.45) 26%,
+    rgba(168, 85, 247, 0.5) 58%,
+    rgba(73, 239, 253, 0.35) 78%,
+    transparent 100%
+  );
+  box-shadow: 0 0 34px 3px rgba(0, 240, 255, 0.22);
+  opacity: 0.65;
+}
+
+.j3d-deck-dust {
+  position: absolute;
+  inset: 0;
+}
+
+.j3d-deck-dust span {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: #7df4ff;
+  box-shadow: 0 0 8px rgba(73, 239, 253, 0.85);
+  opacity: 0.35;
+  animation: j3dDustFloat 16s linear infinite;
+}
+
+.j3d-deck-dust-a { left: 12%; top: 72%; animation-delay: 0s; }
+.j3d-deck-dust-b { left: 28%; top: 86%; animation-delay: 3s; background: #c084fc; box-shadow: 0 0 8px rgba(168, 85, 247, 0.85); }
+.j3d-deck-dust-c { left: 54%; top: 78%; animation-delay: 6s; }
+.j3d-deck-dust-d { left: 73%; top: 90%; animation-delay: 9s; background: #c084fc; box-shadow: 0 0 8px rgba(168, 85, 247, 0.85); }
+.j3d-deck-dust-e { left: 88%; top: 68%; animation-delay: 12s; }
+
+/* ---------- Cognitive mesh core panel ---------- */
+.j3d-core-panel {
+  position: relative;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(73, 239, 253, 0.18);
+  background:
+    linear-gradient(180deg, rgba(10, 14, 24, 0.92) 0%, rgba(6, 9, 15, 0.78) 100%);
+  box-shadow:
+    0 26px 54px -18px rgba(0, 0, 0, 0.9),
+    0 0 26px -6px rgba(0, 240, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+
+.j3d-core-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, rgba(73, 239, 253, 0.06) 0%, transparent 38%, transparent 62%, rgba(168, 85, 247, 0.06) 100%);
+}
+
+.j3d-core-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 2;
+}
+
+.j3d-core-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--j-text);
+}
+
+.j3d-core-meta {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--j-faint);
+}
+
+.j3d-core-toggle {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--j-muted);
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.j3d-core-toggle:hover {
+  color: var(--j-accent);
+  border-color: rgba(73, 239, 253, 0.45);
+  background: rgba(73, 239, 253, 0.08);
+}
+
+.j3d-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
+  flex-shrink: 0;
+}
+
+.j3d-live-dot.is-running {
+  background: var(--j-accent);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.9);
+  animation: j3dPing 1.4s ease-in-out infinite;
+}
+
+.j3d-core-stage {
+  position: relative;
+  height: clamp(190px, 26vh, 268px);
+  perspective: 1100px;
+  perspective-origin: 50% 45%;
+  overflow: hidden;
+}
+
+.j3d-core-floor {
+  position: absolute;
+  left: -15%;
+  right: -15%;
+  bottom: -55%;
+  height: 120%;
+  transform: rotateX(70deg);
+  transform-origin: 50% 0%;
+  background-image:
+    linear-gradient(to right, rgba(73, 239, 253, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(73, 239, 253, 0.16) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 65% at 50% 0%, #000 0%, transparent 76%);
+  mask-image: radial-gradient(ellipse 60% 65% at 50% 0%, #000 0%, transparent 76%);
+  animation: j3dFloorDrift 16s linear infinite;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.j3d-core-horizon {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 46%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(73, 239, 253, 0.35), rgba(168, 85, 247, 0.35), transparent);
+  box-shadow: 0 0 20px rgba(73, 239, 253, 0.25);
+  pointer-events: none;
+}
+
+.j3d-core-svg {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.j3d-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.j3d-ring-a ellipse {
+  animation: j3dDash 9s linear infinite;
+}
+
+.j3d-ring-b ellipse {
+  animation: j3dDash 6.5s linear infinite reverse;
+}
+
+.j3d-ring-c ellipse {
+  animation: j3dDash 14s linear infinite;
+  opacity: 0.7;
+}
+
+.j3d-beam {
+  animation: j3dDash 2.6s linear infinite;
+  filter: drop-shadow(0 0 3px rgba(73, 239, 253, 0.5));
+}
+
+.j3d-nucleus-wire {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: j3dSpin 26s linear infinite;
+}
+
+.j3d-nucleus-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: j3dPulseRing 3.4s ease-out infinite;
+  opacity: 0.5;
+}
+
+.j3d-node .j3d-node-halo {
+  fill: rgba(73, 239, 253, 0.12);
+  stroke: rgba(73, 239, 253, 0.35);
+  stroke-width: 1;
+  animation: j3dNodePulse 3.6s ease-in-out infinite;
+}
+
+.j3d-node .j3d-node-disc {
+  fill: #0b1520;
+  stroke: #49effd;
+  stroke-width: 1.3;
+  filter: drop-shadow(0 0 6px rgba(73, 239, 253, 0.55));
+}
+
+.j3d-node .j3d-node-label {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  fill: #bff9ff;
+}
+
+.j3d-node .j3d-node-name {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  fill: rgba(185, 202, 203, 0.72);
+}
+
+.j3d-node.is-offline .j3d-node-disc {
+  fill: #101216;
+  stroke: #3b494b;
+  filter: none;
+}
+
+.j3d-node.is-offline .j3d-node-halo {
+  fill: rgba(132, 148, 149, 0.06);
+  stroke: rgba(132, 148, 149, 0.22);
+  animation: none;
+}
+
+.j3d-node.is-offline .j3d-node-label,
+.j3d-node.is-offline .j3d-node-name {
+  fill: rgba(132, 148, 149, 0.6);
+}
+
+.j3d-dust span {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: #7df4ff;
+  box-shadow: 0 0 8px rgba(73, 239, 253, 0.8);
+  opacity: 0.3;
+  animation: j3dDustFloat 12s linear infinite;
+  pointer-events: none;
+}
+
+.j3d-dust-1 { left: 18%; top: 74%; }
+.j3d-dust-2 { left: 42%; top: 82%; animation-delay: 3s; background: #c084fc; }
+.j3d-dust-3 { left: 66%; top: 70%; animation-delay: 6s; }
+.j3d-dust-4 { left: 84%; top: 78%; animation-delay: 9s; background: #c084fc; }
+
+@keyframes j3dFloorDrift {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 64px, 0 64px; }
+}
+
+@keyframes j3dDash {
+  to { stroke-dashoffset: -120; }
+}
+
+@keyframes j3dSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes j3dPulseRing {
+  0% { transform: scale(1); opacity: 0.55; }
+  70% { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
+@keyframes j3dNodePulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@keyframes j3dDustFloat {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  15% { opacity: 0.45; }
+  60% { opacity: 0.35; }
+  100% { transform: translateY(-90px) translateX(18px); opacity: 0; }
+}
+
+@keyframes j3dPing {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+@media (max-width: 640px) {
+  .j3d-core-stage {
+    height: 190px;
+  }
+  .j3d-node .j3d-node-name {
+    display: none;
+  }
+  .j3d-deck-floor {
+    background-size: 48px 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .j3d-deck-floor,
+  .j3d-core-floor,
+  .j3d-ring ellipse,
+  .j3d-beam,
+  .j3d-nucleus-wire,
+  .j3d-nucleus-pulse,
+  .j3d-node .j3d-node-halo,
+  .j3d-dust span,
+  .j3d-deck-dust span,
+  .j3d-live-dot.is-running {
+    animation: none;
+  }
+}
+
 .jarvis-hud-card {
   position: relative;
   border-radius: 12px;

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { MessageSquare, Sliders, Palette, Info } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { MessageSquare, Sliders, Palette, Info, Box } from 'lucide-react';
 import { storage } from '@/lib/storage';
 import { JarvisChat } from '@/components/jarvis/JarvisChat';
 import { JarvisSettings } from '@/components/jarvis/JarvisSettings';
+import { Jarvis3DCore } from '@/components/jarvis/Jarvis3DCore';
 import {
   getSavedParallaxTheme,
   saveParallaxTheme,
@@ -18,6 +19,58 @@ export function JarvisPage() {
   const [config, setConfig] = useState<JarvisSystemConfig>(() => storage.getJarvisConfig());
   const [parallaxTheme, setParallaxTheme] = useState<ParallaxTheme>(() => getSavedParallaxTheme());
   const [showPipelineInfo, setShowPipelineInfo] = useState(false);
+  const [is3D, setIs3D] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('nexus-jarvis-3d');
+      return saved === null ? true : saved === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [isCoreCollapsed, setIsCoreCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nexus-jarvis-core-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggle3D = () => {
+    setIs3D((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('nexus-jarvis-3d', String(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const toggleCoreCollapsed = () => {
+    setIsCoreCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('nexus-jarvis-core-collapsed', String(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const coreAgents = useMemo(() => {
+    const configured = config?.agents ? Object.values(config.agents) : [];
+    if (configured.length === 0) return [];
+    return configured
+      .filter((agent) => Boolean(agent?.name))
+      .slice(0, 10)
+      .map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        enabled: Boolean(agent.enabled),
+      }));
+  }, [config]);
 
   // Keep state synchronized with storage whenever switching views or when storage updates
   useEffect(() => {
@@ -68,9 +121,27 @@ export function JarvisPage() {
     <div
       id="jarvis-page-wrapper"
       data-theme={parallaxTheme}
-      className={`jarvis-page-wrapper min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-8 py-2 overflow-x-clip transition-colors duration-200 ${wrapperThemeClass}`}
+      data-3d={is3D ? 'true' : 'false'}
+      className={`jarvis-page-wrapper min-h-screen relative -mx-4 sm:-mx-8 md:-mx-12 -my-8 px-3 sm:px-6 lg:px-8 py-2 overflow-x-clip transition-colors duration-200 ${wrapperThemeClass} ${
+        is3D ? 'jarvis-3d-on' : ''
+      }`}
     >
-      <div className="main-content-flow w-full max-w-[960px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col pt-1 pb-6">
+      {is3D && (
+        <div className="j3d-deck" aria-hidden="true">
+          <div className="j3d-deck-glow" />
+          <div className="j3d-deck-floor" />
+          <div className="j3d-deck-horizon" />
+          <div className="j3d-deck-dust">
+            <span className="j3d-deck-dust-a" />
+            <span className="j3d-deck-dust-b" />
+            <span className="j3d-deck-dust-c" />
+            <span className="j3d-deck-dust-d" />
+            <span className="j3d-deck-dust-e" />
+          </div>
+        </div>
+      )}
+
+      <div className="main-content-flow relative z-10 w-full max-w-[960px] mx-auto min-h-[calc(100vh-1.5rem)] flex flex-col pt-1 pb-6">
         {/* Stitch-Style Page Header (No fixed header, no bottom nav) */}
         <header className="jarvis-page-header flex flex-col gap-1.5 pt-1 pb-2 mb-3 border-b border-white/[0.06]">
           {/* Row 1: JARVIS Title + 10-AGENT COGNITIVE MESH Pill | Right: Info + Palette */}
@@ -138,6 +209,21 @@ export function JarvisPage() {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={toggle3D}
+                aria-pressed={is3D}
+                title={is3D ? 'Switch to flat console' : 'Switch to 3D holographic deck'}
+                aria-label="Toggle 3D holographic deck"
+                className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                  is3D
+                    ? 'bg-[var(--j-accent)] text-[#002022] shadow-[0_0_14px_rgba(0,240,255,0.55)]'
+                    : 'bg-[var(--j-low)] text-[var(--j-muted)] hover:text-[var(--j-text)] hover:bg-[var(--j-high)]'
+                }`}
+              >
+                <Box size={14} strokeWidth={2} />
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowPipelineInfo((prev) => !prev)}
@@ -215,6 +301,14 @@ export function JarvisPage() {
         </header>
 
         {/* Main Tab Content */}
+        {is3D && activeTab === 'chat' && (
+          <Jarvis3DCore
+            agents={coreAgents}
+            compact={isCoreCollapsed}
+            onToggleCompact={toggleCoreCollapsed}
+          />
+        )}
+
         {activeTab === 'chat' ? (
           <JarvisChat
             config={config}
