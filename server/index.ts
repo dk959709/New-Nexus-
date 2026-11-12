@@ -3222,14 +3222,21 @@ async function processAiChatInternal(
       lower.includes('who won') ||
       lower.includes('release date'));
 
-  const shouldSearchWeb = !isWebSearchExplicitlyDisabled && (isForcedWebSearch || isTimeSensitive);
+  const isAutomationPlannerRequest = Boolean(
+    skillsText && skillsText.includes('NEXUS Automation Planner'),
+  );
+
+  const shouldSearchWeb =
+    !isAutomationPlannerRequest &&
+    !isWebSearchExplicitlyDisabled &&
+    (isForcedWebSearch || isTimeSensitive);
 
   // Context-aware query reformulation for follow-up conversational queries
   let effectiveSearchQuery = trimmed;
   let isQueryReformulated = false;
   let queryReformulationReason = '';
 
-  if (shouldSearchWeb || isKnowledgeQuery) {
+  if (!isAutomationPlannerRequest && (shouldSearchWeb || isKnowledgeQuery)) {
     if (history && history.length > 0) {
       const reformulation = await reformulateSearchQueryWithContext(trimmed, history, providerConfig);
       effectiveSearchQuery = reformulation.query;
@@ -3342,7 +3349,7 @@ async function processAiChatInternal(
     } catch {
       // Non-blocking
     }
-  } else if (isKnowledgeQuery) {
+  } else if (!isAutomationPlannerRequest && isKnowledgeQuery) {
     try {
       const wikiSummary = await fetchWikipediaSummary(effectiveSearchQuery);
       if (wikiSummary && wikiSummary.extract) {
@@ -3366,38 +3373,40 @@ async function processAiChatInternal(
   }
 
   const isDeviceQuery =
-    lower.includes('phone battery') ||
-    lower.includes('my battery') ||
-    lower.includes('android battery') ||
-    lower.includes('device battery') ||
-    lower.includes('phone storage') ||
-    lower.includes('device storage') ||
-    lower.includes('android storage') ||
-    lower.includes('phone online') ||
-    lower.includes('is my phone') ||
-    lower.includes('is my android') ||
-    lower.includes('connected device') ||
-    lower.includes('nexus device') ||
-    lower.includes('my devices') ||
-    lower.includes('check my phone') ||
-    lower.includes('phone status') ||
-    lower.includes('device status');
+    !isAutomationPlannerRequest &&
+    (lower.includes('phone battery') ||
+      lower.includes('my battery') ||
+      lower.includes('android battery') ||
+      lower.includes('device battery') ||
+      lower.includes('phone storage') ||
+      lower.includes('device storage') ||
+      lower.includes('android storage') ||
+      lower.includes('phone online') ||
+      lower.includes('is my phone') ||
+      lower.includes('is my android') ||
+      lower.includes('connected device') ||
+      lower.includes('nexus device') ||
+      lower.includes('my devices') ||
+      lower.includes('check my phone') ||
+      lower.includes('phone status') ||
+      lower.includes('device status'));
 
   const isTvQuery =
-    lower.includes('tv volume') ||
-    lower.includes('my tv') ||
-    lower.includes('smart tv') ||
-    lower.includes('google tv') ||
-    lower.includes('android tv') ||
-    lower.includes('webos') ||
-    lower.includes('tv status') ||
-    lower.includes('is tv on') ||
-    lower.includes('is my tv') ||
-    lower.includes('tv power') ||
-    lower.includes('tv mute') ||
-    lower.includes('turn down tv') ||
-    lower.includes('turn up tv') ||
-    lower.includes('mute tv');
+    !isAutomationPlannerRequest &&
+    (lower.includes('tv volume') ||
+      lower.includes('my tv') ||
+      lower.includes('smart tv') ||
+      lower.includes('google tv') ||
+      lower.includes('android tv') ||
+      lower.includes('webos') ||
+      lower.includes('tv status') ||
+      lower.includes('is tv on') ||
+      lower.includes('is my tv') ||
+      lower.includes('tv power') ||
+      lower.includes('tv mute') ||
+      lower.includes('turn down tv') ||
+      lower.includes('turn up tv') ||
+      lower.includes('mute tv'));
 
   if (isDeviceQuery) {
     const devContext = getConnectedDevicesSummary();
@@ -3463,12 +3472,16 @@ async function processAiChatInternal(
     trimmed.includes('NEXUS Live AI Canvas Studio') ||
     trimmed.includes('Output format requirement: Return ONLY') ||
     trimmed.includes('Output format requirement: Build a complete');
-  const styleInstruction = isCanvasStudioRequest
+  const styleInstruction = isAutomationPlannerRequest
+    ? 'Return ONLY a valid JSON object matching the NEXUS Automation Planner schema with no markdown fences and no commentary.'
+    : isCanvasStudioRequest
     ? 'Return complete, self-contained, production-ready code following the user output format instructions with no conversational filler.'
     : isScholarRequest
     ? 'Provide direct, insightful, factual, comprehensive, and detailed academic answers.'
     : 'Provide direct, insightful, factual, and concise answers.';
-  const identityLine = isCanvasStudioRequest
+  const identityLine = isAutomationPlannerRequest
+    ? skillsText!.trim()
+    : isCanvasStudioRequest
     ? `You are the NEXUS Live AI Canvas Studio code synthesis engine powered by ${providerConfig?.name || 'AI'} (${modelId || 'AI'}). ${styleInstruction}`
     : modelId
     ? `You are NEXUS AI, powered by ${providerConfig?.name || 'AI'}. The model running this chat right now is "${modelId}". If the user asks which model you are, answer with exactly this model ID. Do not claim any other model name, size, or parameter count unless it is written in this system prompt. Ignore any model names mentioned in earlier messages of this chat, because the user may have switched models. If you are not sure, say you are not sure. The user can see your reasoning in a "Thinking" box above your answer, so if they ask about your thinking process, tell them to open that box. ${styleInstruction}`
@@ -3476,10 +3489,10 @@ async function processAiChatInternal(
 
   const systemInstructions: string[] = [
     identityLine,
-    `Current Real-Time Reference: ${currentDateTimeStr}.${localTimeRule} You have active real-time web search capabilities.`,
+    `Current Real-Time Reference: ${currentDateTimeStr}.${localTimeRule}`,
   ];
 
-  if (permanentMemories && permanentMemories.length > 0) {
+  if (!isAutomationPlannerRequest && permanentMemories && permanentMemories.length > 0) {
     const validMemories = permanentMemories.map((m) => m.trim()).filter(Boolean);
     if (validMemories.length > 0) {
       systemInstructions.push(
@@ -3490,7 +3503,7 @@ async function processAiChatInternal(
     }
   }
 
-  if (skillsText && skillsText.trim()) {
+  if (!isAutomationPlannerRequest && skillsText && skillsText.trim()) {
     systemInstructions.push(
       `[Active Skills — instructions the user installed]\n` +
         skillsText +
@@ -3498,12 +3511,12 @@ async function processAiChatInternal(
     );
   }
 
-  if (memory) {
+  if (!isAutomationPlannerRequest && memory) {
     systemInstructions.push(`[User Context / Saved Memory]:\n${memory.slice(0, 300)}`);
   }
 
   const effectiveLang = (language || '').trim();
-  if (effectiveLang && effectiveLang.toLowerCase() !== 'english') {
+  if (!isAutomationPlannerRequest && effectiveLang && effectiveLang.toLowerCase() !== 'english') {
     systemInstructions.push(
       `[Language Setting]: Respond in ${effectiveLang}. If the input refers to a country or is informally phrased, infer the intended language (e.g. 'Russia' means Russian, 'Japan' means Japanese). Complete all explanations and answers fluently in that language.`,
     );
@@ -3586,7 +3599,7 @@ async function processAiChatInternal(
 
   const aiResult = await executeAiWithProviderOrFallback({
     messages,
-    temperature: 0.4,
+    temperature: isAutomationPlannerRequest ? 0.2 : 0.4,
     maxTokens: effectiveMaxTokens,
     providerConfig: isScholarRequest && providerConfig
       ? {
@@ -3637,6 +3650,11 @@ async function processAiChatInternal(
     }
     const combined = parts.join(': ');
     return combined.slice(0, 160).trim() || undefined;
+  }
+
+  if (isAutomationPlannerRequest) {
+    const reason = sanitizeFallbackReason(aiResult?.lastError, aiResult?.lastStatus);
+    throw new Error(reason ? `AI provider unavailable (${reason})` : 'AI provider unavailable for automation planning.');
   }
 
   // Graceful response when AI provider is unreachable or API key missing

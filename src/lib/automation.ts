@@ -292,11 +292,65 @@ export function normalizeWorkflow(raw: unknown, fallbackName = 'Automation'): {
     });
   });
 
+  // Ensure exactly one Input node so plans that omit an explicit Input node still validate cleanly
+  const inputNodes = nodes.filter((node) => node.type === 'input');
+  if (inputNodes.length === 0 && nodes.length > 0 && nodes.length < AUTOMATION_MAX_NODES) {
+    let inputId = 'node-input';
+    while (usedIds.has(inputId)) inputId = `${inputId}-${nodes.length + 1}`;
+    usedIds.add(inputId);
+    let inputLabel = 'Input';
+    let suffix = 2;
+    while (usedLabels.has(inputLabel.toLowerCase())) {
+      inputLabel = `Input ${suffix}`;
+      suffix += 1;
+    }
+    usedLabels.add(inputLabel.toLowerCase());
+    const firstNode = nodes[0];
+    nodes.unshift({
+      id: inputId,
+      type: 'input',
+      label: inputLabel,
+      x: 60,
+      y: 160,
+      settings: { text: '{{topic}}' },
+    });
+    if (firstNode) {
+      let edgeId = 'edge-input';
+      while (usedEdgeIds.has(edgeId)) edgeId = `${edgeId}-${edges.length + 1}`;
+      usedEdgeIds.add(edgeId);
+      edges.unshift({ id: edgeId, from: inputId, to: firstNode.id });
+    }
+    warnings.push('Added an Input step automatically.');
+  } else if (inputNodes.length > 1) {
+    inputNodes.slice(1).forEach((extraInput) => {
+      extraInput.type = 'ai';
+      extraInput.settings = normalizeSettings(
+        'ai',
+        { role: 'general', prompt: extraInput.settings.text || 'Process the input and return a clear result.', maxTokens: '1200' },
+        extraInput.label,
+      );
+    });
+    warnings.push('Merged extra Input steps into processing steps.');
+  }
+
   if (edges.length === 0 && nodes.length > 1) {
     warnings.push('The plan had no connections; steps were linked in sequence.');
     for (let i = 0; i < nodes.length - 1; i += 1) {
       edges.push({ id: `edge-${i + 1}`, from: nodes[i].id, to: nodes[i + 1].id });
     }
+  }
+
+  // Ensure outgoing edges from conditional ('if') steps always have a valid 'yes' or 'no' branch
+  const ifNodeIds = new Set(nodes.filter((node) => node.type === 'if').map((node) => node.id));
+  if (ifNodeIds.size > 0) {
+    const outgoingCountByIf = new Map<string, number>();
+    edges.forEach((edge) => {
+      if (ifNodeIds.has(edge.from) && !edge.branch) {
+        const count = outgoingCountByIf.get(edge.from) || 0;
+        edge.branch = count === 0 ? 'yes' : 'no';
+        outgoingCountByIf.set(edge.from, count + 1);
+      }
+    });
   }
 
   const workflow: Workflow = {

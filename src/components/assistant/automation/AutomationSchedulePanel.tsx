@@ -181,12 +181,12 @@ export function AutomationSchedulePanel({
   };
 
   const handleDelete = async (schedule: PublicAutomationSchedule) => {
-    if (!window.confirm(`Delete schedule "${schedule.name}"?`)) return;
     setBusyId(schedule.id);
     setError('');
     try {
       await api.deleteAutomationSchedule(schedule.id);
       setSchedules((prev) => prev.filter((item) => item.id !== schedule.id));
+      onNotice?.(`Deleted schedule "${schedule.name}".`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete schedule.');
     } finally {

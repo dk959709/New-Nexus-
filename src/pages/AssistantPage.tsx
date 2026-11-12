@@ -2141,6 +2141,11 @@ export function AssistantPage() {
   const activeTutorSession = tutorSessions[activeSessionId] ?? null;
   const activeAutomationDraft = automationDrafts[activeSessionId] ?? null;
   const automationDraftsRef = useRef<Record<string, AutomationDraft>>(automationDrafts);
+  const activeSessionIdRef = useRef<string>(activeSessionId);
+
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
     automationDraftsRef.current = automationDrafts;
@@ -3666,9 +3671,12 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   };
 
   const persistAutomationDraft = (draft: AutomationDraft) => {
+    const targetSessionId = activeSessionIdRef.current || activeSessionId || draft.sessionId;
+    const normalizedDraft: AutomationDraft =
+      draft.sessionId === targetSessionId ? draft : { ...draft, sessionId: targetSessionId };
     const next = capAutomationDrafts({
       ...automationDraftsRef.current,
-      [draft.sessionId]: draft,
+      [targetSessionId]: normalizedDraft,
     });
     automationDraftsRef.current = next;
     setAutomationDrafts(next);
@@ -3678,6 +3686,9 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
   const discardAutomationDraft = () => {
     const next = { ...automationDraftsRef.current };
     delete next[activeSessionId];
+    if (activeSessionIdRef.current) {
+      delete next[activeSessionIdRef.current];
+    }
     automationDraftsRef.current = next;
     setAutomationDrafts(next);
     storage.saveAutomationDrafts(next);
@@ -3696,8 +3707,10 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
       setMessages((current) => [...current, { role: 'user', content: goal }]);
     }
     try {
-      const result = await createAutomationPlan(goal, attachmentText);
-      const draft = createAutomationDraft(activeSessionId, goal, result.plan);
+      const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
+      const result = await createAutomationPlan(goal, attachmentText, sessionProvider);
+      const targetSessionId = activeSessionIdRef.current || activeSessionId;
+      const draft = createAutomationDraft(targetSessionId, goal, result.plan);
       persistAutomationDraft(draft);
       const content = result.usedFallback
         ? `I built a starter automation with ${draft.workflow.nodes.length} steps because the AI plan could not be validated${result.error ? `: ${result.error}` : '.'} Review it below, then run when ready.`
@@ -5368,8 +5381,22 @@ Example: [{"label":"How does X handle Y at scale?","prompt":"How does X handle Y
           activeModelId,
         );
         if (savedId && savedId !== activeSessionId) {
+          const previousSessionId = activeSessionId;
+          activeSessionIdRef.current = savedId;
           setActiveSessionId(savedId);
           saveActiveSessionId(savedId);
+          const existingDraft = automationDraftsRef.current[previousSessionId];
+          if (existingDraft) {
+            const migratedDraft: AutomationDraft = { ...existingDraft, sessionId: savedId };
+            const nextDrafts = capAutomationDrafts({
+              ...automationDraftsRef.current,
+              [savedId]: migratedDraft,
+            });
+            delete nextDrafts[previousSessionId];
+            automationDraftsRef.current = nextDrafts;
+            setAutomationDrafts(nextDrafts);
+            storage.saveAutomationDrafts(nextDrafts);
+          }
           try {
             localStorage.setItem(
               CHAT_KEY,
@@ -5740,9 +5767,11 @@ I don't see that on the page.`;
     // Automation Studio (goal -> plan -> reviewed run)
     if (automationEnabled) {
       try {
-        const existing = automationDraftsRef.current[activeSessionId];
+        const currentSessionId = activeSessionIdRef.current || activeSessionId;
+        const existing = automationDraftsRef.current[currentSessionId] ?? automationDraftsRef.current[activeSessionId];
         if (existing) {
-          const plan = await editAutomationPlan(existing, message);
+          const sessionProvider = storage.getProviderForSession(activeProviderId, activeModelId);
+          const plan = await editAutomationPlan(existing, message, sessionProvider);
           const next = updateAutomationDraft(existing, plan, 'Chat edit');
           const changes = diffWorkflows(existing.workflow, next.workflow);
           persistAutomationDraft(next);
@@ -8876,13 +8905,14 @@ I don't see that on the page.
             />
           )}
 
-          {/* Automation Studio Active Card */}
-          {automationEnabled && (
+          {/* Automation Studio Active Card (shown at top when on welcome screen) */}
+          {automationEnabled && isOnlyWelcome && (
             <AutomationStudioCard
               theme={theme}
               sessionId={activeSessionId}
               draft={activeAutomationDraft}
               generating={automationGenerating}
+              providerConfig={storage.getProviderForSession(activeProviderId, activeModelId)}
               onGenerate={(goal) => {
                 void handleAutomationGenerate(goal, undefined, true);
               }}
@@ -10876,6 +10906,26 @@ I don't see that on the page.
           {error && (
             <div className="my-2">
               <ErrorMessage message={error} />
+            </div>
+          )}
+
+          {/* Automation Studio Active Card (shown below messages when conversation is active so "Review the steps and inputs below" is directly visible) */}
+          {automationEnabled && !isOnlyWelcome && (
+            <div className="my-3">
+              <AutomationStudioCard
+                theme={theme}
+                sessionId={activeSessionId}
+                draft={activeAutomationDraft}
+                generating={automationGenerating}
+                providerConfig={storage.getProviderForSession(activeProviderId, activeModelId)}
+                onGenerate={(goal) => {
+                  void handleAutomationGenerate(goal, undefined, true);
+                }}
+                onDraftChange={persistAutomationDraft}
+                onDiscard={discardAutomationDraft}
+                onDisable={toggleAutomation}
+                onOpenWorkflows={(workflowId) => navigate(`/workflows?workflow=${encodeURIComponent(workflowId)}`)}
+              />
             </div>
           )}
 

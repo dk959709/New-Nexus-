@@ -1,5 +1,6 @@
 import { api } from '@/services/api';
-import type { AutomationDraft, Workflow, WorkflowNode } from '@/types';
+import { storage } from '@/lib/storage';
+import type { AIProviderConfig, AutomationDraft, Workflow, WorkflowNode } from '@/types';
 import {
   buildAutomationCreateMessage,
   buildAutomationEditMessage,
@@ -23,8 +24,12 @@ export interface AutomationPlanResponse {
   error?: string;
 }
 
-async function callPlanner(message: string): Promise<string> {
-  const response = await api.aiChat(message, [], '', undefined, false, {
+async function callPlanner(
+  message: string,
+  providerConfig?: AIProviderConfig | null,
+): Promise<string> {
+  const effectiveProvider = providerConfig ?? storage.getActiveAIProvider();
+  const response = await api.aiChat(message, [], '', effectiveProvider, false, {
     skillsText: buildAutomationPlannerPrompt(),
     maxTokens: 4000,
     timeoutMs: 120000,
@@ -50,6 +55,7 @@ function ensureWorkflowId(plan: AutomationPlan, workflowId: string): AutomationP
 export async function createAutomationPlan(
   goal: string,
   attachmentText?: string,
+  providerConfig?: AIProviderConfig | null,
 ): Promise<AutomationPlanResponse> {
   const cleanGoal = goal.trim();
   if (!cleanGoal) throw new AutomationPlannerError('Describe what you want to automate first.');
@@ -58,7 +64,10 @@ export async function createAutomationPlan(
   let lastError = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const answer = await callPlanner(attempt === 0 ? message : withRepairHint(message, lastError));
+      const answer = await callPlanner(
+        attempt === 0 ? message : withRepairHint(message, lastError),
+        providerConfig,
+      );
       const parsed = parseAutomationPlan(answer, cleanGoal);
       if (parsed.ok && parsed.plan) {
         return { plan: parsed.plan, usedFallback: false };
@@ -76,6 +85,7 @@ export async function createAutomationPlan(
 export async function editAutomationPlan(
   draft: AutomationDraft,
   instruction: string,
+  providerConfig?: AIProviderConfig | null,
 ): Promise<AutomationPlan> {
   const cleanInstruction = instruction.trim();
   if (!cleanInstruction) throw new AutomationPlannerError('Describe the change you want.');
@@ -84,7 +94,10 @@ export async function editAutomationPlan(
   let lastError = '';
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const answer = await callPlanner(attempt === 0 ? message : withRepairHint(message, lastError));
+      const answer = await callPlanner(
+        attempt === 0 ? message : withRepairHint(message, lastError),
+        providerConfig,
+      );
       const parsed = parseAutomationPlan(answer, draft.goal);
       if (parsed.ok && parsed.plan) {
         return ensureWorkflowId(parsed.plan, draft.workflow.id);
@@ -102,13 +115,17 @@ export async function repairAutomationPlan(
   failedNode: WorkflowNode | null,
   error: string,
   outputSummary?: string,
+  providerConfig?: AIProviderConfig | null,
 ): Promise<AutomationPlan> {
   const message = buildAutomationRepairMessage(workflow, failedNode, error, outputSummary);
   let lastError = '';
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const answer = await callPlanner(attempt === 0 ? message : withRepairHint(message, lastError));
+      const answer = await callPlanner(
+        attempt === 0 ? message : withRepairHint(message, lastError),
+        providerConfig,
+      );
       const parsed = parseAutomationPlan(answer, workflow.description || workflow.name);
       if (parsed.ok && parsed.plan) {
         return ensureWorkflowId(parsed.plan, workflow.id);

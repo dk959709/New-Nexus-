@@ -31,6 +31,11 @@ import {
   Wand2,
   Orbit,
   Zap,
+  Users,
+  Workflow,
+  GraduationCap,
+  Swords,
+  Code2,
 } from 'lucide-react';
 import { copyToClipboard } from '@/lib/clipboard';
 import { playTapSound } from '@/lib/audio';
@@ -50,16 +55,19 @@ export function HelpSettings() {
   // Section 1: Overview
   const overviewText = `### 1. Overview — What NEXUS Is & Main Features
 
-**NEXUS Intelligence** is an enterprise-grade multi-agent autonomous AI workstation, neural research lab, and real-time telemetry matrix. At its core, NEXUS coordinates specialized artificial intelligence agents through the **JARVIS Autonomous Multi-Agent Cognitive Matrix**, bridging high-level reasoning with live web groundings, encyclopedic knowledge graphs, on-device vector document vaults (RAG), hardware controls, and multi-provider language models.
+**NEXUS Intelligence** is an enterprise-grade multi-agent autonomous AI workstation, neural research lab, visual workflow automation studio, and real-time telemetry matrix. At its core, NEXUS coordinates specialized artificial intelligence agents through the **JARVIS Autonomous Multi-Agent Cognitive Matrix**, **Parallax 20-Agent Swarm Arena**, and **AI Assistant Tactical Units**, bridging high-level reasoning with live web groundings, academic scholar engines, encyclopedic knowledge graphs, on-device vector document vaults (RAG), hardware controls, and multi-provider language models.
 
 #### Key Platform Capabilities:
-- **JARVIS Multi-Agent Matrix**: Sequential and parallel cognitive pipelines uniting 10+ specialized agents (Planning, Research, Fact-Checking, Strategic Advisory, Audit Review, Final Synthesis, System Architecture, Data Analysis, Media Discovery, and Fast/Online Coding) with full source attribution.
+- **JARVIS Multi-Agent Matrix (\`/\`)**: Sequential and parallel cognitive pipelines uniting 10+ specialized agents (Planning, Research, Fact-Checking, Strategic Advisory, Audit Review, Final Synthesis, System Architecture, Data Analysis, Media Discovery, and Fast/Online Coding) plus the 5-node Dynamic Specialist Pipeline ("New Agent") with full source attribution.
+- **Parallax 20-Agent Swarm & Genesis Arena (\`/parallax\`)**: Up to 20 autonomous AI agents deliberating across 3 rounds with configurable Swarm Size, Genesis Dynamic Architect Mode, 8 Debate Formats (Default, Genesis, Courtroom, Red vs Blue, Senate, VC Pitch, Sci-Fi, News), Devil's Advocate injection, human-in-the-loop turn injection, and neural voice synthesis.
+- **AI Assistant, Tutor Mode, Commander Unit & Live Artifact Canvas (\`/assistant\`)**: Direct conversational companion featuring an interactive Socratic **Tutor Mode** (Beginner/Intermediate/Advanced, Explain → Example → Practice → Quiz), a 4-stage **Commander Tactical Unit** (Commander + Agent Alpha + Agent Beta + Master Synthesizer), inline **Swarm Live**, **Scholar Search** (OpenAlex, Semantic Scholar, NASA ADS, arXiv), and a side-by-side **Live Artifact Canvas** sandbox for HTML/CSS/JS/React/SVG execution.
+- **Multi Chat & Advanced Deliberation Lab (\`/multichat\`)**: 3-persona sequential deliberation (NOVA, ORBIT, COSMOS) upgraded with Dialogue Modes (Harmony, Debate, Parallel, Relay), 5 Roleplay Scenarios, 4 Guest Specialists (CFO, Cyber, UX, Legal), Alignment Radar, Decision Matrix, Fact Matrix, Stress Test Pivot, Study Deck (Flashcards & Quiz), Cherry-Pick Mixer, Hot Seat, and Podcast Script generator.
+- **Visual Workflows Studio (\`/workflows\`)**: Node-based visual automation canvas connecting Input, Web Search, Web Fetch, Scholar Search, AI Prompt, Image Generation, Weather, NASA Space, and Conditional IF/ELSE branching nodes with node freezing, mock outputs, and execution history.
+- **Custom AI Skills System (\`Settings > Skills\`)**: Import from GitHub or author up to 5 custom Markdown/instruction skills (up to 3 active simultaneously, 24,000 chars per skill) injected into Assistant, JARVIS, and Multi Chat personas.
 - **Multi-Provider Neural Backbone**: Native configuration support for 10+ major AI providers including OpenAI, Anthropic Claude, Google Gemini, Groq (Llama 3), Mistral, Perplexity, OpenRouter, Cloudflare Workers AI, and custom OpenAI-compatible endpoints with automated runtime failover.
-- **Real-Time Multimodal Web Retrieval**: High-speed live search over Tavily, resilient 3-tier news fallback chains, Wikipedia REST extracts, Wikidata knowledge graphs, and Pixabay visual assets.
-- **On-Device Document Library & Semantic Vector RAG**: Secure, privacy-first local IndexedDB vector vault supporting PDF, DOCX, TXT, CSV, MD, JSON, and pasted text with semantic chunking, cosine similarity search, custom renaming, in-place text editing with instant re-indexing, and automated JARVIS synthesis grounding.
+- **On-Device Document Library & Semantic Vector RAG**: Privacy-first local IndexedDB vector vault supporting PDF, DOCX, TXT, CSV, MD, JSON, and pasted text with semantic chunking, cosine similarity search, custom renaming, in-place text editing with instant re-indexing, and automated synthesis grounding.
 - **Hybrid Credential Architecture**: Seamless two-tier credential resolution combining container-level host environment variables (Render) with an encrypted AES-256 local vault (\`data/api_catalog.json\`).
-- **Telemetry & Peripheral Hardware Bridges**: Real-time atmospheric weather tracking (OpenWeatherMap), NASA deep space intelligence (APOD & Near-Earth Object Asteroid radar), ADB-over-Network Smart TV remote controller, and autonomous Telegram Bot synchronization.
-- **Diagnostic Transparency & Export Engine**: Real-time streaming diagnostic logs, interactive SVG system diagrams, tabular Recharts analytics, and single-click Markdown / rich HTML clipboard exports.`;
+- **Telemetry & Peripheral Hardware Bridges**: Real-time atmospheric weather tracking (OpenWeatherMap), NASA deep space intelligence (APOD & Near-Earth Object Asteroid radar), ADB-over-Network Smart TV remote controller, and autonomous Telegram Bot synchronization.`;
 
   // Section 2: JARVIS Agent Pipeline
   const pipelineText = `### 2. JARVIS Agent Pipeline — Roles & Autonomous Workflows
@@ -238,73 +246,76 @@ NEXUS uses a strict security hierarchy to resolve API credentials at runtime:
   // Section 6: Theme & Customization
   const themeCustomizationText = `### 6. Theme, Customization & Audio Engine
 
-NEXUS is designed for immersive, tactile research with visual, auditory, and archival customization:
+NEXUS is designed for immersive, tactile research with visual, auditory, and archival customization across the entire platform:
 
-#### A. JARVIS Synthesis Theme Toggle
-- Located on JARVIS chat synthesis headers and saved report cards (sparkle icon).
-- **Tactical Cyan Theme**: Dark obsidian background with vibrant cyan borders, holographic status lights, and neon accents designed for tactical research and telemetry.
-- **OLED Deep Black Theme**: High-contrast, pure black minimal aesthetic (#000000) engineered for OLED screens, battery conservation, and reduced eye strain during extended night sessions.
+#### A. 3 Global Visual Themes (Minimal, Classic, Full Dark)
+- Switchable in **Settings > Appearance** and unified across JARVIS, Multi Chat, Parallax Swarm, and AI Assistant:
+  1. **Minimal (Obsidian Studio)**: Clean, precision dark-slate geometry with subtle 1px borders and zero visual clutter.
+  2. **Classic (Tactical Cyan / Stitch Cyber)**: Signature NEXUS tactical HUD aesthetic with vibrant cyan accents, holographic status badges, and ambient depth.
+  3. **Full Dark (OLED Pitch Black)**: Pure #000000 zero-glare aesthetic engineered for OLED displays, maximum contrast, and extended night research sessions.
 
-#### B. Saved Intelligence Repository (\`/saved\`)
-- Accessible from the main navigation bar.
-- Allows users to bookmark, tag, and organize full JARVIS synthesis reports, system architecture diagrams, and analytical charts.
+#### B. JARVIS Synthesis Card Theme Toggle
+- Located on JARVIS chat synthesis headers and saved report cards (sparkle icon), allowing instant per-report toggling between **Tactical Cyan** and **OLED Deep Black**.
+
+#### C. Saved Intelligence Repository (\`/saved\`)
+- Accessible from the main navigation bar to bookmark, tag, and organize full JARVIS synthesis reports, system architecture diagrams, and analytical charts.
 - Features:
   - **Category Filtering**: Filter across All, JARVIS Syntheses, Architecture Diagrams, and Data Charts.
   - **Raw Markdown Toggle**: Switch between rendered rich HTML typography and raw Markdown code.
   - **Single-Click Exports**: Copy rich formatted HTML for Google Docs/Word, raw Markdown for GitHub/Obsidian, or print/save to PDF.
 
-#### C. Edge Neural Text-to-Speech (TTS)
-- Integrated voice synthesis engine powered by Microsoft Edge neural models (\`/api/edge-tts\`) with natural intonation, cadence, and phrasing.
-- Features automatic reading mode for JARVIS synthesis answers, live play/pause controls, and fallback to the browser Web Speech API when offline.
-
-#### D. Tactical Audio Feedback
-- Subtle acoustic clicks and mechanical audio feedback when executing commands, switching tabs, and navigating the interface (can be toggled on/off in **Settings > Appearance**).`;
+#### D. Edge Neural Text-to-Speech (TTS) & Tactical Audio
+- Integrated voice synthesis engine powered by Microsoft Edge neural models (\`/api/edge-tts\`) with natural intonation, cadence, and browser Web Speech API fallback.
+- Subtle acoustic clicks and mechanical audio feedback when executing commands, switching tabs, and navigating the interface (toggleable in **Settings > Appearance**).`;
 
   // Section 7: Multi Chat
-  const multiChatText = `### 7. Multi Chat — 3-Persona Sequential Deliberation Matrix
+  const multiChatText = `### 7. Multi Chat — 3-Persona Deliberation Matrix & Advanced Lab Tools
 
-**Multi Chat** (/multichat) is a collaborative multi-persona conversational system where three distinct AI agents deliberate in a sequential chain, reading upstream thoughts and providing diverse perspectives on any inquiry.
+**Multi Chat** (/multichat) is a collaborative multi-persona conversational lab where three core AI agents—plus optional Guest Specialists—deliberate across customizable dialogue topologies and analytical views.
 
-#### A. The 3 Specialized Personas:
-1. **NOVA (Professional & Factual — The Researcher)**:
-   - **Role & Tone**: Analytical, rigorous, structured, and factual. Focuses on empirical accuracy, logical consistency, cited facts, and objective data breakdowns.
-   - **Position in Chain**: Executes first in the sequence, establishing the factual baseline and framing the core problem.
-2. **ORBIT (Casual & Friendly — The Buddy)**:
-   - **Role & Tone**: Approachable, witty, empathetic, and relatable. Translates complex technical jargon into practical, everyday language and metaphors.
-   - **Position in Chain**: Executes second. Ingests NOVA's factual breakdown, reacting to it, simplifying nuances, pointing out practical trade-offs, or adding a lighthearted conversational perspective.
-3. **COSMOS (Calm & Wise — The Mentor)**:
-   - **Role & Tone**: Philosophical, reflective, strategic, and balanced. Takes a high-altitude holistic view, considering long-term implications, ethical principles, and mental clarity.
-   - **Position in Chain**: Executes third. Ingests both NOVA's data and ORBIT's practical buddy insights, synthesizing a mature final consensus or philosophical takeaway.
+#### A. The 3 Core Personas & 4 Guest Specialists:
+1. **NOVA (Professional & Factual — The Researcher)**: Analytical, rigorous, structured, and empirical. Establishes the factual baseline and data breakdown.
+2. **ORBIT (Casual & Friendly — The Buddy)**: Approachable, witty, and practical. Translates complex jargon into everyday metaphors and real-world trade-offs.
+3. **COSMOS (Calm & Wise — The Mentor)**: Philosophical, reflective, and strategic. Synthesizes NOVA and ORBIT into a high-altitude holistic takeaway.
+4. **On-Demand Guest Specialists**: Summon domain experts into any round: **CFO** (Financial & ROI Modeling), **Cyber** (Security & Threat Modeling), **UX** (Human-Centered Design), and **Legal** (Compliance & Risk).
 
-#### B. Sequential Pipeline Dynamics & Memory
-- **Context Chaining**: Each persona does not speak in a vacuum. ORBIT sees NOVA's output in real time; COSMOS receives both NOVA's and ORBIT's answers. Personas can actively agree, respectfully challenge assumptions, or expand on each other's points.
-- **20-Message Memory Window**: Every persona maintains a rolling sliding memory window of the last 20 conversational turns, allowing rich back-and-forth discussions without losing conversational thread.
-- **Permanent Memories**: Key facts, user preferences, and custom context entries added via Multi Chat Settings are permanently injected into every persona prompt across all sessions.
-- **Response Language**: Global setting allowing the entire 3-persona panel to respond in English, Spanish, French, German, Japanese, Chinese, or any configured language.
+#### B. Dialogue Topologies & Roleplay Scenarios
+- **4 Dialogue Modes**:
+  - **Harmony**: Collaborative sequential synthesis where each persona builds on prior points.
+  - **Debate**: Adversarial cross-examination exposing flaws and counterarguments.
+  - **Parallel**: Independent simultaneous responses without upstream bias.
+  - **Relay**: Fast baton-passing chain where each persona completes a distinct phase of the task.
+- **5 Built-In Scenarios**: *Startup Pitch*, *Code Review*, *War Room*, *Socratic Trial*, and *Courtroom*.
 
-#### C. Audio, Export & Granular Message Controls
-- **Neural Voice Synthesis (Listen)**: Powered by Edge Neural TTS with natural speech cadence and Web Speech API fallback.
-- **Direct MP3 Download**: Instant single-click export of synthesized neural voice audio to .mp3 for offline listening or study.
-- **Markdown & HTML Copy**: Copy individual persona answers or the entire combined 3-persona turn in clean Markdown or rich formatted HTML.
-- **Surgical Card Deletion**: Delete individual question-and-answer cards from the conversation without wiping the entire session history.`;
+#### C. Advanced Analytical Views & Interactive Lab Tools
+- **Alignment Radar & Consensus Meter**: Visualizes agreement vs. divergence across personas.
+- **Decision Matrix & Fact Matrix**: Structured multi-criteria scoring tables and cross-verified factual claim matrices.
+- **Stress Test Pivot & Hot Seat**: Inject surprise crisis variables or place a single persona under direct interrogation.
+- **Study Deck (Flashcards & Quiz)**: Automatically transforms any multi-persona deliberation into interactive flip flashcards and self-grading quizzes.
+- **Cherry-Pick Mixer**: Select the best paragraphs from NOVA, ORBIT, and COSMOS to synthesize a custom master response.
+- **Podcast Script & Neural Audio**: Converts the 3-persona conversation into a natural radio-style podcast script with Edge Neural TTS playback and MP3 download.
+- **20-Message Rolling Memory & Permanent Memories**: Retains conversational context across 20 turns alongside persistent user facts.`;
 
   // Section 8: AI Assistant
-  const assistantText = `### 8. AI Assistant — Direct Conversational Companion
+  const assistantText = `### 8. AI Assistant — Direct Companion, Specialist Modes & Smart Memory
 
-The **AI Assistant** (/assistant) provides a rapid, streamlined single-turn and multi-turn conversational interface for everyday questions, quick brainstorming, text transformations, problem solving, and productivity workflows.
+The **AI Assistant** (/assistant) is a high-speed, multi-session conversational workstation combining low-latency chat with modular specialist pipelines, academic paper discovery, Socratic tutoring, tactical multi-agent command, and live interactive code previewing.
 
-#### A. How AI Assistant Differs from JARVIS & Multi Chat:
-- **JARVIS Matrix**: A heavy 10-agent autonomous research engine executing multi-step search querying, fact-checking, knowledge-graph entity extraction, SVG blueprint rendering, and data chart generation.
-- **Multi Chat**: A 3-persona sequential deliberation panel (NOVA -> ORBIT -> COSMOS) for multi-angle debate and diverse viewpoints.
-- **AI Assistant**: A high-speed, direct conversational companion designed for low latency, zero multi-agent orchestration overhead, and immediate answers.
+#### A. How AI Assistant Differs from JARVIS, Multi Chat & Parallax:
+- **JARVIS Matrix (\`/\`)**: 10-agent deep research engine for comprehensive intelligence reports, fact-checking, Wikidata graphs, and full telemetry.
+- **Multi Chat (\`/multichat\`)**: 3-persona deliberation panel (NOVA, ORBIT, COSMOS) with structured debate tools and decision matrices.
+- **Parallax (\`/parallax\`)**: 20-agent multi-round swarm arena for massive parallel perspective exploration.
+- **AI Assistant (\`/assistant\`)**: Fast, versatile daily companion with multi-chat session history, on-demand Specialist Modes, Tutor Mode, Commander Unit, and Live Artifact Canvas.
 
-#### B. Core Capabilities & Tool Integrations:
-- **Specialist Modes**: Toggleable specialized pipelines including **Architect** (SVG software blueprints), **Data Analysis** (Recharts quantitative metrics), **Multi Chat** (3-persona deliberation), **Coder** (research-grounded code via \`/codeonline\`), **Web Fetcher** (live URL content extraction via \`/web\`), and **Wikimedia** (instant retrieval of 5 real photographic images directly from Wikimedia Commons).
-- **Smart Memory (Persistent Scratchpad)**: Automatically compresses and remembers context across messages (up to 2,200 characters). You can view, edit, or wipe this persistent memory scratchpad at any time using the Brain icon editor.
-- **Dynamic Tool Dispatch**: Seamlessly executes live web searches or fetches real-time meteorological weather data when the query demands up-to-the-minute information.
-- **Quick Prompts**: Instant starter prompts across explanation, problem solving, productivity advice, and topic summaries.
-- **Voice Narration & Audio**: Full support for Edge Neural TTS and browser Web Speech read-aloud with instant pause/play controls.
-- **Clipboard & Export**: Single-click markdown copying for all generated responses.`;
+#### B. Core Capabilities & Specialist Modes:
+- **Modular Specialist Modes**:
+  - **Commander Mode**: 4-stage tactical unit (Strategic Commander + Agent Alpha + Agent Beta + Master Synthesizer) with Auto/Manual orchestration, Effort Levels (Small/Medium/High), and per-agent model selection.
+  - **Swarm Live**: Inline multi-agent swarm deliberation streamed directly inside the Assistant chat feed.
+  - **Tutor Mode**: Interactive Socratic learning engine with Learner Level (Beginner, Intermediate, Advanced), Goal (Learn, Exam prep, Refresher), 4-stage stepper (Explain → Example → Practice → Quiz), and one-tap learning actions.
+  - **Scholar Search**: Queries academic repositories (OpenAlex, Semantic Scholar, NASA ADS, arXiv) with citation counts, abstracts, and DOI/PDF links.
+  - **Architect, Data Analysis, Coder (\`/codeonline\`), Web Fetcher (\`/web\`), Multi Chat & Wikimedia**: Instant access to SVG blueprints, Recharts analytics, live-researched code, webpage extraction, and Wikimedia Commons photography.
+- **Live Artifact Canvas**: Side-by-side interactive sandbox that renders HTML, CSS, JavaScript, React/TSX, and SVG code blocks into a live preview with desktop/tablet/mobile viewport toggles, console logs, and fullscreen inspection.
+- **Multi-Session Chat History & Smart Memory**: Manage multiple archived chat sessions with automatic prefix deduplication and a persistent 2,200-character Smart Memory scratchpad editable via the Brain icon.`;
 
   // Section 9: Devices
   const devicesText = `### 9. Devices Dashboard — Fleet Monitoring & Hardware Bridges
@@ -492,6 +503,70 @@ NEXUS integrates real-time astrophysical telemetry, deep space observations, and
 - Real-time meteorological data via OpenWeatherMap (\`OPENWEATHERMAP_API_KEY\`) covering temperature, humidity, barometric pressure, UV index, wind speed/direction, and multi-day hourly forecasts.
 - Interactive weather radar map layer with precipitation heatmaps, wind streamline particle animations, and city search coordinates.`;
 
+  // Section 16: Parallax 20-Agent Swarm & Genesis Arena
+  const parallaxSwarmText = `### 16. Parallax — 20-Agent Autonomous Swarm & Genesis Arena (/parallax)
+
+**Parallax** (/parallax) is NEXUS's massive multi-agent deliberation arena where up to **20 specialized AI personas** debate, cross-examine, and synthesize complex topics across 3 iterative rounds.
+
+#### A. The 20 Specialized Swarm Personas
+- Includes **VERITAS** (Empirical Scientist), **AURORA** (Creative Visionary), **CHRONOS** (Historian & Futurist), **AXIOM** (First-Principles Logician), **ECHO** (Cultural Analyst), **LEDGER** (Economist & Strategist), **SOCRATES** (Philosophical Questioner), **PIXEL** (Design & Systems Thinker), **VANGUARD** (Security & Risk Auditor), **HARMONY** (Ethics & Consensus Builder), **CIPHER** (Cryptography & Software Architect), **NOMAD** (Global Geopolitics), **SENTINEL** (Policy & Governance), **LUMEN** (Physics & Cosmology), **CATALYST** (Biotech & Medicine), **GRAVITY** (Infrastructure & Energy), **MOSAIC** (Behavioral Psychology), **ORACLE** (Forecasting & Probability), **EMBER** (Disruptive Innovation), and **NEXUS-9** (Master Swarm Synthesizer).
+
+#### B. 3-Round Deliberation & Genesis Dynamic Mode
+- **Configurable Swarm Scale**: Scale active agent count dynamically (e.g., 5, 10, 15, or all 20 agents) across 3 deliberation stages: *Round 1: Initial Positions*, *Round 2: Cross-Examination & Rebuttal*, and *Round 3: Final Master Synthesis*.
+- **Genesis Mode (Dynamic Swarm Architect)**: Generates bespoke agent personas on the fly tailored to your specific prompt (Slot 0: Swarm Architect, Slot 19: Zenith Synthesizer, and up to 18 custom domain specialists).
+- **8 Debate Formats**: *Default Swarm*, *Genesis Dynamic*, *Courtroom Trial*, *Red Team vs. Blue Team*, *Senate Hearing*, *VC Pitch Tank*, *Sci-Fi Council*, and *Newsroom Desk*.
+- **Interactive Controls**: Inject a **Devil's Advocate** challenge mid-flight, jump in with human-in-the-loop turn steering, inspect individual agent reasoning cards, and listen via Edge Neural TTS.`;
+
+  // Section 17: Visual Workflows Studio
+  const workflowsStudioText = `### 17. Visual Workflows Studio — Node-Based Automation Canvas (/workflows)
+
+The **Visual Workflows Studio** (/workflows) is a drag-and-drop node graph editor for building repeatable, multi-step AI and data pipelines without writing boilerplate code.
+
+#### A. Modular Node Types
+- **Input Node**: Defines pipeline parameters, user text inputs, or runtime variables.
+- **Web Search & Web Fetch Nodes**: Executes live Tavily/DuckDuckGo searches or extracts clean Markdown from any URL via \`r.jina.ai\`.
+- **Scholar Search Node**: Queries OpenAlex, Semantic Scholar, NASA ADS, and arXiv for peer-reviewed literature.
+- **AI Prompt Node**: Routes upstream node outputs into any configured LLM with custom system instructions and template variables (\`{{input}}\`).
+- **Image Generation Node**: Synthesizes visual assets from upstream text descriptions.
+- **Weather & NASA Space Nodes**: Pulls live OpenWeatherMap telemetry or NASA APOD/Asteroid feeds into the workflow.
+- **Conditional Branching (\`IF / ELSE\`) Node**: Evaluates conditions on upstream outputs to dynamically route execution paths.
+
+#### B. Execution Engine & Debugging Features
+- **Node Freezing & Mock Outputs**: Freeze any node to reuse cached output or inject mock test payloads without re-running expensive upstream API calls.
+- **Live Step Telemetry & Run History**: Inspect per-node execution status, latency, raw outputs, and saved workflow templates.`;
+
+  // Section 18: Custom AI Skills System
+  const customSkillsText = `### 18. Custom AI Skills & Modular Instruction Vault (Settings > Skills)
+
+The **Custom Skills System** allows users to extend NEXUS with reusable domain expertise, coding conventions, and specialized output templates.
+
+#### A. Skill Architecture & Quotas
+- **Up to 5 Custom Skills**: Store up to 5 modular skills (\`MAX_SKILLS = 5\`, up to 24,000 characters per skill) in local storage with up to **3 skills active simultaneously**.
+- **GitHub & Raw URL Import**: Import \`SKILL.md\` or markdown instruction files directly from GitHub URLs or paste custom prompt modules.
+- **Cross-Platform Injection**: Active skills are automatically injected into the system instructions of **AI Assistant**, **JARVIS**, and **Multi Chat** personas, accompanied by a quick-toggle Skills drawer in the workspace.`;
+
+  // Section 19: Tutor Mode, Commander Unit & Live Artifact Canvas
+  const assistantAdvancedText = `### 19. Tutor Mode, Commander Tactical Unit & Live Artifact Canvas (/assistant)
+
+The **AI Assistant** includes three specialized interactive engines for guided education, deep multi-agent tactical investigation, and live software prototyping:
+
+#### A. Tutor Mode — Socratic Learning Engine
+- **Adaptive Configuration**: Choose your **Learner Level** (*Beginner*, *Intermediate*, *Advanced*) and **Learning Goal** (*Learn*, *Exam prep*, *Refresher*).
+- **4-Stage Pedagogical Stepper**: Tracks progression through **1. Explain** (core concepts & intuition) → **2. Example** (concrete analogies & walkthroughs) → **3. Practice** (guided exercises & hints) → **4. Quiz** (active recall & comprehension check).
+- **One-Tap Study Actions**: Instant buttons inside the \`TutorSessionCard\` for *Explain simpler*, *Real-world example*, *Practice problem*, *Quiz me*, and *Summarize* with per-chat session persistence.
+
+#### B. Commander Specialist Mode — 4-Stage Tactical Unit
+- **Chain of Command**:
+  1. **Commander (Strategic Orchestrator)**: Deconstructs the mission and assigns specialized directives.
+  2. **Agent Alpha (Lead Technical Investigator)**: Builds the primary architecture, empirical evidence, and core solution.
+  3. **Agent Beta (Counter-Perspective & Risk Analyst)**: Audits Agent Alpha's work, uncovering edge cases, bottlenecks, and alternative strategies.
+  4. **Master Synthesizer**: Unifies Commander, Alpha, and Beta outputs into a battle-tested executive deliverable.
+- **Tactical Controls**: Supports **Auto** vs. **Manual** directive mode, **Effort Levels** (*Small*, *Medium*, *High*), per-agent model overrides, and an AI Prompt Enhancer.
+
+#### C. Live Artifact Canvas — Interactive Code & Preview Sandbox
+- Automatically detects or opens HTML, CSS, JavaScript, React/TSX, and SVG code artifacts in a split-screen interactive sandbox.
+- Includes live preview execution, responsive viewport switcher (Desktop / Tablet / Mobile), integrated console log inspector, raw code editor, and one-click download/copy.`;
+
   const sections: DocSection[] = [
     {
       id: 'overview',
@@ -530,21 +605,21 @@ NEXUS integrates real-time astrophysical telemetry, deep space observations, and
     },
     {
       id: 'theme',
-      title: 'Theme, Saved Reports & Neural TTS',
+      title: 'Global Themes (Minimal, Classic, Full Dark) & TTS',
       badge: 'Customization',
       icon: Palette,
       text: themeCustomizationText,
     },
     {
       id: 'multichat',
-      title: 'Multi Chat (NOVA, ORBIT, COSMOS)',
+      title: 'Multi Chat & Deliberation Lab Tools',
       badge: 'Sequential Deliberation',
       icon: MessageSquare,
       text: multiChatText,
     },
     {
       id: 'assistant',
-      title: 'AI Assistant & Smart Memory',
+      title: 'AI Assistant, Specialist Modes & Smart Memory',
       badge: 'Direct Companion',
       icon: Bot,
       text: assistantText,
@@ -597,6 +672,34 @@ NEXUS integrates real-time astrophysical telemetry, deep space observations, and
       badge: 'Cosmic & Weather',
       icon: Orbit,
       text: spaceIntelligenceText,
+    },
+    {
+      id: 'parallax-swarm',
+      title: 'Parallax 20-Agent Swarm & Genesis Arena',
+      badge: '20-Agent Swarm',
+      icon: Users,
+      text: parallaxSwarmText,
+    },
+    {
+      id: 'workflows-studio',
+      title: 'Visual Workflows Studio (/workflows)',
+      badge: 'Node Automation',
+      icon: Workflow,
+      text: workflowsStudioText,
+    },
+    {
+      id: 'custom-skills',
+      title: 'Custom AI Skills & Instruction Vault',
+      badge: 'Modular Skills',
+      icon: BookOpen,
+      text: customSkillsText,
+    },
+    {
+      id: 'assistant-advanced',
+      title: 'Tutor Mode, Commander Unit & Artifact Canvas',
+      badge: 'Socratic & Tactical',
+      icon: GraduationCap,
+      text: assistantAdvancedText,
     },
   ];
 
@@ -662,6 +765,22 @@ ${dynamicSpecialistText}
 --------------------------------------------------------------------------------
 
 ${spaceIntelligenceText}
+
+--------------------------------------------------------------------------------
+
+${parallaxSwarmText}
+
+--------------------------------------------------------------------------------
+
+${workflowsStudioText}
+
+--------------------------------------------------------------------------------
+
+${customSkillsText}
+
+--------------------------------------------------------------------------------
+
+${assistantAdvancedText}
 
 ================================================================================
 End of NEXUS Documentation
@@ -1433,10 +1552,10 @@ End of NEXUS Documentation
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
               <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 space-y-1.5">
                 <div className="text-cyan-300 font-semibold text-xs flex items-center gap-1.5">
-                  <Sparkles size={14} /> JARVIS Synthesis Theme
+                  <Sparkles size={14} /> 3 Global Visual Themes
                 </div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
-                  Toggle between <strong>Tactical Cyan</strong> (dark obsidian background with cyan ambient glow and borders) and <strong>OLED Deep Black</strong> (pitch-black minimalist background for OLED contrast and zero glare).
+                  Switch globally between <strong>Minimal</strong> (clean dark slate), <strong>Classic</strong> (Tactical Cyan HUD), and <strong>Full Dark</strong> (pure #000000 OLED pitch black), plus per-card JARVIS synthesis theme toggles.
                 </p>
               </div>
 
@@ -1473,10 +1592,10 @@ End of NEXUS Documentation
               </div>
               <div>
                 <span className="text-[11px] font-semibold text-cyan-400 tracking-wider uppercase">
-                  Sequential Deliberation
+                  Sequential Deliberation &amp; Lab
                 </span>
                 <h3 className="text-lg font-bold text-slate-100 m-0">
-                  Multi Chat — 3-Persona Deliberation Matrix & Memory
+                  Multi Chat — 3-Persona Deliberation Matrix, Scenarios &amp; Lab Tools
                 </h3>
               </div>
             </div>
@@ -1500,7 +1619,7 @@ End of NEXUS Documentation
 
           <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
             <p>
-              <strong className="text-slate-100 font-semibold">Multi Chat</strong> (<code className="text-cyan-300">/multichat</code>) coordinates three distinct AI personas in a sequential deliberative pipeline. Rather than generating a single perspective, each persona executes in order, reviews the prior persona&apos;s output, and actively builds upon or debates previous points.
+              <strong className="text-slate-100 font-semibold">Multi Chat</strong> (<code className="text-cyan-300">/multichat</code>) coordinates three distinct AI personas—plus on-demand Guest Specialists—across selectable dialogue modes, roleplay scenarios, and interactive synthesis utilities.
             </p>
 
             {/* 3 Personas Grid */}
@@ -1514,7 +1633,7 @@ End of NEXUS Documentation
                     Step 1: Researcher
                   </span>
                 </div>
-                <div className="text-[11px] font-semibold text-slate-200">Professional & Factual</div>
+                <div className="text-[11px] font-semibold text-slate-200">Professional &amp; Factual</div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
                   Focuses on empirical accuracy, logical consistency, cited facts, and objective data breakdowns. Establishes the foundational baseline of truth for the deliberation.
                 </p>
@@ -1529,7 +1648,7 @@ End of NEXUS Documentation
                     Step 2: Buddy
                   </span>
                 </div>
-                <div className="text-[11px] font-semibold text-slate-200">Casual & Friendly</div>
+                <div className="text-[11px] font-semibold text-slate-200">Casual &amp; Friendly</div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
                   Translates complex technical jargon into practical, everyday analogies. Ingests NOVA&apos;s factual data, simplifying nuances, discussing trade-offs, and adding relatable humor.
                 </p>
@@ -1544,7 +1663,7 @@ End of NEXUS Documentation
                     Step 3: Mentor
                   </span>
                 </div>
-                <div className="text-[11px] font-semibold text-slate-200">Calm & Wise</div>
+                <div className="text-[11px] font-semibold text-slate-200">Calm &amp; Wise</div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
                   Takes a high-altitude holistic viewpoint, considering ethical principles, long-term implications, and mental clarity. Synthesizes NOVA and ORBIT into a mature consensus.
                 </p>
@@ -1556,26 +1675,26 @@ End of NEXUS Documentation
               <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 space-y-2">
                 <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                   <Brain size={14} className="text-cyan-400" />
-                  <span>Sequential Pipeline & Sliding Memory</span>
+                  <span>Dialogue Modes, Scenarios &amp; Guest Specialists</span>
                 </div>
                 <ul className="text-xs text-slate-400 space-y-1.5 list-disc pl-4 m-0 leading-relaxed">
-                  <li><strong>Context Chaining:</strong> ORBIT sees NOVA&apos;s response in real time; COSMOS reviews both NOVA and ORBIT.</li>
-                  <li><strong>20-Message Memory Window:</strong> Every persona retains the last 20 conversational turns in rolling local context.</li>
-                  <li><strong>Permanent Memories:</strong> Custom facts and user preferences configured in Multi Chat Settings are permanently appended to every persona&apos;s prompt.</li>
-                  <li><strong>Response Language:</strong> Global setting allowing all 3 personas to communicate in English, Spanish, French, German, Japanese, Chinese, etc.</li>
+                  <li><strong>4 Dialogue Modes:</strong> Switch between <em>Harmony</em>, <em>Debate</em>, <em>Parallel</em>, and <em>Relay</em> execution chains.</li>
+                  <li><strong>5 Roleplay Scenarios:</strong> <em>Startup Pitch</em>, <em>Code Review</em>, <em>War Room</em>, <em>Socratic Trial</em>, and <em>Courtroom</em>.</li>
+                  <li><strong>4 Guest Specialists:</strong> Invite <strong>CFO</strong>, <strong>Cyber</strong>, <strong>UX</strong>, or <strong>Legal</strong> specialists into any conversation round.</li>
+                  <li><strong>20-Message Rolling &amp; Permanent Memory:</strong> Retains 20 turns of sliding context plus permanent user memory facts.</li>
                 </ul>
               </div>
 
               <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 space-y-2">
                 <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                   <Volume2 size={14} className="text-cyan-400" />
-                  <span>Audio Synthesis & Message Controls</span>
+                  <span>Lab Tools, Study Deck &amp; Podcast Generator</span>
                 </div>
                 <ul className="text-xs text-slate-400 space-y-1.5 list-disc pl-4 m-0 leading-relaxed">
-                  <li><strong>Listen (Neural TTS):</strong> Microsoft Edge neural voice playback with lifelike cadence and Web Speech API fallback.</li>
-                  <li><strong>Download MP3:</strong> Single-click export of synthesized neural speech directly to standalone <code className="text-slate-300">.mp3</code> files.</li>
-                  <li><strong>Markdown & HTML Copy:</strong> One-tap clipboard copy of individual persona answers or the complete 3-persona turn.</li>
-                  <li><strong>Surgical Card Deletion:</strong> Delete specific message cards and audio instances without clearing your entire conversation history.</li>
+                  <li><strong>Analytical Matrices:</strong> Inspect <em>Alignment Radar</em>, <em>Decision Matrix</em>, <em>Fact Matrix</em>, and <em>Visual Map</em>.</li>
+                  <li><strong>Stress Test &amp; Hot Seat:</strong> Inject unexpected crisis pivots or interrogate a single persona directly.</li>
+                  <li><strong>Study Deck &amp; Cherry-Pick Mixer:</strong> Generate interactive flashcards/quizzes or mix best paragraphs into a custom synthesis.</li>
+                  <li><strong>Podcast Script &amp; MP3 Download:</strong> Generate multi-host audio scripts with Edge Neural TTS playback and <code className="text-slate-300">.mp3</code> export.</li>
                 </ul>
               </div>
             </div>
@@ -1594,10 +1713,10 @@ End of NEXUS Documentation
               </div>
               <div>
                 <span className="text-[11px] font-semibold text-cyan-400 tracking-wider uppercase">
-                  Direct Companion
+                  Direct Companion &amp; Specialist Hub
                 </span>
                 <h3 className="text-lg font-bold text-slate-100 m-0">
-                  AI Assistant — Direct Conversational Companion & Smart Memory
+                  AI Assistant — Specialist Modes, Tutor, Commander &amp; Live Canvas
                 </h3>
               </div>
             </div>
@@ -1621,7 +1740,7 @@ End of NEXUS Documentation
 
           <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
             <p>
-              The <strong className="text-slate-100 font-semibold">AI Assistant</strong> (<code className="text-cyan-300">/assistant</code>) is a streamlined single-turn and multi-turn conversational interface for everyday questions, quick brainstorming, coding snippets, explanations, and productivity workflows.
+              The <strong className="text-slate-100 font-semibold">AI Assistant</strong> (<code className="text-cyan-300">/assistant</code>) is a multi-session conversational workstation combining rapid chat with modular specialist pipelines, Socratic tutoring, 4-stage Commander orchestration, academic Scholar search, and a live code preview canvas.
             </p>
 
             {/* Architecture Differences Grid */}
@@ -1637,10 +1756,10 @@ End of NEXUS Documentation
 
               <div className="p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 space-y-1.5">
                 <div className="text-cyan-300 font-semibold text-xs flex items-center gap-1.5">
-                  <MessageSquare size={14} /> Multi Chat
+                  <MessageSquare size={14} /> Multi Chat &amp; Parallax
                 </div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
-                  Sequential 3-persona deliberation mesh (NOVA &rarr; ORBIT &rarr; COSMOS) offering multi-angle critical debates and philosophical consensus.
+                  Sequential 3-persona deliberation mesh (NOVA &rarr; ORBIT &rarr; COSMOS) and 20-agent Parallax swarm arena for multi-angle critical debates.
                 </p>
               </div>
 
@@ -1649,7 +1768,7 @@ End of NEXUS Documentation
                   <Bot size={14} /> AI Assistant
                 </div>
                 <p className="text-[12px] text-slate-400 m-0 leading-relaxed">
-                  Fast, lightweight conversational companion optimized for near-instant responses, zero multi-agent pipeline overhead, and persistent Smart Memory context.
+                  Fast, versatile daily companion with archived chat sessions, Tutor Mode, Commander Mode, Swarm Live, Scholar Search, Live Artifact Canvas, and Smart Memory.
                 </p>
               </div>
             </div>
@@ -1657,28 +1776,24 @@ End of NEXUS Documentation
             {/* Key Capabilities */}
             <div className="p-4 rounded-lg bg-slate-950/80 border border-slate-800 space-y-3">
               <div className="text-xs font-semibold text-slate-200">
-                Core Capabilities & Built-in Features:
+                Core Capabilities &amp; Built-in Features:
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-400">
                 <div className="space-y-1">
-                  <strong className="text-slate-200 block">⚡ Specialist Modes:</strong>
-                  <span>Fast modular pipelines: Architect (SVG blueprints), Data Analysis (Recharts), Multi Chat (3 personas), Coder (/codeonline), Web Fetcher (/web), and Wikimedia (5 real Commons images).</span>
+                  <strong className="text-slate-200 block">⚡ 10+ Specialist Modes:</strong>
+                  <span>Toggle Commander (4-stage unit), Swarm Live, Tutor Mode, Scholar Search (OpenAlex/Semantic Scholar/NASA ADS/arXiv), Architect (SVG), Data Analysis (Recharts), Multi Chat, Coder (/codeonline), Web Fetcher (/web), and Wikimedia.</span>
                 </div>
                 <div className="space-y-1">
-                  <strong className="text-slate-200 block">🧠 Smart Memory (Persistent Scratchpad):</strong>
-                  <span>Automatically retains and compresses key conversational points (up to 2,200 characters). You can view, edit, or wipe this memory at any time via the Brain icon.</span>
+                  <strong className="text-slate-200 block">🎓 Socratic Tutor &amp; Commander Unit:</strong>
+                  <span>Interactive 4-stage Tutor stepper (Explain &rarr; Example &rarr; Practice &rarr; Quiz) and tactical Commander orchestration (Commander + Agent Alpha + Agent Beta + Master Synthesizer).</span>
                 </div>
                 <div className="space-y-1">
-                  <strong className="text-slate-200 block">🌐 Dynamic Tool Execution:</strong>
-                  <span>Automatically triggers live web search and real-time OpenWeatherMap atmospheric queries when timely, external groundings are required.</span>
+                  <strong className="text-slate-200 block">🖥️ Live Artifact Canvas:</strong>
+                  <span>Side-by-side interactive sandbox rendering HTML, CSS, JS, React/TSX, and SVG code blocks with responsive viewport toggles and live console telemetry.</span>
                 </div>
                 <div className="space-y-1">
-                  <strong className="text-slate-200 block">💬 Quick Starter Prompts:</strong>
-                  <span>One-click category prompts for instant explanations, troubleshooting, productivity tips, and structured topic summaries.</span>
-                </div>
-                <div className="space-y-1">
-                  <strong className="text-slate-200 block">🔊 Voice Narration & Copy:</strong>
-                  <span>Full Edge Neural TTS audio readout with play/pause toggles, Web Speech fallback, and single-click Markdown clipboard copy.</span>
+                  <strong className="text-slate-200 block">🧠 Multi-Session History &amp; Smart Memory:</strong>
+                  <span>Switch between saved chat threads with automatic deduplication, plus a persistent 2,200-character Smart Memory scratchpad editable via the Brain icon.</span>
                 </div>
               </div>
             </div>
@@ -2361,6 +2476,305 @@ End of NEXUS Documentation
                 </div>
                 <p className="text-xs text-slate-400 m-0">
                   Real-time OpenWeatherMap atmospheric radar with temperature, humidity, UV index, wind streamline particle visualizations, and multi-day hourly forecasts.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 16: Parallax 20-Agent Swarm & Genesis Arena */}
+        <div
+          id="doc-parallax-swarm"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Users size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>16. Parallax — 20-Agent Autonomous Swarm &amp; Genesis Arena</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    20-Agent Swarm
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  3-round multi-agent swarm deliberation (/parallax), Genesis Dynamic Architect mode, and 8 debate formats
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('parallax-swarm', parallaxSwarmText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'parallax-swarm' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              <strong className="text-slate-100">Parallax</strong> (<code className="text-cyan-300">/parallax</code>) orchestrates up to <strong>20 specialized autonomous agents</strong> (VERITAS, AURORA, CHRONOS, AXIOM, ECHO, LEDGER, SOCRATES, PIXEL, VANGUARD, HARMONY, CIPHER, NOMAD, SENTINEL, LUMEN, CATALYST, GRAVITY, MOSAIC, ORACLE, EMBER, and NEXUS-9) across 3 iterative rounds of debate and synthesis.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-cyan-500/30 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Layers size={14} /> 3-Round Swarm Deliberation &amp; Scaling
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Configure active swarm scale (up to 20 agents) executing through <strong>Round 1 (Initial Thesis)</strong>, <strong>Round 2 (Cross-Examination &amp; Rebuttal)</strong>, and <strong>Round 3 (Master Synthesis)</strong>.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-purple-500/30 space-y-1.5">
+                <div className="font-semibold text-purple-300 text-xs flex items-center gap-1.5">
+                  <Sparkles size={14} /> Genesis Mode &amp; 8 Debate Arenas
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  <strong>Genesis Mode</strong> dynamically spawns custom specialists per prompt. Switch between <em>Default</em>, <em>Genesis</em>, <em>Courtroom</em>, <em>Red vs Blue</em>, <em>Senate</em>, <em>VC Pitch</em>, <em>Sci-Fi</em>, and <em>Newsroom</em> arenas.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Swords size={14} /> Devil&apos;s Advocate &amp; Human-in-the-Loop
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Inject a live <strong>Devil&apos;s Advocate</strong> disruption or interject your own steering prompts between swarm rounds to redirect the collective intelligence.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Volume2 size={14} /> Neural Voice Readout &amp; Transcript Export
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Listen to individual swarm agents via Edge Neural TTS and export complete multi-agent transcripts in clean Markdown.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 17: Visual Workflows Studio */}
+        <div
+          id="doc-workflows-studio"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <Workflow size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>17. Visual Workflows Studio — Node Automation Canvas</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    Node Automation
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Drag-and-drop visual DAG pipeline builder (/workflows) with conditional branching, node freezing, and live telemetry
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('workflows-studio', workflowsStudioText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'workflows-studio' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              The <strong className="text-slate-100">Visual Workflows Studio</strong> (<code className="text-cyan-300">/workflows</code>) lets you chain data sources, academic searches, AI models, and conditional logic on an interactive node canvas.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Cpu size={14} /> 9 Specialized Node Types
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Chain <strong>Input</strong>, <strong>Web Search</strong>, <strong>Web Fetch</strong>, <strong>Scholar Search</strong>, <strong>AI Prompt</strong>, <strong>Image Gen</strong>, <strong>Weather</strong>, <strong>NASA Space</strong>, and <strong>IF/ELSE Branching</strong> nodes.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Sliders size={14} /> Node Freezing, Mock Payloads &amp; Run History
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Freeze upstream nodes to lock cached outputs, inject custom mock test data, and inspect step-by-step execution timing and saved workflow runs.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 18: Custom AI Skills & Modular Instruction Vault */}
+        <div
+          id="doc-custom-skills"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <BookOpen size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>18. Custom AI Skills &amp; Modular Instruction Vault</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    Modular Skills
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Import SKILL.md files from GitHub or author custom instruction modules in Settings &gt; Skills
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('custom-skills', customSkillsText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'custom-skills' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              The <strong className="text-slate-100">Custom AI Skills</strong> vault (<strong>Settings &gt; Skills</strong> and the quick Skills drawer) lets you attach domain-specific rules, coding standards, and persona instructions across NEXUS.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Globe size={14} /> GitHub Import &amp; Manual Authoring
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Import <code className="text-cyan-300">SKILL.md</code> files directly from GitHub repositories or write custom markdown instructions (up to 5 stored skills, 24,000 characters each).
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Zap size={14} /> Simultaneous Multi-Skill Injection
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Activate up to 3 skills concurrently to dynamically augment AI Assistant, JARVIS, and Multi Chat system prompts without repeating context.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 19: Tutor Mode, Commander Unit & Live Artifact Canvas */}
+        <div
+          id="doc-assistant-advanced"
+          className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 shadow-md backdrop-blur-sm transition-colors hover:border-slate-700/80"
+        >
+          <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                <GraduationCap size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
+                  <span>19. Tutor Mode, Commander Unit &amp; Live Artifact Canvas</span>
+                  <span className="text-[11px] font-mono font-normal text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800/60">
+                    Socratic &amp; Tactical
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Guided 4-stage Socratic Tutor, 4-agent Commander tactical hierarchy, and real-time HTML/React/SVG sandbox in /assistant
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleCopySection('assistant-advanced', assistantAdvancedText)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+              title="Copy this section's markdown"
+            >
+              {copiedSection === 'assistant-advanced' ? (
+                <>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-mono text-[11px]">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  <span>Copy</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+            <p>
+              Inside <strong className="text-slate-100">AI Assistant</strong> (<code className="text-cyan-300">/assistant</code>), specialized interactive engines power structured learning, multi-agent tactical execution, and live code rendering:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-amber-500/30 space-y-1.5">
+                <div className="font-semibold text-amber-300 text-xs flex items-center gap-1.5">
+                  <GraduationCap size={14} /> Socratic Tutor Mode
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Select <strong>Beginner / Intermediate / Advanced</strong> level and <strong>Learn / Exam prep / Refresher</strong> goal. Progress through <em>Explain &rarr; Example &rarr; Practice &rarr; Quiz</em> with 1-click study actions.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-rose-500/30 space-y-1.5">
+                <div className="font-semibold text-rose-300 text-xs flex items-center gap-1.5">
+                  <Swords size={14} /> Commander Tactical Unit
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  4-stage tactical pipeline: <strong>Commander</strong> sets strategy, <strong>Agent Alpha</strong> builds the primary solution, <strong>Agent Beta</strong> stress-tests risks, and <strong>Master Synthesizer</strong> delivers the final report.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-slate-950/80 border border-cyan-500/30 space-y-1.5">
+                <div className="font-semibold text-cyan-300 text-xs flex items-center gap-1.5">
+                  <Code2 size={14} /> Live Artifact Canvas
+                </div>
+                <p className="text-xs text-slate-400 m-0">
+                  Interactive split-pane sandbox that renders HTML, CSS, JS, React/TSX, and SVG code live with Desktop/Tablet/Mobile viewport toggles and console diagnostics.
                 </p>
               </div>
             </div>

@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import type {
+  AIProviderConfig,
   AutomationDraft,
   AutomationTemplate,
   WorkflowNodeType,
@@ -62,6 +63,7 @@ type AutomationStudioCardProps = {
   sessionId: string;
   draft: AutomationDraft | null;
   generating?: boolean;
+  providerConfig?: AIProviderConfig | null;
   onGenerate: (goal: string) => void;
   onDraftChange: (draft: AutomationDraft) => void;
   onDiscard: () => void;
@@ -177,6 +179,7 @@ export function AutomationStudioCard({
   sessionId,
   draft,
   generating = false,
+  providerConfig,
   onGenerate,
   onDraftChange,
   onDiscard,
@@ -322,7 +325,7 @@ export function AutomationStudioCard({
     setEditing(true);
     setNotice('');
     try {
-      const plan = await editAutomationPlan(draft, instruction.trim());
+      const plan = await editAutomationPlan(draft, instruction.trim(), providerConfig);
       const next = updateAutomationDraft(draft, plan, 'Chat edit');
       const changes = diffWorkflows(draft.workflow, next.workflow);
       setDiff(changes);
@@ -347,7 +350,7 @@ export function AutomationStudioCard({
     setNotice('');
     try {
       const node = draft.workflow.nodes.find((item) => item.id === failedNodeId) || null;
-      const plan = await repairAutomationPlan(draft.workflow, node, runError, finalOutput?.value);
+      const plan = await repairAutomationPlan(draft.workflow, node, runError, finalOutput?.value, providerConfig);
       const next = updateAutomationDraft(draft, plan, 'Repair');
       setDiff(diffWorkflows(draft.workflow, next.workflow));
       setSaved(false);
@@ -658,9 +661,9 @@ export function AutomationStudioCard({
   };
 
   const handleUseTemplate = (template: AutomationTemplate) => {
-    if (draft && !window.confirm('Replace the current automation with this template?')) return;
     onDraftChange(getTemplateDraft(template, sessionId));
     setShowTemplates(false);
+    setNotice(`Loaded template: ${template.name}.`);
   };
 
   const handleCopyFinal = async () => {
@@ -705,7 +708,10 @@ export function AutomationStudioCard({
             <button
               type="button"
               onClick={() => {
-                if (window.confirm('Discard this automation draft?')) onDiscard();
+                resetRunState();
+                setGoalDraft('');
+                setNotice('');
+                onDiscard();
               }}
               disabled={running || batchRunning}
               className={`text-[11px] px-2 py-1 rounded-lg border transition-all flex items-center gap-1 disabled:opacity-50 ${secondaryButton}`}
