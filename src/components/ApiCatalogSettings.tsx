@@ -164,6 +164,9 @@ export function ApiCatalogSettings() {
   const [savingEmailFrom, setSavingEmailFrom] = useState(false);
   const [emailConfigError, setEmailConfigError] = useState<string | null>(null);
   const [emailConfigNotice, setEmailConfigNotice] = useState('');
+  const [emailTestTo, setEmailTestTo] = useState('');
+  const [sendingEmailTest, setSendingEmailTest] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Custom API Modal state
   const [showAddCustom, setShowAddCustom] = useState<boolean>(false);
@@ -306,6 +309,34 @@ export function ApiCatalogSettings() {
       setEmailConfigError(err instanceof Error ? err.message : 'Could not save sender address.');
     } finally {
       setSavingEmailFrom(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    const to = emailTestTo.trim();
+    setEmailTestResult(null);
+    if (!to) {
+      setEmailTestResult({ ok: false, message: 'Enter a recipient email address first.' });
+      return;
+    }
+    setSendingEmailTest(true);
+    try {
+      const result = await api.sendEmail(
+        to,
+        'NEXUS email test',
+        'This is a test email from Automation Studio. If you received it, email delivery is configured correctly.',
+      );
+      setEmailTestResult({
+        ok: true,
+        message: `Test email sent to ${result.recipients.join(', ')}.`,
+      });
+    } catch (err: unknown) {
+      setEmailTestResult({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Could not send the test email.',
+      });
+    } finally {
+      setSendingEmailTest(false);
     }
   };
 
@@ -1306,6 +1337,39 @@ export function ApiCatalogSettings() {
         {emailConfigNotice && (
           <p className="text-[11px] text-emerald-300 m-0">{emailConfigNotice}</p>
         )}
+
+        <div className="pt-3 mt-1 border-t border-slate-800/70 space-y-2">
+          <p className="text-[11px] text-slate-400 m-0">
+            Send a test email to confirm the Resend key and sender both work.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="email"
+              value={emailTestTo}
+              onChange={(event) => {
+                setEmailTestTo(event.target.value);
+                setEmailTestResult(null);
+              }}
+              placeholder="you@example.com"
+              className="flex-1 rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-200 outline-none focus:border-rose-400/60"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSendTestEmail()}
+              disabled={sendingEmailTest}
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-rose-400/40 hover:bg-slate-700 disabled:opacity-50"
+            >
+              {sendingEmailTest ? <Loader2 size={13} className="animate-spin" /> : <Mail size={13} />}
+              Send test
+            </button>
+          </div>
+          {emailTestResult && (
+            <p className={`text-[11px] m-0 inline-flex items-center gap-1.5 ${emailTestResult.ok ? 'text-emerald-300' : 'text-rose-300'}`}>
+              {emailTestResult.ok ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+              {emailTestResult.message}
+            </p>
+          )}
+        </div>
       </section>
 
       {/* Global Web Search API Section */}

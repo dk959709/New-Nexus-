@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type {
   AutomationScheduleKind,
+  IntegrationStatus,
   PublicAutomationSchedule,
   Workflow,
   WorkflowVariable,
@@ -69,7 +70,7 @@ export function AutomationSchedulePanel({
   const [runAt, setRunAt] = useState('');
   const [everyMinutes, setEveryMinutes] = useState(60);
   const [copiedToken, setCopiedToken] = useState('');
-  const [integration, setIntegration] = useState<{ email: boolean; webhook: boolean } | null>(null);
+  const [integration, setIntegration] = useState<IntegrationStatus | null>(null);
   const [adminToken, setAdminToken] = useState(() => {
     if (typeof window === 'undefined') return '';
     try {
@@ -104,7 +105,7 @@ export function AutomationSchedulePanel({
     void refresh();
     void api
       .getIntegrationStatus()
-      .then((status) => setIntegration({ email: status.email, webhook: status.webhook }))
+      .then((status) => setIntegration(status))
       .catch(() => setIntegration(null));
   }, [refresh]);
 
@@ -229,7 +230,14 @@ export function AutomationSchedulePanel({
       {integration && !integration.email && (
         <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-200 flex gap-1.5">
           <AlertTriangle size={11} className="mt-0.5 shrink-0" />
-          Email delivery is not configured. Add RESEND_API_KEY and EMAIL_FROM on the server.
+          Email delivery is not configured. Add a Resend key in Settings → API Keys → Email & Automation.
+        </div>
+      )}
+
+      {integration?.email && integration.emailFromSource === 'default' && (
+        <div className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-200 flex gap-1.5">
+          <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+          Using the default Resend test sender. Verify a domain and save a sender in Settings for real recipients.
         </div>
       )}
 

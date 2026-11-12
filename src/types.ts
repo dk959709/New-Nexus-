@@ -1894,6 +1894,12 @@ export interface EmailConfig {
   defaultFrom: string;
 }
 
+export interface EmailSendResult {
+  id: string;
+  recipients: string[];
+  subject: string;
+}
+
 export interface DocumentExtractionResult {
   url: string;
   finalUrl: string;

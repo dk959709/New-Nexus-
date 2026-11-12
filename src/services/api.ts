@@ -29,6 +29,7 @@ import type {
   CreateAutomationScheduleInput,
   IntegrationStatus,
   EmailConfig,
+  EmailSendResult,
   DocumentExtractionResult,
 } from '@/types';
 export type { ScholarPaper } from '@/types';
@@ -1332,6 +1333,13 @@ export const api = {
     return call<EmailConfig>('/api/integrations/email-config', {
       method: 'POST',
       body: JSON.stringify({ from }),
+    });
+  },
+
+  sendEmail(to: string, subject: string, body: string): Promise<EmailSendResult> {
+    return call<EmailSendResult>('/api/integrations/email', {
+      method: 'POST',
+      body: JSON.stringify({ to, subject, body }),
     });
   },
 
