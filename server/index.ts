@@ -206,7 +206,7 @@ async function executeProviderChatRequest({
   image,
 }: ProviderRequestOptions): Promise<ProviderRequestResult> {
   const url = normalizeProviderUrl(rawUrl);
-  const model = (rawModel || 'deepseek/deepseek-chat').trim();
+  const rawTrimmedModel = (rawModel || 'deepseek/deepseek-chat').trim();
   const key = (rawKey || '').trim();
 
   if (!key) {
@@ -215,7 +215,7 @@ async function executeProviderChatRequest({
       text: '',
       content: '',
       reasoning: '',
-      model,
+      model: rawTrimmedModel,
       status: 401,
       error: 'Missing or empty API key.',
     };
@@ -249,6 +249,19 @@ async function executeProviderChatRequest({
     url.includes('googleapis.com') ||
     url.includes('ai.google.dev') ||
     (rawUrl && (rawUrl.includes('googleapis') || rawUrl.includes('google') || rawUrl.includes('gemini')));
+
+  // Map non-existent/legacy Gemini chat aliases (gemini-3.8-flash / gemini-3.6-flash) to active Gemini Flash text model
+  const normalizedGeminiLower = rawTrimmedModel.toLowerCase();
+  const model =
+    isGoogle && (normalizedGeminiLower === 'gemini-3.8-flash' || normalizedGeminiLower === 'gemini-3.6-flash')
+      ? 'gemini-4-hydrogen'
+      : rawTrimmedModel;
+  if (model !== rawTrimmedModel) {
+    console.warn(
+      `[Google Gemini Model Alias] Unsupported text model "${rawTrimmedModel}" automatically mapped to active Gemini Flash model "${model}".`
+    );
+  }
+
   const isQwen37FlashFree = model.toLowerCase().includes('qwen/qwen3.7-flash:free');
   const isBazaarLinkQwen37Flash = Boolean(isBazaarLink && isQwen37FlashFree);
 
@@ -409,81 +422,84 @@ async function executeProviderChatRequest({
           }
         }
 
-        // If Google Gemini returns 503 (high demand) or 404 (model deprecated / not found), auto-failover to gemini-3.6-flash
-        if (isGoogle && (status === 503 || status === 404) && model !== 'gemini-3.6-flash') {
-          console.warn(
-            `[Google Gemini Model Fallback] Model "${model}" returned HTTP ${status} (${errorMsg}). Automatically failing over to resilient "gemini-3.6-flash"...`
-          );
-          const fallbackRequestBody = {
-            model: 'gemini-3.6-flash',
-            messages: sanitized,
-            temperature,
-            max_tokens: maxTokens,
-          };
+        // If Google Gemini returns 503 (high demand) or 404 (model deprecated / not found), auto-failover to active Gemini Flash models
+        if (isGoogle && (status === 503 || status === 404)) {
+          const googleFallbacks = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'].filter((m) => m !== model);
+          for (const fallbackModel of googleFallbacks) {
+            console.warn(
+              `[Google Gemini Model Fallback] Model "${model}" returned HTTP ${status} (${errorMsg}). Automatically failing over to "${fallbackModel}"...`
+            );
+            const fallbackRequestBody = {
+              model: fallbackModel,
+              messages: outgoingMessages,
+              temperature,
+              max_tokens: maxTokens,
+            };
 
-          try {
-            const fallbackRes = await fetch(url, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify(fallbackRequestBody),
-              signal: AbortSignal.timeout(timeoutMs),
-            });
+            try {
+              const fallbackRes = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(fallbackRequestBody),
+                signal: AbortSignal.timeout(timeoutMs),
+              });
 
-            if (fallbackRes.ok) {
-              console.log(
-                `[Google Gemini Model Fallback] Fallback to "gemini-3.6-flash" succeeded (HTTP ${fallbackRes.status})!`
-              );
-              const fbPayload = (await fallbackRes.json()) as {
-                model?: string;
-                choices?: Array<{
-                  message?: {
-                    content?: string | Array<{ type?: string; text?: string }>;
-                    reasoning?: string;
-                    reasoning_content?: string;
-                  };
-                  text?: string;
-                }>;
-              };
-
-              const fbChoice = fbPayload.choices?.[0];
-              const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
-                fbChoice?.message as Record<string, unknown>,
-                fbChoice?.message?.content,
-                undefined,
-                'gemini-3.6-flash',
-              );
-
-              const fbText =
-                fbContentStr ||
-                fbReasoningStr ||
-                (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
-                (fbChoice ? 'OK' : '');
-
-              if (fbText) {
-                return {
-                  ok: true,
-                  text: fbText,
-                  content: fbContentStr,
-                  reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
-                  model: 'gemini-3.6-flash',
-                  status: fallbackRes.status,
+              if (fallbackRes.ok) {
+                console.log(
+                  `[Google Gemini Model Fallback] Fallback to "${fallbackModel}" succeeded (HTTP ${fallbackRes.status})!`
+                );
+                const fbPayload = (await fallbackRes.json()) as {
+                  model?: string;
+                  choices?: Array<{
+                    message?: {
+                      content?: string | Array<{ type?: string; text?: string }>;
+                      reasoning?: string;
+                      reasoning_content?: string;
+                    };
+                    text?: string;
+                  }>;
                 };
+
+                const fbChoice = fbPayload.choices?.[0];
+                const { contentStr: fbContentStr, reasoningStr: fbReasoningStr } = extractReasoningAndContent(
+                  fbChoice?.message as Record<string, unknown>,
+                  fbChoice?.message?.content,
+                  undefined,
+                  fallbackModel,
+                );
+
+                const fbText =
+                  fbContentStr ||
+                  fbReasoningStr ||
+                  (typeof fbChoice?.text === 'string' ? fbChoice.text.trim() : '') ||
+                  (fbChoice ? 'OK' : '');
+
+                if (fbText) {
+                  return {
+                    ok: true,
+                    text: fbText,
+                    content: fbContentStr,
+                    reasoning: fbContentStr && fbReasoningStr ? fbReasoningStr : '',
+                    model: fallbackModel,
+                    status: fallbackRes.status,
+                  };
+                }
+              } else {
+                let fbErrMsg = `HTTP ${fallbackRes.status}`;
+                try {
+                  const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
+                  fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
+                } catch {
+                  const fbRaw = await fallbackRes.text().catch(() => '');
+                  if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
+                }
+                console.error(
+                  `[Google Gemini Model Fallback] Fallback to "${fallbackModel}" failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
+                );
               }
-            } else {
-              let fbErrMsg = `HTTP ${fallbackRes.status}`;
-              try {
-                const fbErrObj = (await fallbackRes.json()) as { error?: { message?: string } | string; message?: string };
-                fbErrMsg = (typeof fbErrObj.error === 'object' ? fbErrObj.error?.message : fbErrObj.error) || fbErrObj.message || `HTTP ${fallbackRes.status}`;
-              } catch {
-                const fbRaw = await fallbackRes.text().catch(() => '');
-                if (fbRaw) fbErrMsg = fbRaw.slice(0, 200);
-              }
-              console.error(
-                `[Google Gemini Model Fallback] Fallback to "gemini-3.6-flash" failed with HTTP ${fallbackRes.status} (${fbErrMsg}).`
-              );
+            } catch (fbErr) {
+              console.error(`[Google Gemini Model Fallback] Network error during fallback to "${fallbackModel}":`, fbErr);
             }
-          } catch (fbErr) {
-            console.error('[Google Gemini Model Fallback] Network error during fallback:', fbErr);
           }
         }
 
@@ -1514,16 +1530,16 @@ async function generateWithGemini({
     }
   }
 
-  // Primary model and fallback models supporting current API specifications
+  // Primary model and fallback models supporting current @google/genai API specifications
   const candidateModels = [
-    'gemini-3.6-flash',
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
+    'gemini-3.1-flash-lite',
   ];
 
   for (const model of candidateModels) {
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout calling model ${model}`)), 4000),
+        setTimeout(() => reject(new Error(`Timeout calling model ${model}`)), 25000),
       );
 
       const response = await Promise.race([
@@ -4792,13 +4808,13 @@ async function startServer() {
       url.includes('google') ||
       model.toLowerCase().includes('gemini');
 
-    // If Google returned 503 (high demand) or 404 (model deprecated) and it wasn't already gemini-3.6-flash,
-    // verify whether the API key is valid by testing against the highly available gemini-3.6-flash
-    if (!result.ok && isGoogle && model !== 'gemini-3.6-flash' && (result.status === 503 || result.status === 404)) {
-      console.log(`[/api/ai/provider/test] Model "${model}" failed with HTTP ${result.status}. Verifying key with "gemini-3.6-flash"...`);
+    // If Google returned 503 (high demand) or 404 (model deprecated/not found) and it wasn't already gemini-4-hydrogen,
+    // verify whether the API key is valid by testing against gemini-4-hydrogen
+    if (!result.ok && isGoogle && model !== 'gemini-4-hydrogen' && (result.status === 503 || result.status === 404)) {
+      console.log(`[/api/ai/provider/test] Model "${model}" failed with HTTP ${result.status}. Verifying key with "gemini-4-hydrogen"...`);
       const fallbackResult = await executeProviderChatRequest({
         url,
-        model: 'gemini-3.6-flash',
+        model: 'gemini-4-hydrogen',
         key,
         messages: [{ role: 'user', content: 'ping' }],
         maxTokens: 16,
@@ -4811,8 +4827,8 @@ async function startServer() {
           data: {
             ok: true,
             status: fallbackResult.status,
-            model: 'gemini-3.6-flash',
-            note: `Key is valid! (Note: "${model}" is experiencing high demand [HTTP 503] on Google; key confirmed working with gemini-3.6-flash)`,
+            model: 'gemini-4-hydrogen',
+            note: `Key is valid! ("${model}" returned HTTP ${result.status} — switch model to gemini-4-hydrogen)`,
           },
         });
       }

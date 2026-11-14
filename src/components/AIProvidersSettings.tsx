@@ -1650,9 +1650,9 @@ export function AIProvidersSettings() {
         const isGoogle = url.includes('google') || url.includes('generativelanguage') || model.toLowerCase().includes('gemini');
         let errorMsg = res.error || `HTTP ${res.status || 'Error'}`;
         if (isGoogle && res.status === 503) {
-          errorMsg = `HTTP 503: High demand on "${model}". Switch to "gemini-3.6-flash".`;
+          errorMsg = `HTTP 503: High demand on "${model}". Switch to "gemini-4-hydrogen" or "gemini-3.1-flash-lite".`;
         } else if (isGoogle && res.status === 404) {
-          errorMsg = `HTTP 404: Model "${model}" not found or deprecated. Switch to "gemini-3.6-flash".`;
+          errorMsg = `HTTP 404: Model "${model}" not found or unsupported for text chat. Switch to "gemini-4-hydrogen" or "gemini-3.1-flash-lite".`;
         }
         const isAuth = res.status === 401 || res.status === 403;
         const statusType: KeyHealthStatus = isAuth ? 'invalid' : 'cooldown';
@@ -3638,7 +3638,7 @@ export function AIProvidersSettings() {
                     ...editingProvider,
                     name: 'Google Gemini',
                     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-                    model: 'gemini-3.6-flash',
+                    model: 'gemini-4-hydrogen',
                     reasoningOverride: 'auto',
                   });
                 }}
@@ -4066,8 +4066,7 @@ export function AIProvidersSettings() {
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       {[
-                        { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (Recommended)' },
-                        { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash' },
+                        { id: 'gemini-4-hydrogen', label: 'gemini-4-hydrogen (Recommended)' },
                         { id: 'gemini-3.1-flash-lite', label: 'gemini-3.1-flash-lite' },
                         { id: 'gemini-3.1-pro-preview', label: 'gemini-3.1-pro-preview' },
                       ].map((m) => (
@@ -4091,7 +4090,7 @@ export function AIProvidersSettings() {
                       ))}
                     </div>
                     <span style={{ fontSize: '11px', color: '#93c5fd', display: 'block', marginTop: '5px' }}>
-                      💡 Tip: <strong>gemini-3.6-flash</strong> is Google&apos;s most reliable model. If other models return HTTP 503 (high demand), switch to gemini-3.6-flash.
+                      💡 Tip: <strong>gemini-4-hydrogen</strong> is the active Gemini Flash chat model (note: <code>gemini-3.8-flash</code> only exists for Live/TTS, not text chat). If other models return HTTP 503, try <code>gemini-3.1-flash-lite</code>.
                     </span>
                   </div>
                 )}

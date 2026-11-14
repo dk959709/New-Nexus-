@@ -424,7 +424,7 @@ export function lookupReasoningConfig(
       supportsHiddenFormat: false,
       isGenericFallback: true,
       buildParams: (target: ReasoningTargetLevel) => ({
-        reasoning_effort: target === 'high' ? 'high' : target === 'off' ? 'none' : 'low',
+        reasoning_effort: target === 'high' ? 'high' : 'none',
       }),
     };
   }
