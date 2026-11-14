@@ -297,6 +297,43 @@ function normalizeCanvasArtifact(rawItem: Partial<CanvasArtifact> & { type?: Art
   };
 }
 
+const VAULT_IDB_NAME = 'nexus_canvas_vault_db';
+const VAULT_IDB_STORE = 'vault_items';
+const VAULT_IDB_RECORD_KEY = 'canvas_vault_v1';
+
+function compactArtifactForStorage(item: CanvasArtifact, maxVersions = 2): CanvasArtifact {
+  const normalized = normalizeCanvasArtifact(item);
+  const versions = normalized.versions || [];
+  if (maxVersions <= 1) {
+    return {
+      ...normalized,
+      versions: [
+        {
+          versionNumber: 1,
+          label: versions[normalized.currentVersionIndex]?.label || 'Saved Snapshot',
+          content: normalized.content,
+          timestamp: normalized.createdAt || Date.now(),
+        },
+      ],
+      currentVersionIndex: 0,
+    };
+  }
+  const trimmedVersions = versions.slice(-maxVersions);
+  const droppedCount = Math.max(0, versions.length - trimmedVersions.length);
+  const adjustedIndex =
+    trimmedVersions.length > 0
+      ? Math.max(
+          0,
+          Math.min(trimmedVersions.length - 1, (normalized.currentVersionIndex ?? 0) - droppedCount),
+        )
+      : 0;
+  return {
+    ...normalized,
+    versions: trimmedVersions,
+    currentVersionIndex: adjustedIndex,
+  };
+}
+
 function loadVaultArtifacts(): CanvasArtifact[] {
   try {
     const raw = localStorage.getItem(VAULT_STORAGE_KEY);
@@ -308,37 +345,118 @@ function loadVaultArtifacts(): CanvasArtifact[] {
   }
 }
 
-function saveVaultArtifacts(list: CanvasArtifact[]): boolean {
+function saveVaultToLocalStorage(list: CanvasArtifact[]): boolean {
+  // Pass 1: try saving up to 2 versions per item
+  let prepared = list.map((item) => compactArtifactForStorage(item, 2));
   try {
-    let prepared = list.map((item) => {
-      const versions = item.versions || [];
-      const trimmedVersions = versions.slice(-5);
-      const droppedCount = Math.max(0, versions.length - trimmedVersions.length);
-      const adjustedIndex =
-        trimmedVersions.length > 0
-          ? Math.max(
-              0,
-              Math.min(trimmedVersions.length - 1, (item.currentVersionIndex ?? 0) - droppedCount),
-            )
-          : 0;
-      return {
-        ...item,
-        versions: trimmedVersions,
-        currentVersionIndex: adjustedIndex,
-      };
-    });
-
-    let json = JSON.stringify(prepared);
-    while (json.length > 3500000 && prepared.length > 0) {
-      prepared = prepared.slice(0, -1);
-      json = JSON.stringify(prepared);
+    const json = JSON.stringify(prepared);
+    if (json.length <= 3500000) {
+      localStorage.setItem(VAULT_STORAGE_KEY, json);
+      return true;
     }
-
-    localStorage.setItem(VAULT_STORAGE_KEY, json);
-    return true;
   } catch {
-    return false;
+    // fall through to aggressive compaction
   }
+
+  // Pass 2: compact every item to single-snapshot form & evict oldest items on quota pressure
+  prepared = list.map((item) => compactArtifactForStorage(item, 1));
+  while (prepared.length > 0) {
+    try {
+      const json = JSON.stringify(prepared);
+      localStorage.setItem(VAULT_STORAGE_KEY, json);
+      return true;
+    } catch {
+      prepared = prepared.slice(0, -1);
+    }
+  }
+  return false;
+}
+
+function openVaultIdb(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !('indexedDB' in window)) {
+      resolve(null);
+      return;
+    }
+    try {
+      const req = window.indexedDB.open(VAULT_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(VAULT_IDB_STORE)) {
+          db.createObjectStore(VAULT_IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function readVaultArtifactsFromIdb(): Promise<CanvasArtifact[] | null> {
+  const db = await openVaultIdb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(VAULT_IDB_STORE, 'readonly');
+      const store = tx.objectStore(VAULT_IDB_STORE);
+      const getReq = store.get(VAULT_IDB_RECORD_KEY);
+      getReq.onsuccess = () => {
+        db.close();
+        const res = getReq.result;
+        if (Array.isArray(res)) {
+          resolve(res.map((item) => normalizeCanvasArtifact(item)));
+        } else {
+          resolve(null);
+        }
+      };
+      getReq.onerror = () => {
+        db.close();
+        resolve(null);
+      };
+    } catch {
+      db.close();
+      resolve(null);
+    }
+  });
+}
+
+async function writeVaultArtifactsToIdb(list: CanvasArtifact[]): Promise<boolean> {
+  const db = await openVaultIdb();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(VAULT_IDB_STORE, 'readwrite');
+      const store = tx.objectStore(VAULT_IDB_STORE);
+      store.put(
+        list.map((item) => compactArtifactForStorage(item, 2)),
+        VAULT_IDB_RECORD_KEY,
+      );
+      tx.oncomplete = () => {
+        db.close();
+        resolve(true);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(false);
+      };
+    } catch {
+      db.close();
+      resolve(false);
+    }
+  });
+}
+
+async function persistVaultArtifacts(list: CanvasArtifact[]): Promise<boolean> {
+  const lsOk = saveVaultToLocalStorage(list);
+  const idbOk = await writeVaultArtifactsToIdb(list);
+  try {
+    window.dispatchEvent(new Event('nexus-canvas-vault-updated'));
+  } catch {
+    // ignore
+  }
+  return lsOk || idbOk;
 }
 
 /**
@@ -1210,6 +1328,34 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [savedToVaultNotice, setSavedToVaultNotice] = useState(false);
   const [vaultError, setVaultError] = useState<string | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    const syncVault = async () => {
+      const lsList = loadVaultArtifacts();
+      const idbList = await readVaultArtifactsFromIdb();
+      if (cancelled) return;
+      if (idbList && idbList.length >= lsList.length) {
+        setVaultArtifacts(idbList);
+      } else if (lsList.length > 0) {
+        setVaultArtifacts(lsList);
+        writeVaultArtifactsToIdb(lsList);
+      }
+    };
+    if (isOpen) {
+      syncVault();
+    }
+    const handleVaultEvent = () => {
+      syncVault();
+    };
+    window.addEventListener('nexus-canvas-vault-updated', handleVaultEvent);
+    window.addEventListener('storage', handleVaultEvent);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('nexus-canvas-vault-updated', handleVaultEvent);
+      window.removeEventListener('storage', handleVaultEvent);
+    };
+  }, [isOpen, activeTab]);
+
   // Feature 10: Voice-to-Canvas Mic & Audio Walkthrough
   const [isListeningMic, setIsListeningMic] = useState(false);
   const [isExplainingAudio, setIsExplainingAudio] = useState(false);
@@ -1221,8 +1367,29 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [aiRefining, setAiRefining] = useState(false);
   const [aiRefiningLabel, setAiRefiningLabel] = useState('');
   const [customAiPrompt, setCustomAiPrompt] = useState('');
+  const promptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiWarning, setAiWarning] = useState<string | null>(null);
+
+  // Auto-grow prompt textarea up to 4 lines cleanly
+  useEffect(() => {
+    const el = promptTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const nextHeight = Math.min(112, Math.max(44, el.scrollHeight));
+    el.style.height = `${nextHeight}px`;
+  }, [customAiPrompt]);
+
+  const handleSubmitPromptComposer = () => {
+    const trimmed = customAiPrompt.trim();
+    if (!trimmed || aiRefining) return;
+    setCustomAiPrompt('');
+    if (activeArtifact && activeTab !== 'templates') {
+      handleRunAiRefinement(trimmed, `AI Edit: ${trimmed.slice(0, 24)}`);
+    } else {
+      handleCreateArtifactFromPrompt(trimmed);
+    }
+  };
 
   // Canvas AI Provider & Model Selection State
   const [configuredProviders, setConfiguredProviders] = useState<AIProviderConfig[]>(() => {
@@ -1985,33 +2152,45 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   };
 
   // Feature 8: Save / Remove Artifact in Persistent Vault
-  const handleSaveToVault = () => {
+  const handleSaveToVault = async () => {
     if (!activeArtifact) return;
+    const latestContent =
+      activeArtifact.kind === 'project' && projectFiles.length > 0
+        ? serializeProject(projectFiles)
+        : hasUnsavedEdits
+        ? editorDraft
+        : activeArtifact.content;
+    const now = Date.now();
     const itemToSave: CanvasArtifact = {
       ...activeArtifact,
-      id: `vault-${Date.now()}`,
-      content: hasUnsavedEdits ? editorDraft : activeArtifact.content,
+      id: `vault-${now}`,
+      content: latestContent,
+      createdAt: now,
     };
-    const next = [itemToSave, ...vaultArtifacts.filter((v) => v.title !== itemToSave.title)].slice(
+
+    const currentSaved = vaultArtifacts.length > 0 ? vaultArtifacts : loadVaultArtifacts();
+    const next = [itemToSave, ...currentSaved.filter((v) => v.title !== itemToSave.title)].slice(
       0,
       30,
     );
-    const success = saveVaultArtifacts(next);
+
+    // Update UI immediately and persist to both localStorage (compacted on quota) + IndexedDB
+    setVaultArtifacts(next);
+    const success = await persistVaultArtifacts(next);
     if (success) {
-      setVaultArtifacts(next);
       setVaultError(null);
       setSavedToVaultNotice(true);
-      setTimeout(() => setSavedToVaultNotice(false), 2000);
+      setTimeout(() => setSavedToVaultNotice(false), 3200);
     } else {
-      setVaultError('Could not save: browser storage is full. Delete old vault items and try again.');
-      setTimeout(() => setVaultError(null), 4000);
+      setVaultError('Could not store in browser Vault. Try freeing browser site storage.');
+      setTimeout(() => setVaultError(null), 5000);
     }
   };
 
-  const handleDeleteVaultItem = (id: string) => {
+  const handleDeleteVaultItem = async (id: string) => {
     const next = vaultArtifacts.filter((v) => v.id !== id);
     setVaultArtifacts(next);
-    saveVaultArtifacts(next);
+    await persistVaultArtifacts(next);
   };
 
   const handleSyncBackToChat = () => {
@@ -3784,7 +3963,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 <button
                   type="button"
                   onClick={handleSaveToVault}
-                  className={`p-1.5 sm:px-2 sm:py-1 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1 cursor-pointer ${
+                  className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1 cursor-pointer ${
                     savedToVaultNotice
                       ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
                       : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-200'
@@ -3795,19 +3974,10 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                     size={13}
                     className={savedToVaultNotice ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}
                   />
-                  <span className="hidden xl:inline">
-                    {savedToVaultNotice ? 'Saved' : 'Vault'}
+                  <span className="inline">
+                    {savedToVaultNotice ? 'Saved!' : 'Save Vault'}
                   </span>
                 </button>
-                {vaultError && (
-                  <div
-                    role="alert"
-                    className="absolute right-0 top-full mt-1.5 z-50 w-60 sm:w-64 p-2 rounded-lg bg-amber-950/95 border border-amber-500/50 shadow-2xl text-[11px] text-amber-200 leading-snug flex items-start gap-1.5"
-                  >
-                    <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
-                    <span>{vaultError}</span>
-                  </div>
-                )}
               </div>
 
               {/* Feature 6: High-Res PNG Snapshot */}
@@ -4134,16 +4304,16 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                   ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
                   : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
               }`}
-              title="Save a named snapshot checkpoint"
+              title="Save a named snapshot or store in Vault"
             >
               <Flag size={10} className="text-emerald-400" />
-              <span>Save</span>
+              <span>Snapshot</span>
             </button>
           </div>
         )}
       </div>
 
-      {/* Inline Named Checkpoint Input Bar */}
+      {/* Inline Named Checkpoint & Save-to-Vault Bar */}
       {checkpointModalOpen && activeArtifact && (
         <form
           onSubmit={handleSaveNamedCheckpoint}
@@ -4154,7 +4324,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             type="text"
             value={checkpointLabelDraft}
             onChange={(e) => setCheckpointLabelDraft(e.target.value)}
-            placeholder="Checkpoint name (e.g. Before mobile refactor)..."
+            placeholder="Snapshot label (e.g. Before mobile refactor)..."
             autoFocus
             className="flex-1 min-w-[160px] min-h-[38px] px-2.5 rounded-lg bg-zinc-900 border border-zinc-700 focus:border-emerald-400 text-xs text-zinc-100 outline-none"
           />
@@ -4162,7 +4332,18 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             type="submit"
             className="min-h-[38px] px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
           >
-            Save Snapshot
+            Save Version
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              handleSaveToVault();
+              setCheckpointModalOpen(false);
+            }}
+            className="min-h-[38px] px-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+          >
+            <Bookmark size={12} />
+            <span>Save to Vault</span>
           </button>
           <button
             type="button"
@@ -4709,6 +4890,40 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             </div>
           )}
 
+          {savedToVaultNotice && (
+            <div className="px-3 py-1.5 rounded-lg bg-amber-950/75 border border-amber-500/45 text-xs text-amber-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Bookmark size={12} className="fill-amber-400 text-amber-400 shrink-0" />
+                <span className="truncate">
+                  Stored <strong>&ldquo;{activeArtifact.title}&rdquo;</strong> in Vault ({vaultArtifacts.length} total).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('templates')}
+                className="px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-[11px] shrink-0 cursor-pointer"
+              >
+                Open Vault
+              </button>
+            </div>
+          )}
+
+          {vaultError && (
+            <div className="px-3 py-1.5 rounded-lg bg-rose-950/75 border border-rose-500/45 text-xs text-rose-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <AlertTriangle size={12} className="text-rose-400 shrink-0" />
+                <span className="truncate">{vaultError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVaultError(null)}
+                className="text-rose-300 hover:text-white"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
           {aiError && (
             <div className="px-3 py-1.5 rounded-lg bg-rose-950/70 border border-rose-500/40 text-xs text-rose-200 flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0">
@@ -4918,7 +5133,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
             {/* Feature 8: Saved Canvas Vault Section */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <Bookmark size={14} className="text-amber-400" />
@@ -4928,11 +5143,29 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                     Your bookmarked apps, calculators, and SVG blueprints persisted across sessions.
                   </p>
                 </div>
+
+                {activeArtifact && (
+                  <button
+                    type="button"
+                    onClick={handleSaveToVault}
+                    className="min-h-[44px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer shadow-sm"
+                  >
+                    <Bookmark size={13} className="fill-slate-950" />
+                    <span>Save &ldquo;{activeArtifact.title.slice(0, 22)}{activeArtifact.title.length > 22 ? '…' : ''}&rdquo; to Vault</span>
+                  </button>
+                )}
               </div>
+
+              {vaultError && (
+                <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-xs text-rose-200 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                  <span>{vaultError}</span>
+                </div>
+              )}
 
               {vaultArtifacts.length === 0 ? (
                 <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/80 text-xs text-zinc-400">
-                  No saved Vault artifacts yet. Click the <strong>Vault</strong> bookmark icon in the top bar while viewing any artifact to save it here permanently.
+                  No saved Vault artifacts yet. Tap <strong>Save Vault</strong> above (or in the top bar) while viewing any artifact to store it permanently.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2.5">
@@ -5500,152 +5733,175 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         </div>
       )}
 
-      {/* Targeted Single-File AI Edit Scope Bar (when editing multi-file Projects) */}
-      {activeArtifact && activeArtifact.kind === 'project' && selectedPath && activeTab !== 'templates' && (
-        <div className="px-3 py-1.5 border-t border-zinc-800/90 bg-zinc-950/90 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-[11px] font-mono text-zinc-400">AI Edit Scope:</span>
-            <button
-              type="button"
-              onClick={() => setTargetSelectedFileOnly(false)}
-              className={`min-h-[34px] px-2.5 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer ${
-                !targetSelectedFileOnly
-                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              All Files
-            </button>
-            <button
-              type="button"
-              onClick={() => setTargetSelectedFileOnly(true)}
-              className={`min-h-[34px] px-2.5 rounded-lg border text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer ${
-                targetSelectedFileOnly
-                  ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200 font-semibold'
-                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
-              }`}
-              title={`Target only ${selectedPath} with AI edits`}
-            >
-              <FileCode size={12} />
-              <span className="truncate max-w-[160px]">{selectedPath.split('/').pop()} only</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom Inline AI Canvas Edit / Build Prompt Bar + Voice Mic (Always Visible on Mobile & Desktop) */}
+      {/* Bottom Inline AI Canvas Edit / Build Composer (Two compact rows on mobile <640px, single horizontal row on desktop sm:) */}
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const trimmed = customAiPrompt.trim();
-          if (!trimmed || aiRefining) return;
-          setCustomAiPrompt('');
-          if (activeArtifact && activeTab !== 'templates') {
-            handleRunAiRefinement(trimmed, `AI Edit: ${trimmed.slice(0, 24)}`);
-          } else {
-            handleCreateArtifactFromPrompt(trimmed);
-          }
+          handleSubmitPromptComposer();
         }}
-        style={{
-          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0.75rem))',
-        }}
-        className={`px-3 pt-2.5 border-t flex items-center gap-2 shrink-0 w-full box-border ${
+        className={`border-t shrink-0 w-full box-border pb-[env(safe-area-inset-bottom)] ${
           theme === 'classic'
             ? 'border-cyan-500/30 bg-slate-950/95'
             : 'border-zinc-800 bg-zinc-950/95'
         }`}
       >
-        {/* Feature 10: Voice Dictation Mic Button */}
-        <button
-          type="button"
-          onClick={handleToggleMic}
-          className={`min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-            isListeningMic
-              ? 'bg-rose-500/25 border-rose-500/60 text-rose-300 animate-pulse'
-              : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-cyan-400'
-          }`}
-          title={isListeningMic ? 'Stop voice dictation' : 'Dictate Canvas changes by voice'}
-        >
-          {isListeningMic ? <MicOff size={15} /> : <Mic size={15} />}
-        </button>
+        <div className="px-3 pt-2 pb-2.5 flex flex-col sm:flex-row sm:items-end gap-2 w-full box-border">
+          {/* Top Control Strip on Mobile / Left Inline Strip on Desktop: Model, Project/Single-File Toggle, AI Edit Scope, Quick Prompts */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full sm:w-auto sm:shrink-0">
+            {/* Quick Model Selector Pill */}
+            <button
+              type="button"
+              onClick={handleOpenModelModal}
+              className={`min-h-[36px] sm:min-h-[44px] px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
+                canvasProviderId !== 'session'
+                  ? 'bg-purple-500/20 border-purple-500/50 text-purple-200'
+                  : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
+              }`}
+              title={`Canvas AI Model: ${activeCanvasModelLabel} (Click to change model)`}
+            >
+              <Cpu size={13} className="text-purple-400 shrink-0" />
+              <span className="text-[11px] font-mono truncate max-w-[92px]">
+                {activeCanvasModelLabel}
+              </span>
+            </button>
 
-        {/* Quick Model Selector Button inside Bottom Prompt Bar */}
-        <button
-          type="button"
-          onClick={handleOpenModelModal}
-          className={`min-h-[44px] px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
-            canvasProviderId !== 'session'
-              ? 'bg-purple-500/20 border-purple-500/50 text-purple-200'
-              : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
-          }`}
-          title={`Canvas AI Model: ${activeCanvasModelLabel} (Click to change model)`}
-        >
-          <Cpu size={14} className="text-purple-400 shrink-0" />
-          <span className="hidden sm:inline text-[11px] font-mono truncate max-w-[96px]">
-            {activeCanvasModelLabel}
-          </span>
-        </button>
+            {/* Project / Single-File Toggle (Create Mode) or AI Edit Scope Pill (Active Project Editing Mode) */}
+            {!activeArtifact || activeTab === 'templates' ? (
+              <button
+                type="button"
+                onClick={() => setProjectPromptMode((prev) => !prev)}
+                className={`min-h-[36px] sm:min-h-[44px] px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
+                  projectPromptMode
+                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
+                    : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
+                }`}
+                title="Toggle multi-file Project vs Single-File generation"
+              >
+                <FolderTree
+                  size={13}
+                  className={projectPromptMode ? 'text-amber-400 shrink-0' : 'text-zinc-400 shrink-0'}
+                />
+                <span className="text-[11px] font-mono whitespace-nowrap">
+                  {projectPromptMode ? 'Project' : 'Single File'}
+                </span>
+              </button>
+            ) : activeArtifact.kind === 'project' && selectedPath ? (
+              <div
+                className="min-h-[36px] sm:min-h-[44px] p-0.5 rounded-xl border border-zinc-800 bg-zinc-900 flex items-center gap-0.5 shrink-0"
+                role="group"
+                aria-label="AI Edit Scope"
+              >
+                <button
+                  type="button"
+                  onClick={() => setTargetSelectedFileOnly(false)}
+                  className={`min-h-[30px] sm:min-h-[38px] px-2 rounded-lg text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
+                    !targetSelectedFileOnly
+                      ? 'bg-amber-500/25 text-amber-200 font-semibold'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  All Files
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetSelectedFileOnly(true)}
+                  className={`min-h-[30px] sm:min-h-[38px] px-2 rounded-lg text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer ${
+                    targetSelectedFileOnly
+                      ? 'bg-cyan-500/25 text-cyan-200 font-semibold'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title={`Target only ${selectedPath} with AI edits`}
+                >
+                  <FileCode size={11} className="shrink-0" />
+                  <span className="truncate max-w-[110px]">{selectedPath.split('/').pop()}</span>
+                </button>
+              </div>
+            ) : null}
 
-        {/* Active Skills Indicator Chip */}
-        {activeSkillsState.count > 0 && (
-          <div
-            className="min-h-[44px] px-2 sm:px-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hidden sm:flex items-center gap-1 shrink-0 select-none"
-            title={`~${activeSkillsState.tokensK}k tokens added to each request`}
-          >
-            <Sparkles size={12} className="text-emerald-400 shrink-0" />
-            <span className="text-[11px] font-mono whitespace-nowrap">
-              Skills · {activeSkillsState.count}
-            </span>
+            {/* Quick Prompts Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (activeArtifact && activeTab !== 'templates') {
+                  setToolsSheetTab('prompts');
+                  setToolsSheetOpen(true);
+                } else {
+                  setActiveTab('templates');
+                }
+              }}
+              className="min-h-[36px] sm:min-h-[44px] px-2.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+              title="Open Quick AI Upgrade Prompts"
+            >
+              <Sparkles size={12} className="text-cyan-300 shrink-0" />
+              <span className="text-[11px] font-medium whitespace-nowrap">Prompts</span>
+            </button>
+
+            {/* Active Skills Indicator Chip */}
+            {activeSkillsState.count > 0 && (
+              <div
+                className="min-h-[36px] sm:min-h-[44px] px-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 flex items-center gap-1 shrink-0 select-none"
+                title={`~${activeSkillsState.tokensK}k tokens added to each request`}
+              >
+                <Sparkles size={11} className="text-emerald-400 shrink-0" />
+                <span className="text-[11px] font-mono whitespace-nowrap tabular-nums">
+                  Skills · {activeSkillsState.count}
+                </span>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Project Toggle Chip (only for create-from-prompt, off by default) */}
-        {(!activeArtifact || activeTab === 'templates') && (
-          <button
-            type="button"
-            onClick={() => setProjectPromptMode((prev) => !prev)}
-            className={`min-h-[44px] px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
-              projectPromptMode
-                ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
-                : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-400 hover:text-zinc-200'
-            }`}
-            title="Toggle multi-file Project generation mode"
-          >
-            <FolderTree
-              size={13}
-              className={projectPromptMode ? 'text-amber-400 shrink-0' : 'text-zinc-400 shrink-0'}
+          {/* Bottom Input Row on Mobile / Right Input Group on Desktop: Mic + Full-Width Auto-Grow Textarea + Send */}
+          <div className="flex items-end gap-2 w-full sm:flex-1 sm:min-w-0">
+            <button
+              type="button"
+              onClick={handleToggleMic}
+              className={`min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                isListeningMic
+                  ? 'bg-rose-500/25 border-rose-500/60 text-rose-300 animate-pulse'
+                  : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-cyan-400'
+              }`}
+              aria-label={isListeningMic ? 'Stop voice dictation' : 'Dictate Canvas changes by voice'}
+              title={isListeningMic ? 'Stop voice dictation' : 'Dictate Canvas changes by voice'}
+            >
+              {isListeningMic ? <MicOff size={16} /> : <Mic size={16} />}
+            </button>
+
+            <textarea
+              ref={promptTextareaRef}
+              rows={1}
+              value={customAiPrompt}
+              onChange={(e) => setCustomAiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmitPromptComposer();
+                }
+              }}
+              disabled={aiRefining}
+              placeholder={
+                inspectedElement
+                  ? `Tell AI how to change <${inspectedElement.tagName}>...`
+                  : activeArtifact && activeArtifact.kind === 'project' && targetSelectedFileOnly && selectedPath && activeTab !== 'templates'
+                  ? `Edit ${selectedPath.split('/').pop()} only...`
+                  : activeArtifact && activeTab !== 'templates'
+                  ? `Modify "${activeArtifact.title}"...`
+                  : projectPromptMode
+                  ? 'Describe a multi-file HTML/CSS/JS or React project...'
+                  : 'Describe an interactive app, React component, or SVG...'
+              }
+              className="flex-1 min-w-0 min-h-[44px] max-h-[112px] bg-zinc-900 border border-zinc-700/90 focus:border-cyan-400 rounded-xl px-3 py-2.5 text-[15px] sm:text-xs leading-5 text-zinc-100 placeholder-zinc-400 outline-none shadow-inner resize-none overflow-y-auto"
             />
-            <span className="text-[11px] font-mono whitespace-nowrap">Project</span>
-          </button>
-        )}
 
-        <input
-          type="text"
-          value={customAiPrompt}
-          onChange={(e) => setCustomAiPrompt(e.target.value)}
-          disabled={aiRefining}
-          placeholder={
-            inspectedElement
-              ? `Tell AI how to change <${inspectedElement.tagName}>...`
-              : activeArtifact && activeArtifact.kind === 'project' && targetSelectedFileOnly && selectedPath && activeTab !== 'templates'
-              ? `Edit ${selectedPath.split('/').pop()} only...`
-              : activeArtifact && activeTab !== 'templates'
-              ? `Modify "${activeArtifact.title}"...`
-              : projectPromptMode
-              ? 'Describe a multi-file HTML/CSS/JS or React project...'
-              : 'Describe an interactive app, React component, or SVG...'
-          }
-          className="flex-1 min-w-0 min-h-[44px] bg-zinc-900 border border-zinc-700/90 focus:border-cyan-400 rounded-xl px-3 py-2 text-[15px] sm:text-xs text-zinc-100 placeholder-zinc-400 outline-none shadow-inner"
-        />
-
-        <button
-          type="submit"
-          disabled={!customAiPrompt.trim() || aiRefining}
-          className="min-h-[44px] px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-sm"
-        >
-          <Send size={13} />
-          <span>{activeArtifact && activeTab !== 'templates' ? 'Apply' : 'Build'}</span>
-        </button>
+            <button
+              type="submit"
+              disabled={!customAiPrompt.trim() || aiRefining}
+              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-sm"
+            >
+              <Send size={14} />
+              <span>{activeArtifact && activeTab !== 'templates' ? 'Apply' : 'Build'}</span>
+            </button>
+          </div>
+        </div>
       </form>
 
       {/* Canvas AI Model & Provider Selector Modal */}
