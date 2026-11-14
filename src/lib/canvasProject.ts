@@ -432,20 +432,20 @@ export function convertArtifactToProject(
   if (kind === 'react') {
     return [
       {
-        path: 'src/App.jsx',
+        path: 'src/App.tsx',
         content: safeContent,
       },
       {
         path: 'index.html',
         content: `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${title}</title>
 </head>
-<body style="background:#09090b;color:#e4e4e7;font-family:system-ui,sans-serif;padding:24px;">
-  <p>React preview comes in the next update</p>
+<body class="bg-zinc-950 text-zinc-100">
+  <div id="root"></div>
 </body>
 </html>`,
       },
@@ -726,3 +726,73 @@ export function inlineStaticProject(files: ProjectFile[]): string | null {
 
   return html;
 }
+
+export interface ReactProjectBundle {
+  code: string;
+  css: string;
+  entryPath: string;
+}
+
+export function extractReactProjectBundle(files: ProjectFile[]): ReactProjectBundle | null {
+  if (!Array.isArray(files) || files.length === 0) return null;
+
+  const reactCodeFiles = files.filter((f) => /\.(tsx|jsx)$/i.test(f.path));
+  if (reactCodeFiles.length === 0) return null;
+
+  const isMainEntry = (path: string) => {
+    const base = path.split('/').pop()?.toLowerCase() || '';
+    return base === 'app.tsx' || base === 'app.jsx' || base === 'main.tsx' || base === 'main.jsx' || base === 'index.tsx' || base === 'index.jsx';
+  };
+
+  // Put helper/component files BEFORE main entry files (App.tsx, main.tsx, index.tsx)
+  const orderedModules = [...files]
+    .filter((f) => /\.(tsx|jsx|ts|js)$/i.test(f.path))
+    .filter((f) => !/\.(config|d)\.ts$/i.test(f.path))
+    .sort((a, b) => {
+      const aEntry = isMainEntry(a.path);
+      const bEntry = isMainEntry(b.path);
+      if (aEntry !== bEntry) return aEntry ? 1 : -1;
+      return a.path.localeCompare(b.path);
+    });
+
+  // Put App.* right after helpers and before main.* if both exist so `App` is declared before `ReactDOM.createRoot`
+  orderedModules.sort((a, b) => {
+    const aBase = a.path.split('/').pop()?.toLowerCase() || '';
+    const bBase = b.path.split('/').pop()?.toLowerCase() || '';
+    const score = (base: string, path: string) => {
+      if (base.startsWith('main.') || base.startsWith('index.')) return 2;
+      if (base.startsWith('app.')) return 1;
+      return path.includes('component') ? 0 : 0;
+    };
+    const diff = score(aBase, a.path) - score(bBase, b.path);
+    return diff !== 0 ? diff : a.path.localeCompare(b.path);
+  });
+
+  const nonMountModules = orderedModules.filter((f) => {
+    const base = f.path.split('/').pop()?.toLowerCase() || '';
+    // Skip pure ReactDOM.createRoot boilerplate if an App.* exists alongside it
+    if ((base === 'main.tsx' || base === 'main.jsx' || base === 'index.tsx' || base === 'index.jsx') &&
+        orderedModules.some((m) => /^app\.(tsx|jsx)$/i.test(m.path.split('/').pop() || ''))) {
+      return !/createRoot\s*\(|ReactDOM\.render\s*\(/.test(f.content);
+    }
+    return true;
+  });
+
+  const finalModules = nonMountModules.length > 0 ? nonMountModules : orderedModules;
+  const cssFiles = files.filter((f) => /\.css$/i.test(f.path));
+
+  const code = finalModules
+    .map((f) => `// === MODULE: ${f.path} ===\n${f.content}`)
+    .join('\n\n');
+  const css = cssFiles.map((f) => f.content).join('\n\n');
+  const entryFile =
+    reactCodeFiles.find((f) => /^app\.(tsx|jsx)$/i.test(f.path.split('/').pop() || '')) ||
+    reactCodeFiles[0];
+
+  return {
+    code,
+    css,
+    entryPath: entryFile.path,
+  };
+}
+

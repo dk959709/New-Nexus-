@@ -56,6 +56,10 @@ import {
   FilePlus,
   Pencil,
   ChevronDown,
+  Star,
+  RotateCw,
+  ClipboardList,
+  Flag,
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { storage } from '@/lib/storage';
@@ -80,7 +84,28 @@ import {
   convertArtifactToProject,
   buildZip,
   inlineStaticProject,
+  extractReactProjectBundle,
 } from '@/lib/canvasProject';
+import {
+  buildRunnableSandboxHtml,
+  buildDesignTweaksCss,
+  DEFAULT_DESIGN_TWEAKS,
+  hasActiveDesignTweaks,
+  runStaticMobileResponsiveAudit,
+  type DesignTweakState,
+  type MobileSmokeReport,
+  type SandboxNetworkEntry,
+  type SandboxStorageEntry,
+} from '@/lib/canvasSandbox';
+import { DesignTweakerSheet } from '@/components/assistant/canvas/DesignTweakerSheet';
+import { VisualVersionCompare } from '@/components/assistant/canvas/VisualVersionCompare';
+import { MobileSmokeCheckCard } from '@/components/assistant/canvas/MobileSmokeCheckCard';
+import {
+  CanvasToolsSheet,
+  type StudioToolsTab,
+} from '@/components/assistant/canvas/CanvasToolsSheet';
+import { CodeOutlineAndFindBar } from '@/components/assistant/canvas/CodeOutlineAndFindBar';
+import { SandboxDevDrawer } from '@/components/assistant/canvas/SandboxDevDrawer';
 import { FormattedText } from '@/components/jarvis/FormattedText';
 import type { AIProviderConfig } from '@/types';
 
@@ -164,6 +189,7 @@ interface LiveArtifactCanvasProps {
 }
 
 const VAULT_STORAGE_KEY = 'nexus_canvas_vault_v1';
+const PINNED_ARTIFACTS_STORAGE_KEY = 'nexus_canvas_pinned_v1';
 
 type CanvasThemePresetId = 'default' | 'cyberpunk' | 'saas_light' | 'apple_glass' | 'emerald_finance' | 'warm_editorial';
 
@@ -695,155 +721,7 @@ function combineHtmlCssJs(html: string, css: string, js: string): string {
   return output;
 }
 
-/**
- * Builds a complete, runnable HTML document for the sandboxed iframe preview,
- * including Tailwind CSS CDN, Console Error Bridge, Live Theme CSS injection,
- * and Visual Element Inspector ("Click-to-Edit") bridge.
- */
-function buildRunnableSandboxHtml(
-  artifact: CanvasArtifact,
-  inspectMode: boolean,
-  themeCssOverride: string,
-): string {
-  const bridgeScript = `
-    <script>
-      (function() {
-        const origLog = console.log;
-        const origWarn = console.warn;
-        const origError = console.error;
-        function sendToHost(level, args) {
-          try {
-            const text = Array.from(args).map(a => {
-              if (typeof a === 'object') {
-                try { return JSON.stringify(a); } catch (e) { return String(a); }
-              }
-              return String(a);
-            }).join(' ');
-            window.parent.postMessage({ type: 'NEXUS_CANVAS_CONSOLE', level, text }, '*');
-          } catch (e) {}
-        }
-        console.log = function() { sendToHost('log', arguments); origLog.apply(console, arguments); };
-        console.warn = function() { sendToHost('warn', arguments); origWarn.apply(console, arguments); };
-        console.error = function() { sendToHost('error', arguments); origError.apply(console, arguments); };
-        window.addEventListener('error', function(e) {
-          sendToHost('error', [e.message + (e.lineno ? ' (line ' + e.lineno + ')' : '')]);
-        });
-        window.addEventListener('unhandledrejection', function(e) {
-          sendToHost('error', ['Unhandled Promise Rejection: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason))]);
-        });
 
-        // Visual Element Inspector Bridge
-        const inspectActive = ${inspectMode ? 'true' : 'false'};
-        if (inspectActive) {
-          let lastEl = null;
-          document.addEventListener('mouseover', function(e) {
-            const el = e.target;
-            if (!el || el === document.body || el === document.documentElement) return;
-            if (lastEl && lastEl !== el) {
-              lastEl.style.outline = '';
-            }
-            el.style.outline = '2px dashed #06b6d4';
-            el.style.outlineOffset = '2px';
-            lastEl = el;
-          }, true);
-
-          document.addEventListener('mouseout', function(e) {
-            const el = e.target;
-            if (el && el === lastEl) {
-              el.style.outline = '';
-            }
-          }, true);
-
-          document.addEventListener('click', function(e) {
-            const el = e.target;
-            if (!el || el === document.body || el === document.documentElement) return;
-            e.preventDefault();
-            e.stopPropagation();
-            const clone = el.cloneNode(true);
-            clone.style.outline = '';
-            clone.style.outlineOffset = '';
-            window.parent.postMessage({
-              type: 'NEXUS_CANVAS_INSPECT',
-              tagName: (el.tagName || 'DIV').toLowerCase(),
-              textSnippet: (el.innerText || el.textContent || '').trim().slice(0, 80),
-              className: typeof el.className === 'string' ? el.className : '',
-              outerHTML: (clone.outerHTML || '').slice(0, 600)
-            }, '*');
-          }, true);
-        }
-      })();
-    </script>
-    ${themeCssOverride ? `<style id="nexus-theme-override">${themeCssOverride}</style>` : ''}
-  `;
-
-  if (artifact.kind === 'html') {
-    const raw = artifact.content.trim();
-    const hasTailwind = raw.includes('cdn.tailwindcss.com') || raw.includes('tailwind');
-    const tailwindTag = hasTailwind ? '' : '<script src="https://cdn.tailwindcss.com/3.4.17"></script>';
-
-    if (raw.toLowerCase().includes('<!doctype html') || raw.toLowerCase().includes('<html')) {
-      if (raw.includes('<head>')) {
-        return raw.replace('<head>', `<head>\n${tailwindTag}\n${bridgeScript}`);
-      }
-      return `${tailwindTag}\n${bridgeScript}\n${raw}`;
-    }
-
-    return `<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <style>
-    body { background-color: #09090b; color: #f4f4f5; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 16px; }
-  </style>
-  ${bridgeScript}
-</head>
-<body>
-  ${raw}
-</body>
-</html>`;
-  }
-
-  if (artifact.kind === 'react') {
-    const cleanedCode = artifact.content
-      .replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-      .replace(/export\s+default\s+function\s+([A-Za-z0-9_]+)/g, 'function $1')
-      .replace(/export\s+default\s+/g, 'const DefaultExport = ');
-
-    return `<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
-  <style>
-    body { background-color: #09090b; color: #f4f4f5; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 16px; }
-  </style>
-  ${bridgeScript}
-</head>
-<body>
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useEffect, useMemo, useRef, useCallback } = React;
-    ${cleanedCode}
-    const RootComponent =
-      typeof App !== 'undefined' ? App :
-      typeof DefaultExport !== 'undefined' ? DefaultExport :
-      typeof Component !== 'undefined' ? Component :
-      () => <div className="p-4 text-zinc-300">Component loaded. Name your main function <code>App</code> to render automatically.</div>;
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<RootComponent />);
-  </script>
-</body>
-</html>`;
-  }
-
-  return '';
-}
 
 /**
  * Instant static audit + heuristic analyzer for Feature 7 (Security, Perf & Accessibility Auditor)
@@ -1113,6 +991,151 @@ const STARTER_TEMPLATES: Array<{
   <text x="632" y="238" fill="#fbbf24" font-size="10" text-anchor="middle">Hybrid Semantic Index</text>
 </svg>`,
   },
+  {
+    title: 'Mobile Focus & Habit Tracker (React TSX)',
+    kind: 'react',
+    language: 'tsx',
+    description: 'Runnable React + TypeScript TSX app with Lucide icons and 44px touch controls',
+    content: `import React, { useState } from 'react';
+import { Check, Plus, Flame, Trash2, Sparkles } from 'lucide-react';
+
+interface HabitItem {
+  id: string;
+  name: string;
+  streak: number;
+  doneToday: boolean;
+}
+
+export default function App() {
+  const [habits, setHabits] = useState<HabitItem[]>([
+    { id: '1', name: 'Deep Work Sprint (45m)', streak: 6, doneToday: true },
+    { id: '2', name: 'Read Technical Paper', streak: 3, doneToday: false },
+    { id: '3', name: 'Evening Hydration & Stretch', streak: 9, doneToday: false },
+  ]);
+  const [draft, setDraft] = useState('');
+
+  const completedCount = habits.filter((h) => h.doneToday).length;
+  const pct = habits.length ? Math.round((completedCount / habits.length) * 100) : 0;
+
+  const toggleHabit = (id: string) => {
+    setHabits((prev) =>
+      prev.map((h) =>
+        h.id === id
+          ? {
+              ...h,
+              doneToday: !h.doneToday,
+              streak: !h.doneToday ? h.streak + 1 : Math.max(0, h.streak - 1),
+            }
+          : h,
+      ),
+    );
+  };
+
+  const addHabit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = draft.trim();
+    if (!clean) return;
+    setHabits((prev) => [
+      { id: String(Date.now()), name: clean, streak: 1, doneToday: false },
+      ...prev,
+    ]);
+    setDraft('');
+  };
+
+  return (
+    <div className="max-w-lg mx-auto space-y-5 py-2">
+      <header className="flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-cyan-400">
+            <Sparkles size={14} />
+            <span>LIVE REACT TSX</span>
+          </div>
+          <h1 className="text-xl font-bold text-white mt-0.5">Daily Focus Tracker</h1>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-bold font-mono text-cyan-400 tabular-nums">{pct}%</div>
+          <div className="text-[11px] text-zinc-400 font-mono">
+            {completedCount}/{habits.length} done
+          </div>
+        </div>
+      </header>
+
+      <div className="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">
+        <div
+          className="h-full bg-cyan-500 transition-all duration-300"
+          style={{ width: pct + '%' }}
+        />
+      </div>
+
+      <form onSubmit={addHabit} className="flex items-center gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Add a daily habit..."
+          className="flex-1 min-h-[44px] px-3.5 rounded-xl bg-zinc-900 border border-zinc-700 text-sm text-white placeholder-zinc-500 outline-none focus:border-cyan-400"
+        />
+        <button
+          type="submit"
+          className="min-h-[44px] px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+        >
+          <Plus size={16} />
+          <span>Add</span>
+        </button>
+      </form>
+
+      <div className="space-y-2.5">
+        {habits.map((habit) => (
+          <div
+            key={habit.id}
+            className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-zinc-900 border border-zinc-800"
+          >
+            <button
+              type="button"
+              onClick={() => toggleHabit(habit.id)}
+              className="flex-1 min-h-[44px] flex items-center gap-3 text-left cursor-pointer"
+            >
+              <span
+                className={
+                  'w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 transition-colors ' +
+                  (habit.doneToday
+                    ? 'bg-emerald-500 border-emerald-400 text-zinc-950'
+                    : 'bg-zinc-950 border-zinc-700 text-transparent')
+                }
+              >
+                <Check size={15} />
+              </span>
+              <span
+                className={
+                  'text-sm font-medium ' +
+                  (habit.doneToday ? 'line-through text-zinc-500' : 'text-zinc-100')
+                }
+              >
+                {habit.name}
+              </span>
+            </button>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-mono text-amber-400 flex items-center gap-1 tabular-nums">
+                <Flame size={13} />
+                {habit.streak}d
+              </span>
+              <button
+                type="button"
+                onClick={() => setHabits((prev) => prev.filter((h) => h.id !== habit.id))}
+                className="min-h-[44px] min-w-[44px] rounded-xl text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 flex items-center justify-center cursor-pointer"
+                aria-label={'Remove ' + habit.name}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}`,
+  },
 ];
 
 export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
@@ -1132,17 +1155,47 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [activeTab, setActiveTab] = useState<
     'preview' | 'split' | 'code' | 'data' | 'audit' | 'diff' | 'templates'
   >('preview');
-  const [viewportSize, setViewportSize] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const [viewportSize, setViewportSize] = useState<'desktop' | 'tablet' | 'large-phone' | 'mobile'>('desktop');
+  const [viewportLandscape, setViewportLandscape] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState<'fit' | 100 | 75 | 50>('fit');
+  const [previewStageWidth, setPreviewStageWidth] = useState(0);
+  const previewStageRef = useRef<HTMLDivElement | null>(null);
+  const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const projectFileTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [syncedNotice, setSyncedNotice] = useState(false);
   const [iframeRefreshKey, setIframeRefreshKey] = useState(0);
   const [svgZoom, setSvgZoom] = useState(100);
   const [consoleLogs, setConsoleLogs] = useState<ConsoleLogEntry[]>([]);
+  const [networkLogs, setNetworkLogs] = useState<SandboxNetworkEntry[]>([]);
+  const [storageEntries, setStorageEntries] = useState<SandboxStorageEntry[]>([]);
   const [showConsole, setShowConsole] = useState(false);
 
-  // Feature 2: Live Theme & Design Token Switcher
+  // Pinning, Inline Rename, Named Checkpoints & Studio Tools Hub Sheet
+  const [pinnedArtifactIds, setPinnedArtifactIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(PINNED_ARTIFACTS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === 'string');
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [renamingTitle, setRenamingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [checkpointModalOpen, setCheckpointModalOpen] = useState(false);
+  const [checkpointLabelDraft, setCheckpointLabelDraft] = useState('');
+  const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
+  const [toolsSheetTab, setToolsSheetTab] = useState<StudioToolsTab>('prompts');
+
+  // Feature 2: Live Theme & Design Token Switcher + Tweaker Sheet
   const [selectedThemePreset, setSelectedThemePreset] = useState<CanvasThemePresetId>('default');
+  const [designTweaks, setDesignTweaks] = useState<DesignTweakState>(DEFAULT_DESIGN_TWEAKS);
+  const [tweakerOpen, setTweakerOpen] = useState(false);
 
   // Feature 3: Visual Element Inspector ("Click-to-Edit")
   const [inspectMode, setInspectMode] = useState(false);
@@ -1342,6 +1395,16 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   const [projectDeleteConfirmPath, setProjectDeleteConfirmPath] = useState<string | null>(null);
   const [copiedProjectBundle, setCopiedProjectBundle] = useState<boolean>(false);
   const [projectPromptMode, setProjectPromptMode] = useState<boolean>(false);
+  const [targetSelectedFileOnly, setTargetSelectedFileOnly] = useState<boolean>(false);
+
+  // Visual A/B Diff Sub-mode + 375px Mobile Smoke Check States
+  const [diffSubMode, setDiffSubMode] = useState<'code' | 'visual'>('code');
+  const [mobileSmokeReport, setMobileSmokeReport] = useState<MobileSmokeReport | null>(null);
+  const [smokeCheckRunning, setSmokeCheckRunning] = useState<boolean>(false);
+  const [smokeSrcDoc, setSmokeSrcDoc] = useState<string>('');
+  const smokeIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const smokeTimeoutRef = useRef<number | null>(null);
+  const smokeCheckIdRef = useRef<string | null>(null);
 
   // Live Coding Process Studio State
   const [liveCodingActive, setLiveCodingActive] = useState(false);
@@ -1462,14 +1525,63 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     [selectedThemePreset],
   );
 
+  const combinedThemeCss = useMemo(() => {
+    const tweakCss = buildDesignTweaksCss(designTweaks);
+    return [activeThemePresetObj.cssOverride, tweakCss].filter(Boolean).join('\n');
+  }, [activeThemePresetObj.cssOverride, designTweaks]);
+
+  // Push live style changes directly to active sandbox iframe with zero reload flicker
+  useEffect(() => {
+    const win = iframeRef.current?.contentWindow;
+    if (win) {
+      win.postMessage({ type: 'NEXUS_CANVAS_APPLY_STYLE', css: combinedThemeCss }, '*');
+    }
+  }, [combinedThemeCss]);
+
+  const orderedArtifacts = useMemo(() => {
+    const pinnedSet = new Set(pinnedArtifactIds);
+    return [...artifacts].sort((a, b) => {
+      const aPinned = pinnedSet.has(a.id) ? 0 : 1;
+      const bPinned = pinnedSet.has(b.id) ? 0 : 1;
+      return aPinned - bPinned;
+    });
+  }, [artifacts, pinnedArtifactIds]);
+
+  const handleTogglePinArtifact = (id: string) => {
+    setPinnedArtifactIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev];
+      try {
+        localStorage.setItem(PINNED_ARTIFACTS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  // Observe preview container width for automatic "Fit" responsive frame scaling
+  useEffect(() => {
+    const el = previewStageRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const updateWidth = () => setPreviewStageWidth(el.clientWidth);
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeTab, isFullscreen, isOpen]);
+
   // Sync editor draft & extracted table data when switching artifacts or versions
   useEffect(() => {
     if (activeArtifact) {
       setEditorDraft(activeArtifact.content);
       setHasUnsavedEdits(false);
       setConsoleLogs([]);
+      setNetworkLogs([]);
+      setStorageEntries([]);
       setAiError(null);
       setInspectedElement(null);
+      setMobileSmokeReport(null);
+      setRenamingTitle(false);
       const tableExtracted = extractTableRowsFromContent(activeArtifact.content);
       setDataHeaders(tableExtracted.headers);
       setDataRows(tableExtracted.rows);
@@ -1480,6 +1592,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         setExpandedFolders(new Set(listFolders(parsed.files)));
         const initialFile =
           parsed.files.find((f) => f.path.toLowerCase() === 'index.html')?.path ||
+          parsed.files.find((f) => /\.(tsx|jsx)$/i.test(f.path))?.path ||
           parsed.files[0]?.path ||
           null;
         setSelectedPath(initialFile);
@@ -1494,6 +1607,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         setSelectedPath(null);
         setActiveTreeTargetPath(null);
         setOpenTabs([]);
+        setTargetSelectedFileOnly(false);
         setProjectInlineMode('none');
         setProjectActionError(null);
         setProjectDeleteConfirmPath(null);
@@ -1501,12 +1615,15 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     }
   }, [activeArtifact]);
 
-  // Listen for console logs AND Visual Inspector clicks from inside the sandboxed iframe
+  // Listen for console logs, network logs, storage data, Visual Inspector clicks, and 375px Smoke Check responses
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
+      const fromMain = event.source === iframeRef.current?.contentWindow;
+      const fromSmoke = event.source === smokeIframeRef.current?.contentWindow;
+      if (!fromMain && !fromSmoke) return;
       if (!event.data || typeof event.data !== 'object') return;
-      if (event.data.type === 'NEXUS_CANVAS_CONSOLE') {
+
+      if (fromMain && event.data.type === 'NEXUS_CANVAS_CONSOLE') {
         setConsoleLogs((prev) => [
           ...prev.slice(-39),
           {
@@ -1516,18 +1633,66 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             timestamp: Date.now(),
           },
         ]);
-      } else if (event.data.type === 'NEXUS_CANVAS_INSPECT') {
+      } else if (fromMain && event.data.type === 'NEXUS_CANVAS_NET_LOG') {
+        setNetworkLogs((prev) => [
+          {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            method: String(event.data.method || 'GET'),
+            url: String(event.data.url || ''),
+            status: event.data.status ?? 'ERR',
+            ok: Boolean(event.data.ok),
+            durationMs: Number(event.data.durationMs) || 0,
+            timestamp: Date.now(),
+          },
+          ...prev.slice(0, 39),
+        ]);
+      } else if (fromMain && event.data.type === 'NEXUS_CANVAS_STORAGE_DATA') {
+        const list = Array.isArray(event.data.entries) ? event.data.entries : [];
+        setStorageEntries(
+          list.map((item: { key?: unknown; value?: unknown }) => ({
+            key: String(item.key ?? ''),
+            value: String(item.value ?? ''),
+          })),
+        );
+      } else if (fromMain && event.data.type === 'NEXUS_CANVAS_INSPECT') {
         setInspectedElement({
           tagName: String(event.data.tagName || 'div'),
           textSnippet: String(event.data.textSnippet || ''),
           className: String(event.data.className || ''),
           outerHTML: String(event.data.outerHTML || ''),
         });
+      } else if (fromSmoke && event.data.type === 'NEXUS_CANVAS_SMOKE_RESULT') {
+        if (smokeCheckIdRef.current && event.data.checkId === smokeCheckIdRef.current) {
+          if (smokeTimeoutRef.current !== null) {
+            window.clearTimeout(smokeTimeoutRef.current);
+            smokeTimeoutRef.current = null;
+          }
+          smokeCheckIdRef.current = null;
+          const currentCode = hasUnsavedEdits ? editorDraft : activeArtifact?.content || '';
+          const staticHints = runStaticMobileResponsiveAudit(currentCode);
+          const errLogs = consoleLogs.filter((l) => l.level === 'error').map((l) => l.text);
+          if (event.data.error) errLogs.push(String(event.data.error));
+          setMobileSmokeReport({
+            checkedAt: Date.now(),
+            viewportWidth: Number(event.data.viewportWidth) || 375,
+            horizontalOverflowPx: Number(event.data.horizontalOverflowPx) || 0,
+            smallTapTargets: Array.isArray(event.data.smallTapTargets)
+              ? event.data.smallTapTargets
+              : [],
+            brokenImages: Array.isArray(event.data.brokenImages) ? event.data.brokenImages : [],
+            emptyRender: Boolean(event.data.emptyRender),
+            runtimeErrors: errLogs,
+            staticHints,
+            source: 'live',
+          });
+          setSmokeCheckRunning(false);
+          setSmokeSrcDoc('');
+        }
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [activeArtifact?.content, consoleLogs, editorDraft, hasUnsavedEdits]);
 
   const [previewSource, setPreviewSource] = useState<string>(() =>
     hasUnsavedEdits ? editorDraft : activeArtifact?.content || '',
@@ -1547,16 +1712,26 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     };
   }, [hasUnsavedEdits, editorDraft, activeArtifact?.id, activeArtifact?.currentVersionIndex, activeArtifact?.content]);
 
+  const projectParsedFiles = useMemo(() => {
+    if (activeArtifact?.kind !== 'project') return [];
+    return parseProjectBundle(previewSource).files;
+  }, [activeArtifact?.kind, previewSource]);
+
   const projectInlinedPreviewHtml = useMemo(() => {
     if (activeArtifact?.kind !== 'project') return null;
-    const parsed = parseProjectBundle(previewSource);
-    return inlineStaticProject(parsed.files);
-  }, [activeArtifact?.kind, previewSource]);
+    return inlineStaticProject(projectParsedFiles);
+  }, [activeArtifact?.kind, projectParsedFiles]);
+
+  const projectReactBundle = useMemo(() => {
+    if (activeArtifact?.kind !== 'project' || projectInlinedPreviewHtml) return null;
+    return extractReactProjectBundle(projectParsedFiles);
+  }, [activeArtifact?.kind, projectInlinedPreviewHtml, projectParsedFiles]);
 
   const isRunnableWeb =
     activeArtifact?.kind === 'html' ||
     activeArtifact?.kind === 'react' ||
-    (activeArtifact?.kind === 'project' && Boolean(projectInlinedPreviewHtml)) ||
+    (activeArtifact?.kind === 'project' &&
+      (Boolean(projectInlinedPreviewHtml) || Boolean(projectReactBundle))) ||
     Boolean(
       activeArtifact?.kind !== 'project' &&
         activeArtifact?.content &&
@@ -1971,62 +2146,108 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
   ) => {
     if (!activeArtifact || aiRefining) return;
     setAiRefining(true);
-    setAiRefiningLabel(shortLabel);
+
+    const isTargetedSingleFileEdit =
+      activeArtifact.kind === 'project' &&
+      targetSelectedFileOnly &&
+      Boolean(selectedPath) &&
+      !forceHtmlOutput &&
+      !targetKindOverride &&
+      !targetLangOverride;
+
+    const activeTargetFile = isTargetedSingleFileEdit
+      ? projectFiles.find((f) => f.path === selectedPath) || null
+      : null;
+
+    const finalLabel = activeTargetFile
+      ? `${shortLabel} (${activeTargetFile.path.split('/').pop()})`
+      : shortLabel;
+
+    setAiRefiningLabel(finalLabel);
     setAiError(null);
     setAiWarning(null);
     liveCodingSkipRef.current = false;
     setLiveCodingActive(true);
     setLiveCodingPhase('planning');
-    setLiveCodingStatusText(`Analyzing "${activeArtifact.title}" & planning AST transformations...`);
+    setLiveCodingStatusText(
+      activeTargetFile
+        ? `Focusing on "${activeTargetFile.path}" only...`
+        : `Analyzing "${activeArtifact.title}" & planning AST transformations...`,
+    );
 
     const sourceContent = hasUnsavedEdits ? editorDraft : activeArtifact.content;
-    const sourceLines = sourceContent.split('\n');
-    setLiveCodingTotalLen(sourceContent.length);
+    const displayLines = (activeTargetFile ? activeTargetFile.content : sourceContent).split('\n');
+    setLiveCodingTotalLen((activeTargetFile ? activeTargetFile.content : sourceContent).length);
 
     // Stage 1: Progressive live code inspection stream while waiting for AI response
     let preStreamIdx = 0;
     const preStreamHeader = [
-      `// ⚡ NEXUS LIVE AI CANVAS COMPILER — ${shortLabel.toUpperCase()}`,
+      `// ⚡ NEXUS LIVE AI CANVAS COMPILER — ${finalLabel.toUpperCase()}`,
       `// 🤖 Model: ${activeCanvasModelLabel}`,
+      ...(activeTargetFile ? [`// 📄 Target File: ${activeTargetFile.path}`] : []),
       `// 🎯 Directive: ${instruction.slice(0, 90)}${instruction.length > 90 ? '...' : ''}`,
       ``,
-      ...sourceLines.slice(0, 90),
+      ...displayLines.slice(0, 90),
     ];
     const preTimer = window.setInterval(() => {
       preStreamIdx = Math.min(preStreamHeader.length, preStreamIdx + 2);
       setLiveCodingBuffer(preStreamHeader.slice(0, preStreamIdx).join('\n'));
       if (preStreamIdx > 8) {
-        setLiveCodingStatusText(`Synthesizing updated ${targetLangOverride || activeArtifact.kind.toUpperCase()} code with ${activeCanvasModelLabel}...`);
+        setLiveCodingStatusText(
+          activeTargetFile
+            ? `Updating ${activeTargetFile.path} with ${activeCanvasModelLabel}...`
+            : `Synthesizing updated ${targetLangOverride || activeArtifact.kind.toUpperCase()} code with ${activeCanvasModelLabel}...`,
+        );
       }
     }, 65);
 
     const inspectContext = inspectedElement
       ? `\nFOCUS SPECIFICALLY ON THIS CLICKED ELEMENT (<${inspectedElement.tagName}>): ${inspectedElement.outerHTML}\n`
       : '';
-    const targetFormat = targetLangOverride
-      ? `complete, production-ready ${targetLangOverride.toUpperCase()} code`
-      : forceHtmlOutput
-      ? 'a complete, self-contained, single-file HTML5 interactive web application using Tailwind CSS (<script src="https://cdn.tailwindcss.com"></script>) and vanilla JavaScript'
-      : activeArtifact.kind === 'project'
-      ? 'a complete multi-file project inside a single fenced code block with language "project", where each file starts with "=== FILE: path/to/file.ext ===" on its own line followed by the file content'
-      : activeArtifact.kind === 'html'
-      ? 'a complete, self-contained HTML5 document with Tailwind CSS and interactive JavaScript'
-      : activeArtifact.kind === 'svg'
-      ? 'valid, standalone <svg>...</svg> markup with rich visual styling'
-      : activeArtifact.kind === 'markdown'
-      ? 'clean, well-structured Markdown'
-      : `clean, production-ready ${activeArtifact.language || 'code'}`;
 
     const skillsText = buildActiveSkillsText();
-    let prompt = [
-      `You are the NEXUS Live AI Canvas Studio engine.`,
-      `Task: ${instruction}`,
-      inspectContext,
-      `Output format requirement: Return ONLY ${targetFormat}. Do NOT include conversational filler before or after the artifact. If returning code/HTML/SVG, wrap it in a single fenced block or return raw markup directly.`,
-      ``,
-      `--- CURRENT ARTIFACT (${activeArtifact.title}) ---`,
-      sourceContent,
-    ].join('\n');
+    let prompt = '';
+
+    if (activeTargetFile) {
+      const siblingList = projectFiles.map((f) => f.path).join(', ');
+      prompt = [
+        `You are the NEXUS Live AI Canvas Studio engine in TARGETED SINGLE-FILE EDIT mode.`,
+        `Project files for context: ${siblingList}`,
+        `Target file to modify: ${activeTargetFile.path}`,
+        `Task: ${instruction}`,
+        inspectContext,
+        `Output format requirement: Return ONLY the complete updated contents of "${activeTargetFile.path}" inside a single fenced code block (or raw file contents). Keep existing imports, exports, DOM IDs, and interfaces compatible with sibling files. Do NOT include the === FILE: === markers and do NOT return other files.`,
+        ``,
+        `--- CURRENT FILE (${activeTargetFile.path}) ---`,
+        activeTargetFile.content,
+      ].join('\n');
+    } else {
+      const targetFormat = targetLangOverride
+        ? `complete, production-ready ${targetLangOverride.toUpperCase()} code`
+        : forceHtmlOutput
+        ? 'a complete, self-contained, single-file HTML5 interactive web application using Tailwind CSS (<script src="https://cdn.tailwindcss.com"></script>) and vanilla JavaScript'
+        : activeArtifact.kind === 'project'
+        ? 'a complete multi-file project inside a single fenced code block with language "project", where each file starts with "=== FILE: path/to/file.ext ===" on its own line followed by the file content'
+        : activeArtifact.kind === 'react'
+        ? 'a complete, runnable React TypeScript (TSX) component exporting `App` as default using Tailwind CSS classes and React hooks'
+        : activeArtifact.kind === 'html'
+        ? 'a complete, self-contained HTML5 document with Tailwind CSS and interactive JavaScript'
+        : activeArtifact.kind === 'svg'
+        ? 'valid, standalone <svg>...</svg> markup with rich visual styling'
+        : activeArtifact.kind === 'markdown'
+        ? 'clean, well-structured Markdown'
+        : `clean, production-ready ${activeArtifact.language || 'code'}`;
+
+      prompt = [
+        `You are the NEXUS Live AI Canvas Studio engine.`,
+        `Task: ${instruction}`,
+        inspectContext,
+        `Output format requirement: Return ONLY ${targetFormat}. Do NOT include conversational filler before or after the artifact. If returning code/HTML/SVG, wrap it in a single fenced block or return raw markup directly.`,
+        ``,
+        `--- CURRENT ARTIFACT (${activeArtifact.title}) ---`,
+        sourceContent,
+      ].join('\n');
+    }
 
     if (skillsText && skillsText.trim()) {
       prompt += '\n\nIf any active skill conflicts with the required output format above, the output format above always wins.';
@@ -2049,6 +2270,38 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
       if (!extracted) {
         throw new Error('AI returned an empty artifact response.');
+      }
+
+      // Single-file targeted edit commit path
+      if (activeTargetFile) {
+        if (truncated) {
+          setLiveCodingActive(false);
+          const updatedFiles = projectFiles.map((f) =>
+            f.path === activeTargetFile.path ? { ...f, content: extracted } : f,
+          );
+          updateProjectFilesAndDraft(updatedFiles);
+          if (activeTab !== 'split') setActiveTab('code');
+          setAiWarning(
+            `The AI answer for "${activeTargetFile.path}" was cut off, so it was loaded as an unsaved draft instead of a committed version.`,
+          );
+          return;
+        }
+
+        const otherChars = totalProjectChars - activeTargetFile.content.length;
+        const maxAllowedForFile = Math.max(0, MAX_PROJECT_CHARS - otherChars);
+        const boundedContent = extracted.slice(0, maxAllowedForFile);
+        const updatedFiles = projectFiles.map((f) =>
+          f.path === activeTargetFile.path ? { ...f, content: boundedContent } : f,
+        );
+        const bundled = serializeProject(updatedFiles);
+
+        await streamCodeIntoCanvas(boundedContent);
+        setProjectFiles(updatedFiles);
+        commitNewVersion(bundled, finalLabel, 'project');
+        if (activeTab !== 'split' && activeTab !== 'code') {
+          setActiveTab('preview');
+        }
+        return;
       }
 
       if (truncated) {
@@ -2096,8 +2349,8 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         setEditorDraft(partial);
       });
 
-      commitNewVersion(finalExtracted, shortLabel, nextKind, targetLangOverride);
-      if (forceHtmlOutput || nextKind === 'html' || nextKind === 'svg' || nextKind === 'project') {
+      commitNewVersion(finalExtracted, finalLabel, nextKind, targetLangOverride);
+      if (forceHtmlOutput || nextKind === 'html' || nextKind === 'react' || nextKind === 'svg' || nextKind === 'project') {
         if (activeTab !== 'split') setActiveTab('preview');
       } else if (targetKindOverride) {
         setActiveTab('code');
@@ -2111,6 +2364,276 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       setAiRefining(false);
       setAiRefiningLabel('');
     }
+  };
+
+  const getCurrentRunnableSandboxDoc = (): string => {
+    if (!activeArtifact) return '';
+    if (activeArtifact.kind === 'project') {
+      if (projectInlinedPreviewHtml) {
+        return buildRunnableSandboxHtml({
+          artifact: { ...activeArtifact, kind: 'html', content: projectInlinedPreviewHtml },
+          inspectMode: false,
+          themeCssOverride: combinedThemeCss,
+        });
+      }
+      if (projectReactBundle) {
+        return buildRunnableSandboxHtml({
+          artifact: { ...activeArtifact, kind: 'react', content: projectReactBundle.code },
+          inspectMode: false,
+          themeCssOverride: combinedThemeCss,
+          extraCss: projectReactBundle.css,
+        });
+      }
+      return '';
+    }
+    if (activeArtifact.kind === 'html' || activeArtifact.kind === 'react') {
+      return buildRunnableSandboxHtml({
+        artifact: { ...activeArtifact, content: previewSource },
+        inspectMode: false,
+        themeCssOverride: combinedThemeCss,
+      });
+    }
+    return '';
+  };
+
+  const handleRenameArtifactTitleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!activeArtifact) return;
+    const nextTitle = titleDraft.trim();
+    setRenamingTitle(false);
+    if (!nextTitle || nextTitle === activeArtifact.title) return;
+    const updated: CanvasArtifact = { ...activeArtifact, title: nextTitle };
+    onUpdateArtifact(updated);
+    if (onSyncToMessage && activeArtifact.messageIndex >= 0) {
+      onSyncToMessage(activeArtifact.messageIndex, updated);
+    }
+  };
+
+  const handleSaveNamedCheckpoint = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!activeArtifact) return;
+    const label = checkpointLabelDraft.trim() || `Checkpoint v${activeArtifact.versions.length + 1}`;
+    const contentToSave =
+      activeArtifact.kind === 'project'
+        ? serializeProject(projectFiles)
+        : hasUnsavedEdits
+        ? editorDraft
+        : activeArtifact.content;
+    commitNewVersion(contentToSave, label);
+    setCheckpointModalOpen(false);
+    setCheckpointLabelDraft('');
+  };
+
+  const handleDownloadStandaloneHtml = () => {
+    if (!activeArtifact) return;
+    const html = getCurrentRunnableSandboxDoc();
+    if (!html) return;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeTitle = activeArtifact.title
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '_')
+      .slice(0, 32);
+    a.href = url;
+    a.download = `${safeTitle || 'nexus_app'}_standalone.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+
+  const handleApplyReplaceColor = (oldColor: string, newColor: string): number => {
+    if (!activeArtifact || !oldColor || !newColor) return 0;
+    const escaped = oldColor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'gi');
+
+    if (activeArtifact.kind === 'project') {
+      let totalMatches = 0;
+      const nextFiles = projectFiles.map((f) => {
+        const hits = f.content.match(regex);
+        if (!hits) return f;
+        totalMatches += hits.length;
+        return { ...f, content: f.content.replace(regex, newColor) };
+      });
+      if (totalMatches > 0) {
+        updateProjectFilesAndDraft(nextFiles);
+      }
+      return totalMatches;
+    }
+
+    const baseSource = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+    const hits = baseSource.match(regex);
+    if (!hits || hits.length === 0) return 0;
+    const nextCode = baseSource.replace(regex, newColor);
+    setEditorDraft(nextCode);
+    setHasUnsavedEdits(nextCode !== activeArtifact.content);
+    setPreviewSource(nextCode);
+    return hits.length;
+  };
+
+  const handleJumpToCodeLine = (
+    textareaRef: React.RefObject<HTMLTextAreaElement | null>,
+    codeStr: string,
+    lineNum: number,
+    highlightStart?: number,
+    highlightEnd?: number,
+  ) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    let startIdx = highlightStart;
+    let endIdx = highlightEnd;
+    if (startIdx === undefined || endIdx === undefined) {
+      const lines = codeStr.split('\n');
+      const targetLineIdx = Math.max(0, Math.min(lines.length - 1, lineNum - 1));
+      startIdx = lines.slice(0, targetLineIdx).reduce((acc, l) => acc + l.length + 1, 0);
+      endIdx = startIdx + (lines[targetLineIdx]?.length || 0);
+    }
+    ta.focus();
+    ta.setSelectionRange(startIdx, endIdx);
+    const lineHeightPx = 22;
+    ta.scrollTop = Math.max(0, (lineNum - 4) * lineHeightPx);
+  };
+
+  const handleTriggerSandboxAutoFill = () => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage({ type: 'NEXUS_CANVAS_AUTOFILL_FORMS' }, '*');
+    setShowConsole(true);
+  };
+
+  const handleRunMobileSmokeCheck = () => {
+    if (!activeArtifact || !isRunnableWeb || smokeCheckRunning) return;
+    const sandboxHtml = getCurrentRunnableSandboxDoc();
+    if (!sandboxHtml) return;
+
+    if (smokeTimeoutRef.current !== null) {
+      window.clearTimeout(smokeTimeoutRef.current);
+    }
+
+    const checkId = `smoke-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    smokeCheckIdRef.current = checkId;
+    setSmokeCheckRunning(true);
+    setSmokeSrcDoc(sandboxHtml);
+
+    // Fallback timeout so audit completes even if external CDNs take too long
+    smokeTimeoutRef.current = window.setTimeout(() => {
+      if (smokeCheckIdRef.current === checkId) {
+        smokeCheckIdRef.current = null;
+        const currentCode = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+        const errLogs = consoleLogs.filter((l) => l.level === 'error').map((l) => l.text);
+        setMobileSmokeReport({
+          checkedAt: Date.now(),
+          viewportWidth: 375,
+          horizontalOverflowPx: 0,
+          smallTapTargets: [],
+          brokenImages: [],
+          emptyRender: false,
+          runtimeErrors: errLogs,
+          staticHints: runStaticMobileResponsiveAudit(currentCode),
+          source: 'static-fallback',
+        });
+        setSmokeCheckRunning(false);
+        setSmokeSrcDoc('');
+      }
+    }, 4500);
+  };
+
+  const handleAutoFixMobileIssues = (report: MobileSmokeReport) => {
+    const details: string[] = [];
+    if (report.horizontalOverflowPx > 0) {
+      details.push(`horizontal overflow of +${report.horizontalOverflowPx}px at 375px width`);
+    }
+    if (report.smallTapTargets.length > 0) {
+      const list = report.smallTapTargets
+        .slice(0, 5)
+        .map((t) => `<${t.tag}> "${t.label}" (${t.height}px height)`)
+        .join(', ');
+      details.push(`undersized interactive touch targets (<40px height): ${list} — make interactive controls at least 44px tall`);
+    }
+    if (report.brokenImages.length > 0) {
+      details.push(`${report.brokenImages.length} broken image(s)`);
+    }
+    if (report.emptyRender) {
+      details.push('blank initial render at 375px viewport');
+    }
+    if (report.runtimeErrors.length > 0) {
+      details.push(`runtime errors: ${report.runtimeErrors.slice(0, 2).join('; ')}`);
+    }
+    if (report.staticHints.length > 0) {
+      details.push(report.staticHints.join(' '));
+    }
+
+    const fixPrompt =
+      details.length > 0
+        ? `Fix all measured 375px mobile responsiveness and touch ergonomics issues: ${details.join('; ')}. Ensure zero horizontal overflow, responsive grids/tables, and >=44px touch targets for buttons/inputs.`
+        : 'Audit and optimize this artifact for 375px mobile screens with zero horizontal overflow and >=44px touch targets.';
+
+    handleRunAiRefinement(fixPrompt, 'Fix Mobile 375px Issues');
+  };
+
+  const handleBakeDesignTweaks = () => {
+    if (!activeArtifact || !hasActiveDesignTweaks(designTweaks)) return;
+    const cssToBake = buildDesignTweaksCss(designTweaks).trim();
+    if (!cssToBake) return;
+
+    const currentSource = hasUnsavedEdits ? editorDraft : activeArtifact.content;
+    const styleBlock = `<style id="nexus-baked-tweaks">\n${cssToBake}\n</style>`;
+
+    // Direct zero-AI baking for HTML documents or multi-file projects with index.html
+    if (activeArtifact.kind === 'html') {
+      let nextHtml = currentSource.replace(/<style\s+id=["']nexus-baked-tweaks["'][\s\S]*?<\/style>\s*/gi, '');
+      if (nextHtml.includes('</head>')) {
+        nextHtml = nextHtml.replace('</head>', `${styleBlock}\n</head>`);
+      } else {
+        nextHtml = `${styleBlock}\n${nextHtml}`;
+      }
+      commitNewVersion(nextHtml, 'Baked Design Tweaks', 'html');
+      setDesignTweaks(DEFAULT_DESIGN_TWEAKS);
+      setTweakerOpen(false);
+      return;
+    }
+
+    if (activeArtifact.kind === 'project') {
+      const files = parseProjectBundle(currentSource).files;
+      const htmlIdx = files.findIndex((f) => f.path.split('/').pop()?.toLowerCase() === 'index.html');
+      if (htmlIdx !== -1) {
+        const updatedFiles = files.map((f, idx) => {
+          if (idx !== htmlIdx) return f;
+          let html = f.content.replace(/<style\s+id=["']nexus-baked-tweaks["'][\s\S]*?<\/style>\s*/gi, '');
+          if (html.includes('</head>')) {
+            html = html.replace('</head>', `${styleBlock}\n</head>`);
+          } else {
+            html = `${styleBlock}\n${html}`;
+          }
+          return { ...f, content: html };
+        });
+        const bundled = serializeProject(updatedFiles);
+        setProjectFiles(updatedFiles);
+        commitNewVersion(bundled, 'Baked Design Tweaks', 'project');
+        setDesignTweaks(DEFAULT_DESIGN_TWEAKS);
+        setTweakerOpen(false);
+        return;
+      }
+    }
+
+    // For React / SVG / Markdown artifacts, apply tweaks with AI cleanly
+    const describeTweaks = [
+      designTweaks.surfaceMode !== 'inherit' ? `${designTweaks.surfaceMode} surface polarity` : '',
+      designTweaks.accentColor ? `accent color ${designTweaks.accentColor}` : '',
+      designTweaks.borderRadiusPx !== null ? `${designTweaks.borderRadiusPx}px corner radius` : '',
+      designTweaks.fontScalePct !== 100 ? `${designTweaks.fontScalePct}% typography scale` : '',
+      designTweaks.spacingScalePct !== 100 ? `${designTweaks.spacingScalePct}% spacing scale` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    setTweakerOpen(false);
+    setDesignTweaks(DEFAULT_DESIGN_TWEAKS);
+    handleRunAiRefinement(
+      `Apply these visual design tweaks directly into the component styling and Tailwind classes while preserving all logic: ${describeTweaks}.`,
+      'Applied Design Tweaks',
+    );
   };
 
   const buildNewCanvasArtifact = (
@@ -2330,11 +2853,25 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
       // Stream the newly generated application code live into the Live Coding Terminal
       await streamCodeIntoCanvas(extracted);
 
-      const kind: ArtifactKind = extracted.startsWith('<svg') ? 'svg' : 'html';
+      const isExplicitReact =
+        !isProjectBuild &&
+        !extracted.trim().toLowerCase().startsWith('<!doctype html') &&
+        !extracted.trim().toLowerCase().startsWith('<html') &&
+        !extracted.trim().startsWith('<svg') &&
+        (/\bimport\s+React\b|\bfrom\s+['"]react['"]|useState\s*\(|export\s+default\s+function\s+App/.test(
+          extracted,
+        ) ||
+          /\b(react|tsx|jsx)\b/i.test(userPrompt));
+
+      const kind: ArtifactKind = extracted.trim().startsWith('<svg')
+        ? 'svg'
+        : isExplicitReact
+        ? 'react'
+        : 'html';
       const created = buildNewCanvasArtifact(
         userPrompt.slice(0, 38),
         kind,
-        kind,
+        kind === 'react' ? 'tsx' : kind,
         extracted,
         'AI Generated Artifact',
       );
@@ -2919,21 +3456,11 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
             {/* Active File Editor */}
             {activeFileObj ? (
-              <div className="flex-1 min-h-0 relative flex overflow-hidden">
-                <div
-                  aria-hidden="true"
-                  className="py-3 px-2 bg-zinc-950 border-r border-zinc-800/80 text-right font-mono text-xs text-zinc-600 select-none overflow-hidden shrink-0"
-                >
-                  {Array.from({ length: Math.max(1, activeFileLines) }).map((_, i) => (
-                    <div key={i} className="leading-6">
-                      {i + 1}
-                    </div>
-                  ))}
-                </div>
-                <textarea
-                  value={activeFileObj.content}
-                  onChange={(e) => {
-                    const nextVal = e.target.value;
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <CodeOutlineAndFindBar
+                  code={activeFileObj.content}
+                  kind={guessLanguage(activeFileObj.path)}
+                  onChangeCode={(nextVal) => {
                     const otherChars = totalProjectChars - activeFileObj.content.length;
                     if (otherChars + nextVal.length > MAX_PROJECT_CHARS) {
                       setProjectActionError(
@@ -2947,10 +3474,50 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                     );
                     updateProjectFilesAndDraft(nextFiles);
                   }}
-                  spellCheck={false}
-                  className="flex-1 w-full h-full p-3 sm:p-4 bg-[#0b0b0e] text-zinc-100 font-mono text-xs sm:text-[13px] leading-6 outline-none resize-none overflow-auto"
-                  placeholder={`Edit ${activeFileObj.path}...`}
+                  onJumpToLine={(lineNum, hStart, hEnd) =>
+                    handleJumpToCodeLine(
+                      projectFileTextareaRef,
+                      activeFileObj.content,
+                      lineNum,
+                      hStart,
+                      hEnd,
+                    )
+                  }
                 />
+                <div className="flex-1 min-h-0 relative flex overflow-hidden">
+                  <div
+                    aria-hidden="true"
+                    className="py-3 px-2 bg-zinc-950 border-r border-zinc-800/80 text-right font-mono text-xs text-zinc-600 select-none overflow-hidden shrink-0"
+                  >
+                    {Array.from({ length: Math.max(1, activeFileLines) }).map((_, i) => (
+                      <div key={i} className="leading-6">
+                        {i + 1}
+                      </div>
+                    ))}
+                  </div>
+                  <textarea
+                    ref={projectFileTextareaRef}
+                    value={activeFileObj.content}
+                    onChange={(e) => {
+                      const nextVal = e.target.value;
+                      const otherChars = totalProjectChars - activeFileObj.content.length;
+                      if (otherChars + nextVal.length > MAX_PROJECT_CHARS) {
+                        setProjectActionError(
+                          `Maximum project size (${MAX_PROJECT_CHARS.toLocaleString()} chars) reached.`,
+                        );
+                        return;
+                      }
+                      setProjectActionError(null);
+                      const nextFiles = projectFiles.map((f) =>
+                        f.path === activeFileObj.path ? { ...f, content: nextVal } : f,
+                      );
+                      updateProjectFilesAndDraft(nextFiles);
+                    }}
+                    spellCheck={false}
+                    className="flex-1 w-full h-full p-3 sm:p-4 bg-[#0b0b0e] text-zinc-100 font-mono text-xs sm:text-[13px] leading-6 outline-none resize-none overflow-auto"
+                    placeholder={`Edit ${activeFileObj.path}...`}
+                  />
+                </div>
               </div>
             ) : (
               <div className="flex-1 flex items-center justify-center p-6 text-xs font-mono text-zinc-500">
@@ -2963,75 +3530,134 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
     );
   };
 
-  const renderLivePreviewSurface = () => {
-    if (!activeArtifact) return null;
-    if (activeArtifact.kind === 'project') {
-      if (!projectInlinedPreviewHtml) {
+  const wrapPreviewViewportFrame = (iframeNode: React.ReactNode) => {
+    const baseDims =
+      viewportSize === 'mobile'
+        ? { w: 375, h: 667 }
+        : viewportSize === 'large-phone'
+        ? { w: 430, h: 780 }
+        : viewportSize === 'tablet'
+        ? { w: 768, h: 960 }
+        : null;
+
+    if (!baseDims) {
+      const manualScale = previewZoom === 'fit' ? 1 : previewZoom / 100;
+      if (manualScale === 1) {
         return (
-          <div className="w-full max-w-lg mx-auto p-6 rounded-xl bg-zinc-900/70 border border-zinc-800/90 text-center space-y-2.5">
-            <FolderTree size={28} className="text-cyan-400 mx-auto" />
-            <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed">
-              No index.html found. Add an index.html to preview a plain HTML project. React and TypeScript preview comes in the next update.
-            </p>
+          <div className="w-full h-full min-h-[380px] rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl">
+            {iframeNode}
           </div>
         );
       }
       return (
         <div
-          className={`h-full min-h-[360px] rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl transition-all duration-200 ${
-            viewportSize === 'mobile'
-              ? 'w-[375px]'
-              : viewportSize === 'tablet'
-              ? 'w-[768px]'
-              : 'w-full'
-          }`}
+          style={{
+            width: `${Math.round(100 / manualScale)}%`,
+            height: `${Math.round(100 / manualScale)}%`,
+            transform: `scale(${manualScale})`,
+            transformOrigin: 'top left',
+          }}
+          className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl"
         >
-          <iframe
-            key={`${activeArtifact.id}-${activeArtifact.currentVersionIndex}-${iframeRefreshKey}-${inspectMode}-${selectedThemePreset}`}
-            ref={iframeRef}
-            title={activeArtifact.title}
-            sandbox="allow-scripts allow-modals allow-forms"
-            srcDoc={buildRunnableSandboxHtml(
-              {
-                ...activeArtifact,
-                kind: 'html',
-                content: projectInlinedPreviewHtml,
-              },
-              inspectMode,
-              activeThemePresetObj.cssOverride,
-            )}
-            className="w-full h-full min-h-[420px] border-0 bg-zinc-950"
-          />
+          {iframeNode}
         </div>
       );
     }
-    if (isRunnableWeb) {
-      return (
+
+    const frameW = viewportLandscape ? baseDims.h : baseDims.w;
+    const frameH = viewportLandscape ? baseDims.w : baseDims.h;
+    const availableW = Math.max(280, (previewStageWidth || 360) - 24);
+    const scaleFactor =
+      previewZoom === 'fit'
+        ? Math.min(1, availableW / frameW)
+        : previewZoom / 100;
+
+    return (
+      <div
+        style={{
+          width: `${Math.round(frameW * scaleFactor)}px`,
+          height: `${Math.round(frameH * scaleFactor)}px`,
+        }}
+        className="shrink-0 relative"
+      >
         <div
-          className={`h-full min-h-[360px] rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl transition-all duration-200 ${
-            viewportSize === 'mobile'
-              ? 'w-[375px]'
-              : viewportSize === 'tablet'
-              ? 'w-[768px]'
-              : 'w-full'
-          }`}
+          style={{
+            width: `${frameW}px`,
+            height: `${frameH}px`,
+            transform: `scale(${scaleFactor})`,
+            transformOrigin: 'top left',
+          }}
+          className="rounded-xl overflow-hidden border border-zinc-700/90 bg-zinc-950 shadow-2xl"
         >
-          <iframe
-            key={`${activeArtifact.id}-${activeArtifact.currentVersionIndex}-${iframeRefreshKey}-${inspectMode}-${selectedThemePreset}`}
-            ref={iframeRef}
-            title={activeArtifact.title}
-            sandbox="allow-scripts allow-modals allow-forms"
-            srcDoc={buildRunnableSandboxHtml(
-              {
-                ...activeArtifact,
-                content: previewSource,
-              },
-              inspectMode,
-              activeThemePresetObj.cssOverride,
-            )}
-            className="w-full h-full min-h-[420px] border-0 bg-zinc-950"
-          />
+          {iframeNode}
         </div>
+      </div>
+    );
+  };
+
+  const renderLivePreviewSurface = () => {
+    if (!activeArtifact) return null;
+    if (activeArtifact.kind === 'project') {
+      if (!projectInlinedPreviewHtml && !projectReactBundle) {
+        return (
+          <div className="w-full max-w-lg mx-auto p-6 rounded-xl bg-zinc-900/70 border border-zinc-800/90 text-center space-y-2.5">
+            <FolderTree size={28} className="text-cyan-400 mx-auto" />
+            <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed">
+              Add an <code className="text-cyan-300 font-mono">index.html</code> or React component (<code className="text-cyan-300 font-mono">App.tsx</code> / <code className="text-cyan-300 font-mono">App.jsx</code>) to run a live interactive preview.
+            </p>
+          </div>
+        );
+      }
+
+      const projectSrcDoc = projectInlinedPreviewHtml
+        ? buildRunnableSandboxHtml({
+            artifact: {
+              ...activeArtifact,
+              kind: 'html',
+              content: projectInlinedPreviewHtml,
+            },
+            inspectMode,
+            themeCssOverride: combinedThemeCss,
+          })
+        : buildRunnableSandboxHtml({
+            artifact: {
+              ...activeArtifact,
+              kind: 'react',
+              content: projectReactBundle!.code,
+            },
+            inspectMode,
+            themeCssOverride: combinedThemeCss,
+            extraCss: projectReactBundle!.css,
+          });
+
+      return wrapPreviewViewportFrame(
+        <iframe
+          key={`${activeArtifact.id}-${activeArtifact.currentVersionIndex}-${iframeRefreshKey}-${inspectMode}-${selectedThemePreset}`}
+          ref={iframeRef}
+          title={activeArtifact.title}
+          sandbox="allow-scripts allow-modals allow-forms"
+          srcDoc={projectSrcDoc}
+          className="w-full h-full min-h-[420px] border-0 bg-zinc-950"
+        />,
+      );
+    }
+    if (isRunnableWeb) {
+      return wrapPreviewViewportFrame(
+        <iframe
+          key={`${activeArtifact.id}-${activeArtifact.currentVersionIndex}-${iframeRefreshKey}-${inspectMode}-${selectedThemePreset}`}
+          ref={iframeRef}
+          title={activeArtifact.title}
+          sandbox="allow-scripts allow-modals allow-forms"
+          srcDoc={buildRunnableSandboxHtml({
+            artifact: {
+              ...activeArtifact,
+              content: previewSource,
+            },
+            inspectMode,
+            themeCssOverride: combinedThemeCss,
+          })}
+          className="w-full h-full min-h-[420px] border-0 bg-zinc-950"
+        />,
       );
     }
     if (isSvg) {
@@ -3291,23 +3917,95 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             : 'border-zinc-800/80 bg-zinc-900/50'
         }`}
       >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
           {activeArtifact?.kind === 'project' ? (
             <FolderTree size={13} className="text-amber-400 shrink-0" />
           ) : (
             <Layers size={13} className="text-cyan-400 shrink-0" />
           )}
-          <select
-            value={activeArtifact?.id || ''}
-            onChange={(e) => onSelectArtifact(e.target.value)}
-            className="min-w-0 flex-1 max-w-xs sm:max-w-md rounded-lg bg-zinc-950 border border-zinc-700/80 px-2 py-1 text-xs text-zinc-100 outline-none focus:border-cyan-500 cursor-pointer"
-          >
-            {artifacts.map((art, idx) => (
-              <option key={art.id} value={art.id}>
-                {idx + 1}. [{art.kind === 'project' ? 'Project' : (art.kind || 'html').toUpperCase()}] {art.title}
-              </option>
-            ))}
-          </select>
+          {renamingTitle && activeArtifact ? (
+            <form
+              onSubmit={handleRenameArtifactTitleSubmit}
+              className="flex items-center gap-1 flex-1 min-w-[160px] max-w-xs sm:max-w-md"
+            >
+              <input
+                type="text"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                autoFocus
+                className="flex-1 min-w-0 rounded-lg bg-zinc-950 border border-cyan-400 px-2 py-1 text-xs text-zinc-100 outline-none"
+                placeholder="Rename artifact title..."
+              />
+              <button
+                type="submit"
+                className="px-2 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold cursor-pointer"
+                title="Save Title"
+              >
+                <Check size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setRenamingTitle(false)}
+                className="px-2 py-1 rounded-lg bg-zinc-800 text-zinc-300 text-xs cursor-pointer"
+                title="Cancel Rename"
+              >
+                <X size={12} />
+              </button>
+            </form>
+          ) : (
+            <select
+              value={activeArtifact?.id || ''}
+              onChange={(e) => onSelectArtifact(e.target.value)}
+              className="min-w-0 flex-1 max-w-xs sm:max-w-md rounded-lg bg-zinc-950 border border-zinc-700/80 px-2 py-1 text-xs text-zinc-100 outline-none focus:border-cyan-500 cursor-pointer"
+            >
+              {orderedArtifacts.map((art, idx) => {
+                const isPinned = pinnedArtifactIds.includes(art.id);
+                return (
+                  <option key={art.id} value={art.id}>
+                    {isPinned ? '★ ' : ''}{idx + 1}. [{art.kind === 'project' ? 'Project' : (art.kind || 'html').toUpperCase()}] {art.title}
+                  </option>
+                );
+              })}
+            </select>
+          )}
+
+          {activeArtifact && (
+            <>
+              <button
+                type="button"
+                onClick={() => handleTogglePinArtifact(activeArtifact.id)}
+                className={`p-1.5 rounded-lg border transition-colors cursor-pointer shrink-0 ${
+                  pinnedArtifactIds.includes(activeArtifact.id)
+                    ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
+                    : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-400 hover:text-amber-300'
+                }`}
+                title={
+                  pinnedArtifactIds.includes(activeArtifact.id)
+                    ? 'Unpin Favorite Artifact'
+                    : 'Pin Artifact to Top'
+                }
+              >
+                <Star
+                  size={12}
+                  className={
+                    pinnedArtifactIds.includes(activeArtifact.id) ? 'fill-amber-400 text-amber-400' : ''
+                  }
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setTitleDraft(activeArtifact.title);
+                  setRenamingTitle((prev) => !prev);
+                }}
+                className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-400 hover:text-cyan-300 transition-colors cursor-pointer shrink-0"
+                title="Rename Artifact Title"
+              >
+                <Pencil size={12} />
+              </button>
+            </>
+          )}
 
           {activeArtifact && onDeleteArtifact && (
             <button
@@ -3362,9 +4060,9 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           </button>
         </div>
 
-        {/* Version History Pills with Per-Version Delete (v1, v2, v3...) */}
+        {/* Version History Pills + Save Named Checkpoint */}
         {activeArtifact && activeArtifact.versions.length > 0 && (
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
             <History size={12} className="text-zinc-400 mr-0.5 shrink-0" />
             {activeArtifact.versions.map((ver, vIdx) => {
               const isCurrent = vIdx === activeArtifact.currentVersionIndex;
@@ -3425,9 +4123,56 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 </div>
               );
             })}
+            <button
+              type="button"
+              onClick={() => {
+                setCheckpointLabelDraft(`Checkpoint v${activeArtifact.versions.length + 1}`);
+                setCheckpointModalOpen((prev) => !prev);
+              }}
+              className={`px-2 py-0.5 rounded-md text-[11px] font-mono border flex items-center gap-1 shrink-0 cursor-pointer transition-colors ${
+                checkpointModalOpen
+                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                  : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-800 text-zinc-300'
+              }`}
+              title="Save a named snapshot checkpoint"
+            >
+              <Flag size={10} className="text-emerald-400" />
+              <span>Save</span>
+            </button>
           </div>
         )}
       </div>
+
+      {/* Inline Named Checkpoint Input Bar */}
+      {checkpointModalOpen && activeArtifact && (
+        <form
+          onSubmit={handleSaveNamedCheckpoint}
+          className="px-3 sm:px-4 py-2 border-b border-zinc-800 bg-zinc-950/90 flex items-center gap-2 flex-wrap shrink-0"
+        >
+          <Flag size={13} className="text-emerald-400 shrink-0" />
+          <input
+            type="text"
+            value={checkpointLabelDraft}
+            onChange={(e) => setCheckpointLabelDraft(e.target.value)}
+            placeholder="Checkpoint name (e.g. Before mobile refactor)..."
+            autoFocus
+            className="flex-1 min-w-[160px] min-h-[38px] px-2.5 rounded-lg bg-zinc-900 border border-zinc-700 focus:border-emerald-400 text-xs text-zinc-100 outline-none"
+          />
+          <button
+            type="submit"
+            className="min-h-[38px] px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
+          >
+            Save Snapshot
+          </button>
+          <button
+            type="button"
+            onClick={() => setCheckpointModalOpen(false)}
+            className="min-h-[38px] px-2.5 rounded-lg bg-zinc-900 text-zinc-400 hover:text-white text-xs cursor-pointer"
+          >
+            Cancel
+          </button>
+        </form>
+      )}
 
       {/* Mode Switcher Tabs + Viewport & Inspector Controls */}
       <div className="px-3 sm:px-4 py-1.5 border-b border-zinc-800/80 bg-zinc-950/60 flex items-center justify-between gap-2 flex-wrap shrink-0">
@@ -3505,7 +4250,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             <ShieldCheck size={12} className={activeTab === 'audit' ? 'text-emerald-400' : ''} />
             <span>Audit</span>
             {staticAuditReport && (
-              <span className="text-[10px] font-mono text-emerald-400">
+              <span className="text-[10px] font-mono text-emerald-400 tabular-nums">
                 {staticAuditReport.overallScore}
               </span>
             )}
@@ -3539,90 +4284,160 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           )}
         </div>
 
-        {/* Right contextual controls for Preview / Split / Code */}
+        {/* Right contextual controls for Preview / Split / Code (mobile-friendly scrollable row) */}
         {(activeTab === 'preview' || activeTab === 'split') && isRunnableWeb && (
-          <div className="flex items-center gap-1 flex-wrap">
-            {/* Feature 3: Visual Element Inspector ("Click-to-Edit") */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
+            {/* Design Tweaker Bottom Sheet Trigger */}
+            <button
+              type="button"
+              onClick={() => setTweakerOpen(true)}
+              className={`min-h-[38px] px-2.5 py-1 rounded-lg text-xs font-medium border flex items-center gap-1 transition-colors cursor-pointer shrink-0 ${
+                hasActiveDesignTweaks(designTweaks)
+                  ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white'
+              }`}
+              title="Open Live Design Tweaker (Accent, Radius, Font Scale, Light/Dark)"
+            >
+              <Sliders size={13} className="text-cyan-400" />
+              <span>Tune</span>
+            </button>
+
+            {/* Visual Element Inspector ("Click-to-Edit", Touch + Mouse) */}
             <button
               type="button"
               onClick={() => {
                 setInspectMode((prev) => !prev);
                 if (inspectMode) setInspectedElement(null);
               }}
-              className={`px-2 py-1 rounded-lg text-xs font-medium border flex items-center gap-1 transition-colors cursor-pointer ${
+              className={`min-h-[38px] px-2.5 py-1 rounded-lg text-xs font-medium border flex items-center gap-1 transition-colors cursor-pointer shrink-0 ${
                 inspectMode
                   ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
-              title="Click-to-Edit Inspector: Click any element in the live preview to target it with AI"
+              title="Tap or click any element in the live preview to target it with AI"
             >
-              <Crosshair size={12} className={inspectMode ? 'text-cyan-300 animate-pulse' : ''} />
-              <span className="hidden sm:inline">Inspect</span>
+              <Crosshair size={13} className={inspectMode ? 'text-cyan-300' : ''} />
+              <span>Inspect</span>
             </button>
 
-            <div className="hidden sm:flex items-center gap-0.5 p-0.5 rounded-lg bg-zinc-900 border border-zinc-800">
+            {/* Extended Responsive Viewport Switcher (Desktop, Tablet 768px, Large Phone 430px, Mobile 375px) + Orientation Flip */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-zinc-900 border border-zinc-800 shrink-0">
               <button
                 type="button"
                 onClick={() => setViewportSize('desktop')}
-                className={`p-1 rounded-md transition-colors cursor-pointer ${
+                className={`min-h-[34px] min-w-[34px] flex items-center justify-center rounded-md transition-colors cursor-pointer ${
                   viewportSize === 'desktop'
                     ? 'bg-zinc-800 text-cyan-300'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
                 title="Desktop Viewport (100%)"
               >
-                <Monitor size={12} />
+                <Monitor size={13} />
               </button>
               <button
                 type="button"
                 onClick={() => setViewportSize('tablet')}
-                className={`p-1 rounded-md transition-colors cursor-pointer ${
+                className={`min-h-[34px] min-w-[34px] flex items-center justify-center rounded-md transition-colors cursor-pointer ${
                   viewportSize === 'tablet'
                     ? 'bg-zinc-800 text-cyan-300'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
                 title="Tablet Viewport (768px)"
               >
-                <Tablet size={12} />
+                <Tablet size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewportSize('large-phone')}
+                className={`min-h-[34px] px-1.5 flex items-center justify-center rounded-md text-[10px] font-mono transition-colors cursor-pointer tabular-nums ${
+                  viewportSize === 'large-phone'
+                    ? 'bg-zinc-800 text-cyan-300 font-semibold'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Large Phone Viewport (430px)"
+              >
+                430
               </button>
               <button
                 type="button"
                 onClick={() => setViewportSize('mobile')}
-                className={`p-1 rounded-md transition-colors cursor-pointer ${
+                className={`min-h-[34px] min-w-[34px] flex items-center justify-center rounded-md transition-colors cursor-pointer ${
                   viewportSize === 'mobile'
                     ? 'bg-zinc-800 text-cyan-300'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
-                title="Mobile Viewport (375px)"
+                title="Compact Mobile Viewport (375px)"
               >
-                <Smartphone size={12} />
+                <Smartphone size={13} />
               </button>
+              {viewportSize !== 'desktop' && (
+                <button
+                  type="button"
+                  onClick={() => setViewportLandscape((p) => !p)}
+                  className={`min-h-[34px] min-w-[34px] flex items-center justify-center rounded-md transition-colors cursor-pointer ${
+                    viewportLandscape
+                      ? 'bg-indigo-500/20 text-indigo-300'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                  title={viewportLandscape ? 'Switch to Portrait' : 'Rotate to Landscape'}
+                >
+                  <RotateCw size={12} />
+                </button>
+              )}
             </div>
+
+            {/* Frame Scale / Zoom Selector (Fit | 100% | 75% | 50%) */}
+            <select
+              value={String(previewZoom)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setPreviewZoom(v === 'fit' ? 'fit' : (Number(v) as 100 | 75 | 50));
+              }}
+              className="min-h-[38px] px-2 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] font-mono text-zinc-300 outline-none cursor-pointer shrink-0"
+              title="Preview Frame Scale"
+            >
+              <option value="fit" className="bg-zinc-900">Fit</option>
+              <option value="100" className="bg-zinc-900">100%</option>
+              <option value="75" className="bg-zinc-900">75%</option>
+              <option value="50" className="bg-zinc-900">50%</option>
+            </select>
+
+            {/* Smart Form Auto-Filler Button */}
+            <button
+              type="button"
+              onClick={handleTriggerSandboxAutoFill}
+              className="min-h-[38px] px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+              title="Auto-fill visible form inputs with realistic sample values"
+            >
+              <ClipboardList size={13} />
+              <span>Auto-Fill</span>
+            </button>
 
             <button
               type="button"
               onClick={() => {
                 setConsoleLogs([]);
+                setNetworkLogs([]);
                 setIframeRefreshKey((k) => k + 1);
               }}
-              className="p-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition-colors cursor-pointer shrink-0"
               title="Reload Live Sandbox"
             >
-              <RefreshCw size={12} />
+              <RefreshCw size={13} />
             </button>
 
             <button
               type="button"
               onClick={() => setShowConsole((prev) => !prev)}
-              className={`px-2 py-1 rounded-lg text-xs font-mono border flex items-center gap-1 transition-colors cursor-pointer ${
+              className={`min-h-[38px] px-2.5 py-1 rounded-lg text-xs font-mono border flex items-center gap-1 transition-colors cursor-pointer shrink-0 tabular-nums ${
                 showConsole
                   ? 'bg-zinc-800 border-cyan-500/40 text-cyan-300'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
-              title="Toggle Sandbox Console Output"
+              title="Toggle Console, Network & Storage Inspector"
             >
-              <Terminal size={11} />
-              <span>{consoleLogs.length}</span>
+              <Terminal size={12} />
+              <span>{consoleLogs.length + networkLogs.length}</span>
             </button>
           </div>
         )}
@@ -3673,7 +4488,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         )}
       </div>
 
-      {/* 1-Click AI Refinement + Theme Preset + Framework Converter Bar */}
+      {/* 1-Click AI Refinement + Tools Hub + Theme Preset + Framework Converter Bar */}
       {activeArtifact && activeTab !== 'templates' && (
         <div className="px-3 sm:px-4 py-1.5 border-b border-zinc-800/80 bg-zinc-900/40 flex flex-col gap-1.5 shrink-0">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -3684,6 +4499,19 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
 
             <button
               type="button"
+              onClick={() => {
+                setToolsSheetTab('prompts');
+                setToolsSheetOpen(true);
+              }}
+              className="min-h-[36px] px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-[11px] font-semibold text-cyan-200 flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+              title="Open Quick Prompts, Color Swapper, SEO Meta Inspector & Standalone Export"
+            >
+              <Wrench size={11} className="text-cyan-300" />
+              <span>Tools Hub</span>
+            </button>
+
+            <button
+              type="button"
               disabled={aiRefining}
               onClick={() =>
                 handleRunAiRefinement(
@@ -3691,7 +4519,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                   'Polish UI & Design',
                 )
               }
-              className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] text-zinc-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
+              className="min-h-[36px] px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] text-zinc-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Wand2 size={11} className="text-cyan-400" />
               <span>Polish UI</span>
@@ -3706,7 +4534,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                   'Fix Bugs & Edge Cases',
                 )
               }
-              className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] text-zinc-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
+              className="min-h-[36px] px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] text-zinc-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Bug size={11} className="text-amber-400" />
               <span>Fix Bugs</span>
@@ -3719,17 +4547,33 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 handleRunAiRefinement(
                   'Add interactive controls, live filters, dynamic state sliders, or interactive tabs so the user can explore and manipulate the data/interface in real time.',
                   'Add Interactive Controls',
-                  activeArtifact.kind !== 'svg',
+                  activeArtifact.kind === 'markdown' || activeArtifact.kind === 'code',
                 )
               }
-              className="px-2 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] text-zinc-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
+              className="min-h-[36px] px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-[11px] text-zinc-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Sliders size={11} className="text-emerald-400" />
               <span>Add Controls</span>
             </button>
 
-            {/* Feature 2: Live Theme & Design Token Switcher */}
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-900 border border-zinc-700/80 shrink-0">
+            {isRunnableWeb && (
+              <button
+                type="button"
+                onClick={() => setTweakerOpen(true)}
+                className={`min-h-[36px] px-2.5 py-1 rounded-lg border text-[11px] flex items-center gap-1 shrink-0 transition-colors cursor-pointer ${
+                  hasActiveDesignTweaks(designTweaks)
+                    ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200 font-semibold'
+                    : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-200'
+                }`}
+                title="Live Design Tweaker Drawer"
+              >
+                <Palette size={11} className="text-cyan-400" />
+                <span>Design Tune</span>
+              </button>
+            )}
+
+            {/* Live Theme & Design Token Switcher */}
+            <div className="min-h-[36px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-900 border border-zinc-700/80 shrink-0">
               <Palette size={11} className="text-pink-400 shrink-0" />
               <select
                 value={selectedThemePreset}
@@ -3750,14 +4594,14 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
               >
                 {DESIGN_THEME_PRESETS.map((p) => (
                   <option key={p.id} value={p.id} className="bg-zinc-900 text-zinc-100">
-                    🎨 {p.label}
+                    {p.label}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Feature 5: Multi-Framework Code Converter */}
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-900 border border-zinc-700/80 shrink-0">
+            {/* Multi-Framework Code Converter */}
+            <div className="min-h-[36px] flex items-center gap-1 px-2 py-0.5 rounded-lg bg-zinc-900 border border-zinc-700/80 shrink-0">
               <Repeat size={11} className="text-indigo-400 shrink-0" />
               <select
                 value=""
@@ -3803,7 +4647,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 title="Convert artifact between HTML, React TSX, Vue 3, or Python Streamlit"
               >
                 <option value="" className="bg-zinc-900 text-zinc-400">
-                  🔄 Port Code To...
+                  Port Code To...
                 </option>
                 <option value="html" className="bg-zinc-900 text-zinc-100">
                   HTML5 + Tailwind Web App
@@ -3831,7 +4675,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                     true,
                   )
                 }
-                className="px-2 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-[11px] text-indigo-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
+                className="min-h-[36px] px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-[11px] text-indigo-200 flex items-center gap-1 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <Play size={11} className="text-indigo-400" />
                 <span>Convert to Live App</span>
@@ -4209,56 +5053,35 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           </div>
         ) : activeTab === 'preview' && activeArtifact ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="flex-1 overflow-auto flex items-start justify-center p-3 sm:p-4 bg-[#09090b]">
+            <div
+              ref={previewStageRef}
+              className="flex-1 overflow-auto flex items-start justify-center p-3 sm:p-4 bg-[#09090b]"
+            >
               {renderLivePreviewSurface()}
             </div>
 
-            {isRunnableWeb && showConsole && (
-              <div className="h-36 border-t border-zinc-800 bg-zinc-950 flex flex-col shrink-0">
-                <div className="px-3 py-1.5 border-b border-zinc-800/80 flex items-center justify-between text-[11px] font-mono text-zinc-400">
-                  <div className="flex items-center gap-1.5">
-                    <Terminal size={12} className="text-cyan-400" />
-                    <span>Live Sandbox Console</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setConsoleLogs([])}
-                    className="text-zinc-500 hover:text-zinc-300"
-                  >
-                    Clear
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2.5 space-y-1 font-mono text-xs">
-                  {consoleLogs.length === 0 ? (
-                    <div className="text-zinc-600 text-[11px]">
-                      No console output recorded yet.
-                    </div>
-                  ) : (
-                    consoleLogs.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className={`flex items-start gap-2 ${
-                          entry.level === 'error'
-                            ? 'text-rose-400'
-                            : entry.level === 'warn'
-                            ? 'text-amber-300'
-                            : 'text-zinc-300'
-                        }`}
-                      >
-                        <span className="text-zinc-600 select-none">
-                          {new Date(entry.timestamp).toLocaleTimeString([], {
-                            hour12: false,
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                          })}
-                        </span>
-                        <span className="break-all">{entry.text}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+            {isRunnableWeb && (
+              <SandboxDevDrawer
+                isOpen={showConsole}
+                consoleLogs={consoleLogs}
+                networkLogs={networkLogs}
+                storageEntries={storageEntries}
+                onClearConsole={() => setConsoleLogs([])}
+                onClearNetwork={() => setNetworkLogs([])}
+                onRefreshStorage={() =>
+                  iframeRef.current?.contentWindow?.postMessage(
+                    { type: 'NEXUS_CANVAS_GET_STORAGE' },
+                    '*',
+                  )
+                }
+                onClearStorage={() =>
+                  iframeRef.current?.contentWindow?.postMessage(
+                    { type: 'NEXUS_CANVAS_CLEAR_STORAGE' },
+                    '*',
+                  )
+                }
+                onClose={() => setShowConsole(false)}
+              />
             )}
           </div>
         ) : activeTab === 'split' && activeArtifact ? (
@@ -4273,7 +5096,25 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                     <span>LIVE SOURCE EDITOR</span>
                     <span>Hot-Reload Active</span>
                   </div>
+                  <CodeOutlineAndFindBar
+                    code={editorDraft}
+                    kind={activeArtifact.kind}
+                    onChangeCode={(nextVal) => {
+                      setEditorDraft(nextVal);
+                      setHasUnsavedEdits(nextVal !== activeArtifact.content);
+                    }}
+                    onJumpToLine={(lineNum, hStart, hEnd) =>
+                      handleJumpToCodeLine(
+                        codeTextareaRef,
+                        editorDraft,
+                        lineNum,
+                        hStart,
+                        hEnd,
+                      )
+                    }
+                  />
                   <textarea
+                    ref={codeTextareaRef}
                     value={editorDraft}
                     onChange={(e) => {
                       setEditorDraft(e.target.value);
@@ -4285,7 +5126,10 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                 </>
               )}
             </div>
-            <div className="flex flex-col min-h-0 overflow-auto p-2.5 bg-[#09090b]">
+            <div
+              ref={previewStageRef}
+              className="flex flex-col min-h-0 overflow-auto p-2.5 bg-[#09090b]"
+            >
               {renderLivePreviewSurface()}
             </div>
           </div>
@@ -4294,6 +5138,23 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             renderProjectWorkspace(false)
           ) : (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <CodeOutlineAndFindBar
+                code={editorDraft}
+                kind={activeArtifact.kind}
+                onChangeCode={(nextVal) => {
+                  setEditorDraft(nextVal);
+                  setHasUnsavedEdits(nextVal !== activeArtifact.content);
+                }}
+                onJumpToLine={(lineNum, hStart, hEnd) =>
+                  handleJumpToCodeLine(
+                    codeTextareaRef,
+                    editorDraft,
+                    lineNum,
+                    hStart,
+                    hEnd,
+                  )
+                }
+              />
               <div className="flex-1 relative flex overflow-hidden">
                 <div
                   aria-hidden="true"
@@ -4306,6 +5167,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                   ))}
                 </div>
                 <textarea
+                  ref={codeTextareaRef}
                   value={editorDraft}
                   onChange={(e) => {
                     setEditorDraft(e.target.value);
@@ -4412,9 +5274,18 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             </button>
           </div>
         ) : activeTab === 'audit' && activeArtifact && staticAuditReport ? (
-          /* Feature 7: AI Security, Performance & Accessibility Auditor */
+          /* Feature 7 + Mobile Smoke Check: Security, Performance, WCAG & 375px Mobile Auditor */
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
+            <MobileSmokeCheckCard
+              report={mobileSmokeReport}
+              running={smokeCheckRunning}
+              canRunLive={isRunnableWeb}
+              aiRefining={aiRefining}
+              onRunSmokeCheck={handleRunMobileSmokeCheck}
+              onAutoFixMobileIssues={handleAutoFixMobileIssues}
+            />
+
+            <div className="flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-zinc-800/80">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
                   <ShieldCheck size={16} className="text-emerald-400" />
@@ -4433,7 +5304,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
                     'AI Security & WCAG Hardening',
                   )
                 }
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                className="min-h-[42px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
               >
                 <Wrench size={13} />
                 <span>Fix All Issues with AI</span>
@@ -4492,70 +5363,116 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             </div>
           </div>
         ) : activeTab === 'diff' && activeArtifact ? (
-          <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1 bg-[#0b0b0e]">
-            <div className="pb-2 mb-2 border-b border-zinc-800 flex items-center justify-between text-zinc-400">
-              <span>
-                Comparing{' '}
-                <strong className="text-zinc-200">
-                  v{Math.max(1, activeArtifact.currentVersionIndex)}
-                </strong>{' '}
-                →{' '}
-                <strong className="text-cyan-300">
-                  v{activeArtifact.currentVersionIndex + 1}
-                  {hasUnsavedEdits ? ' (unsaved draft)' : ''}
-                </strong>
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-[#0b0b0e]">
+            {/* Diff Mode Switcher: Code Diff | Visual A/B */}
+            <div className="px-3 sm:px-4 py-2 border-b border-zinc-800 bg-zinc-950/90 flex items-center justify-between gap-2 flex-wrap shrink-0">
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-900 border border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setDiffSubMode('code')}
+                  className={`min-h-[38px] px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    diffSubMode === 'code'
+                      ? 'bg-zinc-800 text-white shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <FileText size={13} className={diffSubMode === 'code' ? 'text-cyan-400' : ''} />
+                  <span>Code Diff</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDiffSubMode('visual')}
+                  className={`min-h-[38px] px-3 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    diffSubMode === 'visual'
+                      ? 'bg-zinc-800 text-white shadow-sm'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <Columns size={13} className={diffSubMode === 'visual' ? 'text-purple-400' : ''} />
+                  <span>Visual A/B</span>
+                </button>
+              </div>
+
+              <span className="text-[11px] font-mono text-zinc-400">
+                {activeArtifact.versions.length} version{activeArtifact.versions.length === 1 ? '' : 's'}
               </span>
-              <FileText size={13} />
             </div>
-            {diffLines.map((row) => {
-              if (row.type === 'same') {
-                return (
-                  <div key={row.lineNum} className="flex items-start gap-3 px-2 py-0.5 text-zinc-500">
-                    <span className="w-8 text-right select-none opacity-50">{row.lineNum}</span>
-                    <span className="w-3 select-none"> </span>
-                    <span className="whitespace-pre-wrap break-all">{row.newLine}</span>
-                  </div>
-                );
-              }
-              if (row.type === 'added') {
-                return (
-                  <div
-                    key={row.lineNum}
-                    className="flex items-start gap-3 px-2 py-0.5 bg-emerald-950/40 text-emerald-300 rounded"
-                  >
-                    <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
-                    <span className="w-3 select-none font-bold">+</span>
-                    <span className="whitespace-pre-wrap break-all">{row.newLine}</span>
-                  </div>
-                );
-              }
-              if (row.type === 'removed') {
-                return (
-                  <div
-                    key={row.lineNum}
-                    className="flex items-start gap-3 px-2 py-0.5 bg-rose-950/40 text-rose-300 rounded"
-                  >
-                    <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
-                    <span className="w-3 select-none font-bold">-</span>
-                    <span className="whitespace-pre-wrap break-all">{row.oldLine}</span>
-                  </div>
-                );
-              }
-              return (
-                <div key={row.lineNum} className="space-y-0.5">
-                  <div className="flex items-start gap-3 px-2 py-0.5 bg-rose-950/40 text-rose-300 rounded">
-                    <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
-                    <span className="w-3 select-none font-bold">-</span>
-                    <span className="whitespace-pre-wrap break-all">{row.oldLine}</span>
-                  </div>
-                  <div className="flex items-start gap-3 px-2 py-0.5 bg-emerald-950/40 text-emerald-300 rounded">
-                    <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
-                    <span className="w-3 select-none font-bold">+</span>
-                    <span className="whitespace-pre-wrap break-all">{row.newLine}</span>
-                  </div>
+
+            {diffSubMode === 'visual' ? (
+              <VisualVersionCompare
+                artifact={activeArtifact}
+                draftContent={editorDraft}
+                hasUnsavedEdits={hasUnsavedEdits}
+                themeCssOverride={combinedThemeCss}
+                onSelectVersion={handleSelectVersion}
+              />
+            ) : (
+              <div className="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1">
+                <div className="pb-2 mb-2 border-b border-zinc-800 flex items-center justify-between text-zinc-400">
+                  <span>
+                    Comparing{' '}
+                    <strong className="text-zinc-200">
+                      v{Math.max(1, activeArtifact.currentVersionIndex)}
+                    </strong>{' '}
+                    →{' '}
+                    <strong className="text-cyan-300">
+                      v{activeArtifact.currentVersionIndex + 1}
+                      {hasUnsavedEdits ? ' (unsaved draft)' : ''}
+                    </strong>
+                  </span>
+                  <FileText size={13} />
                 </div>
-              );
-            })}
+                {diffLines.map((row) => {
+                  if (row.type === 'same') {
+                    return (
+                      <div key={row.lineNum} className="flex items-start gap-3 px-2 py-0.5 text-zinc-500">
+                        <span className="w-8 text-right select-none opacity-50">{row.lineNum}</span>
+                        <span className="w-3 select-none"> </span>
+                        <span className="whitespace-pre-wrap break-all">{row.newLine}</span>
+                      </div>
+                    );
+                  }
+                  if (row.type === 'added') {
+                    return (
+                      <div
+                        key={row.lineNum}
+                        className="flex items-start gap-3 px-2 py-0.5 bg-emerald-950/40 text-emerald-300 rounded"
+                      >
+                        <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
+                        <span className="w-3 select-none font-bold">+</span>
+                        <span className="whitespace-pre-wrap break-all">{row.newLine}</span>
+                      </div>
+                    );
+                  }
+                  if (row.type === 'removed') {
+                    return (
+                      <div
+                        key={row.lineNum}
+                        className="flex items-start gap-3 px-2 py-0.5 bg-rose-950/40 text-rose-300 rounded"
+                      >
+                        <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
+                        <span className="w-3 select-none font-bold">-</span>
+                        <span className="whitespace-pre-wrap break-all">{row.oldLine}</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={row.lineNum} className="space-y-0.5">
+                      <div className="flex items-start gap-3 px-2 py-0.5 bg-rose-950/40 text-rose-300 rounded">
+                        <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
+                        <span className="w-3 select-none font-bold">-</span>
+                        <span className="whitespace-pre-wrap break-all">{row.oldLine}</span>
+                      </div>
+                      <div className="flex items-start gap-3 px-2 py-0.5 bg-emerald-950/40 text-emerald-300 rounded">
+                        <span className="w-8 text-right select-none opacity-70">{row.lineNum}</span>
+                        <span className="w-3 select-none font-bold">+</span>
+                        <span className="whitespace-pre-wrap break-all">{row.newLine}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
@@ -4580,6 +5497,39 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           >
             <X size={12} />
           </button>
+        </div>
+      )}
+
+      {/* Targeted Single-File AI Edit Scope Bar (when editing multi-file Projects) */}
+      {activeArtifact && activeArtifact.kind === 'project' && selectedPath && activeTab !== 'templates' && (
+        <div className="px-3 py-1.5 border-t border-zinc-800/90 bg-zinc-950/90 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-[11px] font-mono text-zinc-400">AI Edit Scope:</span>
+            <button
+              type="button"
+              onClick={() => setTargetSelectedFileOnly(false)}
+              className={`min-h-[34px] px-2.5 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer ${
+                !targetSelectedFileOnly
+                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              All Files
+            </button>
+            <button
+              type="button"
+              onClick={() => setTargetSelectedFileOnly(true)}
+              className={`min-h-[34px] px-2.5 rounded-lg border text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer ${
+                targetSelectedFileOnly
+                  ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200 font-semibold'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+              title={`Target only ${selectedPath} with AI edits`}
+            >
+              <FileCode size={12} />
+              <span className="truncate max-w-[160px]">{selectedPath.split('/').pop()} only</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -4609,7 +5559,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         <button
           type="button"
           onClick={handleToggleMic}
-          className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+          className={`min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
             isListeningMic
               ? 'bg-rose-500/25 border-rose-500/60 text-rose-300 animate-pulse'
               : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-cyan-400'
@@ -4623,7 +5573,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         <button
           type="button"
           onClick={handleOpenModelModal}
-          className={`h-9 px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
+          className={`min-h-[44px] px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
             canvasProviderId !== 'session'
               ? 'bg-purple-500/20 border-purple-500/50 text-purple-200'
               : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
@@ -4639,7 +5589,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
         {/* Active Skills Indicator Chip */}
         {activeSkillsState.count > 0 && (
           <div
-            className="h-9 px-2 sm:px-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 flex items-center gap-1 shrink-0 select-none"
+            className="min-h-[44px] px-2 sm:px-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hidden sm:flex items-center gap-1 shrink-0 select-none"
             title={`~${activeSkillsState.tokensK}k tokens added to each request`}
           >
             <Sparkles size={12} className="text-emerald-400 shrink-0" />
@@ -4654,7 +5604,7 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           <button
             type="button"
             onClick={() => setProjectPromptMode((prev) => !prev)}
-            className={`h-9 px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
+            className={`min-h-[44px] px-2.5 rounded-xl border flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer ${
               projectPromptMode
                 ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
                 : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-400 hover:text-zinc-200'
@@ -4677,19 +5627,21 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
           placeholder={
             inspectedElement
               ? `Tell AI how to change <${inspectedElement.tagName}>...`
+              : activeArtifact && activeArtifact.kind === 'project' && targetSelectedFileOnly && selectedPath && activeTab !== 'templates'
+              ? `Edit ${selectedPath.split('/').pop()} only...`
               : activeArtifact && activeTab !== 'templates'
-              ? `Tell AI how to modify "${activeArtifact.title}"...`
+              ? `Modify "${activeArtifact.title}"...`
               : projectPromptMode
-              ? 'Describe a multi-file HTML/CSS/JS project to build...'
-              : 'Describe an interactive app, calculator, or SVG diagram to build...'
+              ? 'Describe a multi-file HTML/CSS/JS or React project...'
+              : 'Describe an interactive app, React component, or SVG...'
           }
-          className="flex-1 min-w-0 min-h-[42px] bg-zinc-900 border border-zinc-700/90 focus:border-cyan-400 rounded-xl px-3 py-2 text-[15px] sm:text-xs text-zinc-100 placeholder-zinc-400 outline-none shadow-inner"
+          className="flex-1 min-w-0 min-h-[44px] bg-zinc-900 border border-zinc-700/90 focus:border-cyan-400 rounded-xl px-3 py-2 text-[15px] sm:text-xs text-zinc-100 placeholder-zinc-400 outline-none shadow-inner"
         />
 
         <button
           type="submit"
           disabled={!customAiPrompt.trim() || aiRefining}
-          className="min-h-[42px] px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-sm"
+          className="min-h-[44px] px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-sm"
         >
           <Send size={13} />
           <span>{activeArtifact && activeTab !== 'templates' ? 'Apply' : 'Build'}</span>
@@ -4947,6 +5899,68 @@ export const LiveArtifactCanvas: React.FC<LiveArtifactCanvasProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Mobile-First Design Tweaker Bottom Sheet */}
+      <DesignTweakerSheet
+        isOpen={tweakerOpen}
+        onClose={() => setTweakerOpen(false)}
+        tweaks={designTweaks}
+        onChange={setDesignTweaks}
+        onBakeIntoCode={handleBakeDesignTweaks}
+        canBakeDirectly={
+          activeArtifact?.kind === 'html' ||
+          (activeArtifact?.kind === 'project' &&
+            projectFiles.some((f) => f.path.split('/').pop()?.toLowerCase() === 'index.html'))
+        }
+        aiRefining={aiRefining}
+      />
+
+      {/* Mobile-First Studio Tools Hub Sheet (Quick Prompts, Color Palette/Swapper, SEO Inspector, Standalone HTML Export) */}
+      <CanvasToolsSheet
+        isOpen={toolsSheetOpen}
+        activeTab={toolsSheetTab}
+        onChangeTab={setToolsSheetTab}
+        onClose={() => setToolsSheetOpen(false)}
+        artifact={activeArtifact}
+        sourceCode={hasUnsavedEdits ? editorDraft : activeArtifact?.content || ''}
+        standaloneHtml={getCurrentRunnableSandboxDoc()}
+        aiRefining={aiRefining}
+        onApplyAiPrompt={(prompt, label) => handleRunAiRefinement(prompt, label)}
+        onApplyReplaceColor={handleApplyReplaceColor}
+        onDownloadStandaloneHtml={handleDownloadStandaloneHtml}
+      />
+
+      {/* Off-screen 375px Mobile Viewport Sandbox Runner for Live Smoke Check */}
+      {smokeSrcDoc && (
+        <iframe
+          ref={smokeIframeRef}
+          title="375px Mobile Smoke Test"
+          sandbox="allow-scripts allow-modals allow-forms"
+          srcDoc={smokeSrcDoc}
+          onLoad={() => {
+            const activeCheckId = smokeCheckIdRef.current;
+            if (!activeCheckId) return;
+            window.setTimeout(() => {
+              if (smokeCheckIdRef.current === activeCheckId && smokeIframeRef.current?.contentWindow) {
+                smokeIframeRef.current.contentWindow.postMessage(
+                  { type: 'NEXUS_CANVAS_SMOKE_CHECK', checkId: activeCheckId },
+                  '*',
+                );
+              }
+            }, 500);
+          }}
+          style={{
+            position: 'fixed',
+            left: '-9999px',
+            top: 0,
+            width: '375px',
+            height: '667px',
+            opacity: 0,
+            pointerEvents: 'none',
+            border: 0,
+          }}
+        />
       )}
     </div>
   );
