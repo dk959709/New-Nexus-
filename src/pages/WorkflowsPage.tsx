@@ -42,6 +42,7 @@ import {
   Check,
   AlertTriangle,
   Download,
+  Upload,
   Layers,
   Sparkles,
   GitBranch,
@@ -344,6 +345,7 @@ export function WorkflowsPage() {
   const [selectedRunDetail, setSelectedRunDetail] = useState<WorkflowRunRecord | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const inspectorOutputRef = useRef<HTMLDivElement | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
 
   // Phone Connect Mode in Canvas
   const [connectSourceNodeId, setConnectSourceNodeId] = useState<string | null>(null);
@@ -465,6 +467,67 @@ export function WorkflowsPage() {
     setWorkflows((prev) => [clone, ...prev]);
     setActiveWorkflowId(clone.id);
     showToast(`Duplicated as "${clone.name}"`);
+  };
+
+  // Export current workflow as JSON
+  const handleExportWorkflow = () => {
+    if (!activeWorkflow) return;
+    const blob = new Blob([JSON.stringify(activeWorkflow, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(activeWorkflow.name || 'workflow').replace(/[^a-z0-9]/gi, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Workflow exported as JSON');
+  };
+
+  // Import workflow from JSON file
+  const handleImportWorkflow = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result ?? ''));
+        if (!parsed || !Array.isArray(parsed.nodes)) throw new Error('invalid');
+        const idMap = new Map<string, string>();
+        const newNodes = parsed.nodes.map((n: any, i: number) => {
+          const newId = `node-${Date.now()}-${i + 1}`;
+          idMap.set(n.id, newId);
+          return {
+            ...n,
+            id: newId,
+            settings: { ...(n.settings || {}) },
+          };
+        });
+        const newEdges = (parsed.edges || []).map((ed: any, i: number) => ({
+          ...ed,
+          id: `e-${Date.now()}-${i}`,
+          from: idMap.get(ed.from) || ed.from,
+          to: idMap.get(ed.to) || ed.to,
+        }));
+        const wf: Workflow = {
+          id: `workflow-${Date.now()}`,
+          name: parsed.name ? `${parsed.name} (Imported)` : 'Imported Workflow',
+          nodes: newNodes,
+          edges: newEdges,
+          updatedAt: Date.now(),
+        };
+        setWorkflows((prev) => [wf, ...prev]);
+        setActiveWorkflowId(wf.id);
+        setSelectedNodeId(null);
+        handleClearResults();
+        showToast(`Imported "${wf.name}"`);
+      } catch {
+        showToast('Invalid workflow file');
+      } finally {
+        if (importFileRef.current) importFileRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Delete current workflow (without native alert/confirm)
@@ -1373,6 +1436,35 @@ export function WorkflowsPage() {
             <RotateCcw size={13} className="text-amber-400" />
             <span className="hidden lg:inline font-mono text-[11px]">Reset</span>
           </button>
+
+          <button
+            type="button"
+            onClick={handleExportWorkflow}
+            disabled={!activeWorkflow}
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-emerald-400/50 text-emerald-300 disabled:opacity-40 transition-colors flex items-center gap-1"
+            title="Export current workflow as JSON"
+          >
+            <Download size={13} className="text-emerald-400" />
+            <span className="hidden md:inline font-mono text-[11px]">Export</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-sky-400/50 text-sky-300 transition-colors flex items-center gap-1"
+            title="Import workflow from JSON file"
+          >
+            <Upload size={13} className="text-sky-400" />
+            <span className="hidden md:inline font-mono text-[11px]">Import</span>
+          </button>
+
+          <input
+            ref={importFileRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportWorkflow}
+            className="hidden"
+          />
 
           {isRunning ? (
             <button
