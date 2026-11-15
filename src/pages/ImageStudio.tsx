@@ -2306,10 +2306,13 @@ export function ImageStudio() {
           skipEnhance: true,
           silent: true,
         });
-        if (item) {
-          rendered.push(item);
-          setVariations([...rendered]);
+        if (!item) {
+          // Provider failed (auth, quota, rate limit): stop the sweep instead of
+          // firing the remaining seeds at a provider that is already refusing.
+          break;
         }
+        rendered.push(item);
+        setVariations([...rendered]);
       }
     } finally {
       setVariationsLoading(false);
