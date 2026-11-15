@@ -276,6 +276,23 @@ export interface GeneratedImageItem {
   isFavorite?: boolean;
 }
 
+/**
+ * A saved Image Studio setup: the prompt plus everything needed to reproduce
+ * the look (provider, model, aspect ratio and seed). Stored in localStorage.
+ */
+export interface ImageRecipe {
+  id: string;
+  name: string;
+  prompt: string;
+  providerId?: string;
+  providerName?: string;
+  model?: string;
+  ratioIndex?: number;
+  seed?: number;
+  referenceImage?: string;
+  createdAt: number;
+}
+
 export type JarvisAgentId =
   | 'planner'
   | 'researcher'

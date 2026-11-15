@@ -5,6 +5,7 @@ import type {
   AIProviderConfig,
   ImageProvidersState,
   ImageProviderConfig,
+  ImageRecipe,
   VoiceProvidersState,
   VoiceProviderConfig,
   WebSearchApiState,
@@ -109,6 +110,7 @@ const KEYS = {
   locations: 'nexus-locations',
   aiProviders: 'nexus-ai-providers',
   imageProviders: 'nexus-image-providers',
+  imageRecipes: 'nexus-image-recipes-v1',
   voiceProviders: 'nexus-voice-providers',
   webSearchApi: 'nexus-web-search-api',
   scholarApi: 'nexus-scholar-api',
@@ -1522,6 +1524,22 @@ export const storage = {
       window.dispatchEvent(new CustomEvent('nexus-image-providers-updated', { detail: state }));
       window.dispatchEvent(new Event('storage'));
     }
+  },
+
+  getImageRecipes(): ImageRecipe[] {
+    const loaded = read<ImageRecipe[]>(KEYS.imageRecipes, []);
+    if (!Array.isArray(loaded)) return [];
+    return loaded.filter(
+      (recipe) =>
+        recipe &&
+        typeof recipe.id === 'string' &&
+        typeof recipe.name === 'string' &&
+        typeof recipe.prompt === 'string'
+    );
+  },
+
+  saveImageRecipes(recipes: ImageRecipe[]): void {
+    write(KEYS.imageRecipes, recipes);
   },
 
   getActiveImageProvider(): ImageProviderConfig | null {

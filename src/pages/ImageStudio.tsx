@@ -59,6 +59,7 @@ import type {
   ImageProviderConfig,
   ImageProvidersState,
   GeneratedImageItem,
+  ImageRecipe,
   KeyHealthStatus,
 } from '@/types';
 
@@ -79,6 +80,21 @@ const SAMPLE_PROMPTS = [
   'Minimalist brutalist villa overlooking a calm misty Scandinavian fjord at dawn',
   'Studio portrait of a mechanical cybernetic owl with glowing brass clockwork gears',
 ];
+
+/** How many seeds a single variation sweep renders. */
+const SEED_VARIATION_COUNT = 4;
+
+/** Per-call overrides for handleGenerate (used by the sweep and by recipes). */
+interface GenerateOptions {
+  /** Render with a fixed seed instead of the current one. */
+  seedOverride?: number;
+  /** Render at a fixed aspect ratio instead of the selected one. */
+  ratioIndex?: number;
+  /** Skip Smart AI Enhance (used when the prompt was already enhanced). */
+  skipEnhance?: boolean;
+  /** Leave the main preview alone (used by the variation sweep). */
+  silent?: boolean;
+}
 
 const ASPECT_RATIOS = [
   { label: '1:1 Square', width: 1024, height: 1024, icon: '■' },
@@ -454,6 +470,14 @@ export function ImageStudio() {
   const [selectedRatioIndex, setSelectedRatioIndex] = useState(0);
   const [modelType, setModelType] = useState('flux');
   const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1000000));
+  const [variations, setVariations] = useState<GeneratedImageItem[]>([]);
+  const [variationsLoading, setVariationsLoading] = useState(false);
+  // Always points at the latest handleGenerate so a deferred run (recipe) sees
+  // the provider/model/aspect state that was just applied.
+  const handleGenerateRef = useRef<
+    ((overridePrompt?: string, options?: GenerateOptions) => Promise<GeneratedImageItem | null>) | null
+  >(null);
+  const [recipes, setRecipes] = useState<ImageRecipe[]>(() => storage.getImageRecipes());
   const [quickEnhance, setQuickEnhance] = useState(false);
   const [smartAiEnhance, setSmartAiEnhance] = useState(false);
   const [nologo, setNologo] = useState(true);
@@ -1485,16 +1509,19 @@ export function ImageStudio() {
   );
 
   // Generate Image Handler with Smart AI Enhance & Quick Enhance support
-  const handleGenerate = async (overridePrompt?: string) => {
+  const handleGenerate = async (
+    overridePrompt?: string,
+    options?: GenerateOptions
+  ): Promise<GeneratedImageItem | null> => {
     const rawInputPrompt = (overridePrompt ?? prompt).trim();
     if (!rawInputPrompt) {
       setError('Please enter a description for your image.');
-      return;
+      return null;
     }
 
     if (!activeProvider) {
       setError('No Image Provider configured. Please check Settings -> AI Providers.');
-      return;
+      return null;
     }
 
     playTapSound();
@@ -1506,7 +1533,7 @@ export function ImageStudio() {
     let enhancedPromptUsed: string | undefined = undefined;
 
     // Phase 1: Smart AI Enhance (if enabled)
-    if (smartAiEnhance) {
+    if (smartAiEnhance && !options?.skipEnhance) {
       setLoadingPhase('enhancing');
       try {
         const enhanced = await enhanceImagePromptWithAI(rawInputPrompt);
@@ -1522,8 +1549,8 @@ export function ImageStudio() {
 
     // Phase 2: Image Generation
     setLoadingPhase('generating');
-    const ratio = ASPECT_RATIOS[selectedRatioIndex] || ASPECT_RATIOS[0];
-    const currentSeed = seed;
+    const ratio = ASPECT_RATIOS[options?.ratioIndex ?? selectedRatioIndex] || ASPECT_RATIOS[0];
+    const currentSeed = options?.seedOverride ?? seed;
 
     const isSdk = activeProvider.requestType === 'sdk';
     const isCloudflare =
@@ -1545,7 +1572,7 @@ export function ImageStudio() {
       );
       setLoading(false);
       setLoadingPhase('idle');
-      return;
+      return null;
     }
 
     if (isPost && activeProvider.url.includes('YOUR_ACCOUNT_ID')) {
@@ -1554,7 +1581,7 @@ export function ImageStudio() {
       );
       setLoading(false);
       setLoadingPhase('idle');
-      return;
+      return null;
     }
 
     try {
@@ -2202,11 +2229,17 @@ export function ImageStudio() {
         console.warn('[ImageStudio] Error saving to IndexedDB:', saveErr);
       }
 
-      setCurrentImage(newItem);
+      if (!options?.silent) {
+        setCurrentImage(newItem);
+      }
       setHistory((prev) => [newItem, ...prev.filter((item) => item.id !== newItem.id)]);
 
-      // Auto-advance seed for next generation
-      setSeed(Math.floor(Math.random() * 1000000));
+      // Auto-advance seed for next generation (a fixed seed stays put)
+      if (options?.seedOverride === undefined) {
+        setSeed(Math.floor(Math.random() * 1000000));
+      }
+
+      return newItem;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[ImageStudio: Generation Failed]', msg, err);
@@ -2214,11 +2247,160 @@ export function ImageStudio() {
         setPuterDebugInfo(getPuterDebugInfo());
       }
       setError(msg);
+      return null;
     } finally {
       setLoading(false);
       setLoadingPhase('idle');
       setFailoverNotice(null);
     }
+  };
+
+  useEffect(() => {
+    handleGenerateRef.current = handleGenerate;
+  });
+
+  // ---------------------------------------------------------------------------
+  // Variation sweep: render SEED_VARIATION_COUNT consecutive seeds from one
+  // prompt so the best take can be picked without retyping anything.
+  // ---------------------------------------------------------------------------
+  const handleGenerateVariations = async () => {
+    const rawPrompt = prompt.trim();
+    if (!rawPrompt) {
+      setError('Please enter a description for your image.');
+      return;
+    }
+    if (!activeProvider) {
+      setError('No Image Provider configured. Please check Settings -> AI Providers.');
+      return;
+    }
+    if (variationsLoading || loading) return;
+
+    playTapSound();
+    setError(null);
+    setVariations([]);
+    setVariationsLoading(true);
+
+    // Enhance once so every variation in the sweep shares the same prompt text
+    let basePrompt = rawPrompt;
+    if (smartAiEnhance) {
+      try {
+        const enhanced = await enhanceImagePromptWithAI(rawPrompt);
+        if (enhanced) {
+          basePrompt = enhanced;
+          setLastEnhancedPrompt(enhanced);
+        }
+      } catch (enhanceErr) {
+        console.warn('[ImageStudio] Variation enhance failed, using the original prompt:', enhanceErr);
+      }
+    }
+
+    const baseSeed = seed;
+    const ratioIndex = selectedRatioIndex;
+    const rendered: GeneratedImageItem[] = [];
+
+    try {
+      for (let offset = 0; offset < SEED_VARIATION_COUNT; offset++) {
+        const item = await handleGenerate(basePrompt, {
+          seedOverride: baseSeed + offset,
+          ratioIndex,
+          skipEnhance: true,
+          silent: true,
+        });
+        if (item) {
+          rendered.push(item);
+          setVariations([...rendered]);
+        }
+      }
+    } finally {
+      setVariationsLoading(false);
+      if (rendered.length > 0) setCurrentImage(rendered[0]);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Prompt recipes: save and restore the whole setup, not just the image.
+  // ---------------------------------------------------------------------------
+  const persistRecipes = (next: ImageRecipe[]) => {
+    setRecipes(next);
+    storage.saveImageRecipes(next);
+  };
+
+  const handleSaveRecipe = () => {
+    const savedPrompt = prompt.trim();
+    if (!savedPrompt) {
+      setError('Write a prompt before saving a recipe.');
+      return;
+    }
+
+    const suggested = savedPrompt.slice(0, 40);
+    const entered = window.prompt(
+      'Name this recipe (saves prompt, provider, model, aspect ratio and seed):',
+      suggested
+    );
+    if (entered === null) return;
+    const name = entered.trim().slice(0, 60) || suggested || 'Untitled recipe';
+
+    playTapSound();
+    const recipe: ImageRecipe = {
+      id: `recipe_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      prompt: savedPrompt,
+      providerId: activeProvider?.id,
+      providerName: activeProvider?.name,
+      model: modelType,
+      ratioIndex: selectedRatioIndex,
+      seed,
+      referenceImage: referenceImage || undefined,
+      createdAt: Date.now(),
+    };
+
+    persistRecipes([
+      recipe,
+      ...recipes.filter((existing) => existing.name.toLowerCase() !== name.toLowerCase()),
+    ]);
+  };
+
+  const handleApplyRecipe = useCallback(
+    (recipe: ImageRecipe) => {
+      playTapSound();
+      setPrompt(recipe.prompt);
+      if (typeof recipe.seed === 'number') setSeed(recipe.seed);
+      if (
+        typeof recipe.ratioIndex === 'number' &&
+        recipe.ratioIndex >= 0 &&
+        recipe.ratioIndex < ASPECT_RATIOS.length
+      ) {
+        setSelectedRatioIndex(recipe.ratioIndex);
+      }
+      if (recipe.model) setModelType(recipe.model);
+      if (
+        recipe.providerId &&
+        imageProvidersState.providers.some((provider) => provider.id === recipe.providerId)
+      ) {
+        setSelectedProviderId(recipe.providerId);
+      }
+      setError(null);
+    },
+    [imageProvidersState.providers]
+  );
+
+  const handleRunRecipe = (recipe: ImageRecipe) => {
+    if (loading || variationsLoading) return;
+    handleApplyRecipe(recipe);
+    // Defer one tick so the applied provider/model/seed are committed before
+    // the generation actually starts.
+    window.setTimeout(() => {
+      void handleGenerateRef.current?.(recipe.prompt, {
+        seedOverride: typeof recipe.seed === 'number' ? recipe.seed : undefined,
+        ratioIndex: recipe.ratioIndex,
+      });
+    }, 0);
+  };
+
+  const handleDeleteRecipe = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    playTapSound();
+    persistRecipes(recipes.filter((recipe) => recipe.id !== id));
   };
 
   // Reset Puter guest session if requested or encountered error
@@ -2991,6 +3173,58 @@ export function ImageStudio() {
               ))}
             </div>
 
+            {/* Prompt Recipes Row (saved prompt + provider + model + aspect + seed) */}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+              <span className="text-[10px] font-mono text-gray-500 uppercase tracking-wider shrink-0">
+                Recipes:
+              </span>
+              {recipes.length === 0 ? (
+                <span className="text-[10px] font-mono text-gray-600 shrink-0">
+                  none saved yet — build a prompt, then hit Save
+                </span>
+              ) : (
+                recipes.slice(0, 8).map((recipe) => (
+                  <div
+                    key={recipe.id}
+                    className="shrink-0 flex items-center rounded-lg bg-[#161620] border border-[#242434] overflow-hidden"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleApplyRecipe(recipe)}
+                      className="px-2 py-1 text-[10px] font-mono text-gray-300 hover:text-white bg-transparent border-0 cursor-pointer truncate max-w-[150px]"
+                      title={`${recipe.prompt}\nProvider: ${recipe.providerName || 'Auto'} • Seed ${recipe.seed ?? '—'}`}
+                    >
+                      {recipe.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRunRecipe(recipe)}
+                      className="px-1.5 py-1 text-pink-400 hover:text-pink-300 bg-transparent border-0 border-l border-[#242434] cursor-pointer"
+                      title="Apply this recipe and generate now"
+                    >
+                      <Sparkles size={11} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteRecipe(e, recipe.id)}
+                      className="px-1.5 py-1 text-gray-500 hover:text-red-400 bg-transparent border-0 border-l border-[#242434] cursor-pointer"
+                      title="Delete this recipe"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))
+              )}
+              <button
+                type="button"
+                onClick={handleSaveRecipe}
+                className="shrink-0 px-2 py-1 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/25 text-[10px] font-mono text-pink-300 cursor-pointer inline-flex items-center gap-1 transition"
+                title="Save the current prompt, provider, model, aspect ratio and seed as a reusable recipe"
+              >
+                <Check size={11} /> Save
+              </button>
+            </div>
+
             {/* Prompt Action Toolbar (Ref Img, Seed + Roll, HQ Boost, Smart AI Enhance) */}
             <div className="pt-2 border-t border-[#1e1e29] flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3323,7 +3557,7 @@ export function ImageStudio() {
                 });
                 handleGenerate();
               }}
-              disabled={loading || !prompt.trim()}
+              disabled={loading || variationsLoading || !prompt.trim()}
               className={`stitch-generate-btn stitch-energy-core w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-[#ff2d87] via-[#d42cf5] to-[#8b2cf5] text-white font-mono font-bold text-sm tracking-wide shadow-glow-pink hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center gap-2 relative overflow-hidden group border-0 cursor-pointer disabled:opacity-40 disabled:shadow-none disabled:cursor-not-allowed ${
                 loading ? 'stitch-generate-btn-busy' : ''
               }`}
@@ -3362,6 +3596,27 @@ export function ImageStudio() {
                 <>
                   <Sparkles size={17} className="shrink-0" />
                   <span>GENERATE ARTWORK</span>
+                </>
+              )}
+            </button>
+
+            {/* Variation Sweep Trigger */}
+            <button
+              type="button"
+              onClick={handleGenerateVariations}
+              disabled={loading || variationsLoading || !prompt.trim()}
+              className="w-full py-2 px-4 rounded-xl bg-[#161620] hover:bg-[#1e1e2c] border border-[#2a2a3a] text-gray-200 font-mono font-semibold text-xs tracking-wide flex items-center justify-center gap-2 transition active:scale-[0.99] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              title={`Render ${SEED_VARIATION_COUNT} consecutive seeds from this prompt and pick the best take`}
+            >
+              {variationsLoading ? (
+                <>
+                  <RotateCw size={14} className="animate-spin shrink-0 text-pink-400" />
+                  <span>RENDERING VARIATIONS...</span>
+                </>
+              ) : (
+                <>
+                  <Layers size={14} className="shrink-0 text-pink-400" />
+                  <span>GENERATE {SEED_VARIATION_COUNT} VARIATIONS</span>
                 </>
               )}
             </button>
@@ -3698,6 +3953,74 @@ export function ImageStudio() {
               )}
             </div>
           </div>
+
+          {/* Variation Sweep Output (one prompt, consecutive seeds) */}
+          {(variationsLoading || variations.length > 0) && (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-xs font-mono uppercase tracking-wider text-gray-300 font-bold m-0">
+                    VARIATIONS
+                  </h3>
+                  <span className="bg-[#181822] text-gray-300 border border-[#2a2a38] px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold">
+                    {variations.length}/{SEED_VARIATION_COUNT}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playTapSound();
+                    setVariations([]);
+                  }}
+                  disabled={variationsLoading}
+                  className="text-[10px] font-mono text-gray-400 hover:text-white bg-transparent border-0 cursor-pointer inline-flex items-center gap-1 disabled:opacity-40"
+                  title="Clear the variation sweep"
+                >
+                  <X size={11} /> Clear
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {variations.map((variation) => (
+                  <button
+                    key={variation.id}
+                    type="button"
+                    onClick={() => {
+                      playTapSound();
+                      setCurrentImage(variation);
+                    }}
+                    className={`group relative rounded-xl overflow-hidden border bg-[#0c0c12] cursor-pointer transition ${
+                      currentImage?.id === variation.id
+                        ? 'border-pink-500/70 shadow-glow-pink'
+                        : 'border-[#232332] hover:border-pink-500/40'
+                    }`}
+                    title={`Seed ${variation.seed} — click to open in the main preview`}
+                  >
+                    <img
+                      src={variation.url}
+                      alt={variation.prompt}
+                      className="w-full aspect-square object-cover block"
+                    />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/70 px-1.5 py-1 text-[9px] font-mono text-gray-200 flex items-center justify-between gap-1">
+                      <span>#{variation.seed}</span>
+                      {currentImage?.id === variation.id && (
+                        <span className="text-pink-300">active</span>
+                      )}
+                    </span>
+                  </button>
+                ))}
+                {variationsLoading &&
+                  Array.from({ length: Math.max(SEED_VARIATION_COUNT - variations.length, 0) }).map(
+                    (_, idx) => (
+                      <div
+                        key={`variation-placeholder-${idx}`}
+                        className="rounded-xl border border-[#232332] bg-[#121218] aspect-square animate-pulse"
+                      />
+                    )
+                  )}
+              </div>
+            </section>
+          )}
 
           {/* YOUR CREATIONS Gallery Section (IndexedDB Persistent) */}
           <section className="space-y-3 pt-1">
