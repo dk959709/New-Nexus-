@@ -3291,37 +3291,39 @@ export function MultiChatConsole({
             </div>
           </div>
         ) : (
+          /* Live Holographic Tri-Mind Synapse Reactor Header */
+          <div className="w-full mb-1">
+            <TriMindReactor
+              isCompact={true}
+              collapsible={true}
+              isGenerating={isGenerating}
+              isConsensusGenerating={Boolean(consensusLoadingMsgId)}
+              isDebating={Boolean(rebuttalLoadingMsgId)}
+              targetedPersonaIds={directTargetIds}
+              onToggleTargetPersona={handleToggleDirectPersona}
+              telemetry={realReactorTelemetry}
+              theme={activeTheme}
+            />
+          </div>
+        )}
+
+        {/* Animated Active/Bench roster + live per-agent run timeline (always visible) */}
+        <div className="w-full grid grid-cols-1 gap-2 mb-1">
+          <MultiChatTeamBuilder
+            personas={Object.values(config.personas)}
+            theme={activeTheme}
+            busyIds={busyPersonaIds}
+          />
+          <MultiChatLiveTimeline
+            personas={Object.values(config.personas)}
+            message={latestTurn}
+            isGenerating={isGenerating}
+            theme={activeTheme}
+          />
+        </div>
+
+        {messages.length > 0 && (
           <>
-            {/* Live Holographic Tri-Mind Synapse Reactor Header */}
-            <div className="w-full mb-1">
-              <TriMindReactor
-                isCompact={true}
-                collapsible={true}
-                isGenerating={isGenerating}
-                isConsensusGenerating={Boolean(consensusLoadingMsgId)}
-                isDebating={Boolean(rebuttalLoadingMsgId)}
-                targetedPersonaIds={directTargetIds}
-                onToggleTargetPersona={handleToggleDirectPersona}
-                telemetry={realReactorTelemetry}
-                theme={activeTheme}
-              />
-            </div>
-
-            {/* Animated Active/Bench roster + live per-agent run timeline */}
-            <div className="w-full grid grid-cols-1 gap-2 mb-1">
-              <MultiChatTeamBuilder
-                personas={Object.values(config.personas)}
-                theme={activeTheme}
-                busyIds={busyPersonaIds}
-              />
-              <MultiChatLiveTimeline
-                personas={Object.values(config.personas)}
-                message={latestTurn}
-                isGenerating={isGenerating}
-                theme={activeTheme}
-              />
-            </div>
-
             {messages
               .filter((m) => (!showPinnedOnly ? true : Boolean(m.pinned)))
               .map((msg, msgIdx) => {
