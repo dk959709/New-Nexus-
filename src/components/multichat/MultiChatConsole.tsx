@@ -117,6 +117,10 @@ import {
   executeSinglePersonaRerun,
 } from '@/services/multiChatOrchestrator';
 import { TriMindReactor, type TriMindReactorTelemetry } from '@/components/multichat/TriMindReactor';
+import { MultiChatTeamBuilder } from '@/components/multichat/MultiChatTeamBuilder';
+import { MultiChatLiveTimeline } from '@/components/multichat/MultiChatLiveTimeline';
+import { TypingDots } from '@/components/multichat/TypingDots';
+import { motion, useReducedMotion } from 'framer-motion';
 import type {
   MultiChatMessage,
   MultiChatSystemConfig,
@@ -212,6 +216,11 @@ export function MultiChatConsole({
   };
 
   const [messages, setMessages] = useState<MultiChatMessage[]>(() => storage.getMultiChatMessages());
+  const prefersReducedMotion = Boolean(useReducedMotion());
+  const latestTurn = messages[messages.length - 1];
+  const busyPersonaIds = (latestTurn?.responses || [])
+    .filter((r) => r.status === 'running' || r.status === 'pending')
+    .map((r) => String(r.personaId));
   const [inputText, setInputText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -3298,13 +3307,42 @@ export function MultiChatConsole({
               />
             </div>
 
+            {/* Animated Active/Bench roster + live per-agent run timeline */}
+            <div className="w-full grid grid-cols-1 gap-2 mb-1">
+              <MultiChatTeamBuilder
+                personas={Object.values(config.personas)}
+                theme={activeTheme}
+                busyIds={busyPersonaIds}
+              />
+              <MultiChatLiveTimeline
+                personas={Object.values(config.personas)}
+                message={latestTurn}
+                isGenerating={isGenerating}
+                theme={activeTheme}
+              />
+            </div>
+
             {messages
               .filter((m) => (!showPinnedOnly ? true : Boolean(m.pinned)))
               .map((msg, msgIdx) => {
               const activeTab = selectedPersonaTab[msg.id] || 'all';
 
               return (
-                <div key={`${msg.id || 'msg'}_${msgIdx}`} className="flex flex-col gap-2.5 sm:gap-3.5">
+                <motion.div
+                  key={`${msg.id || 'msg'}_${msgIdx}`}
+                  initial={
+                    prefersReducedMotion || msg.id !== messages[messages.length - 1]?.id
+                      ? false
+                      : { opacity: 0, y: 12 }
+                  }
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={
+                    prefersReducedMotion
+                      ? { duration: 0 }
+                      : { duration: 0.28, ease: 'easeOut' as const }
+                  }
+                  className="flex flex-col gap-2.5 sm:gap-3.5"
+                >
                   {/* User Inquiry Chat Bubble (Theme-styled like AssistantPage) */}
                   <div className="flex items-start justify-end gap-2 sm:gap-3 pl-4 sm:pl-10">
                     <div className="flex flex-col items-end max-w-full sm:max-w-2xl min-w-0">
@@ -4305,19 +4343,8 @@ export function MultiChatConsole({
                                             <circle cx="12" cy="3" r="2" fill={resp.accentColor} />
                                           </svg>
 
-                                          {/* Animated 5-Bar Neural Waveform */}
-                                          <div className="flex items-center gap-0.5 h-3.5">
-                                            {[0, 120, 240, 360, 480].map((delay, i) => (
-                                              <span
-                                                key={i}
-                                                className="w-1 h-3.5 rounded-full mc-wave-bar"
-                                                style={{
-                                                  backgroundColor: resp.accentColor,
-                                                  animationDelay: `${delay}ms`,
-                                                }}
-                                              />
-                                            ))}
-                                          </div>
+                                          {/* Animated Accent Typing Dots */}
+                                          <TypingDots color={resp.accentColor} size={4} />
 
                                           <span className="text-xs font-mono font-semibold tracking-wide">
                                             {resp.name} synthesizing neural response...
@@ -5621,7 +5648,7 @@ export function MultiChatConsole({
                                         className="py-6 flex flex-col items-center justify-center gap-2"
                                         style={{ color: resp.accentColor }}
                                       >
-                                        <Loader2 size={18} className="animate-spin" />
+                                        <TypingDots color={resp.accentColor} size={5} />
                                         <span className="font-mono text-[11px]">{resp.name} is computing...</span>
                                       </div>
                                     )}
@@ -5813,7 +5840,7 @@ export function MultiChatConsole({
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </>
