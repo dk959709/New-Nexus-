@@ -96,6 +96,8 @@ const NODE_ICONS: Record<WorkflowNodeType, typeof Bot> = {
   document: FileText,
   email: Mail,
   webhook: Webhook,
+  transform: Wand2,
+  merge: GitBranch,
 };
 
 const NODE_LABELS: Record<WorkflowNodeType, string> = {
@@ -111,6 +113,8 @@ const NODE_LABELS: Record<WorkflowNodeType, string> = {
   document: 'Document',
   email: 'Email',
   webhook: 'Webhook',
+  transform: 'Transform',
+  merge: 'Merge',
 };
 
 const STATUS_STYLES: Record<WorkflowStepStatus, string> = {

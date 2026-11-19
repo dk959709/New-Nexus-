@@ -5,11 +5,12 @@ import type {
   WorkflowOutput,
   WorkflowStepStatus,
   WorkflowRunOptions,
+  WorkflowValidationIssue,
   WeatherData,
 } from '@/types';
 import { api, BASE } from '@/services/api';
 import { storage } from '@/lib/storage';
-import { getSkillTextById } from '@/lib/skills';
+import { getSkillTextById, estimateTokens } from '@/lib/skills';
 import { generateStudioImage } from '@/services/imageGenerationService';
 
 export interface WorkflowRunCallbacks {
@@ -70,12 +71,39 @@ export function getAncestorNodeIds(
 }
 
 /**
- * Resolves all placeholders for a node's settings using the provided outputs.
+ * Build a flat key -> value map from workflow variables + optional runtime overrides.
+ */
+export function buildWorkflowVariableMap(
+  workflow?: Workflow | null,
+  overrides?: Record<string, string>,
+): Record<string, string> {
+  const vars: Record<string, string> = {};
+  const list = [
+    ...(workflow?.automation?.variables || []),
+    ...(workflow?.variables || []),
+  ];
+  for (const item of list) {
+    const key = (item.key || '').trim();
+    if (!key) continue;
+    vars[key] = item.defaultValue ?? item.example ?? '';
+  }
+  if (overrides) {
+    for (const [k, v] of Object.entries(overrides)) {
+      const key = k.trim();
+      if (key) vars[key] = v;
+    }
+  }
+  return vars;
+}
+
+/**
+ * Resolves all placeholders for a node's settings using the provided outputs and workflow variables.
  */
 export function resolveNodeSettings(
   node: WorkflowNode,
   allNodes: WorkflowNode[],
   currentOutputs: Record<string, WorkflowOutput>,
+  variables?: Record<string, string>,
 ): Record<string, string> {
   const outputsByLabel = new Map<string, string>();
   const outputsById = new Map<string, string>();
@@ -89,7 +117,7 @@ export function resolveNodeSettings(
 
   const resolvedSettings: Record<string, string> = {};
   for (const [k, v] of Object.entries(node.settings || {})) {
-    resolvedSettings[k] = resolvePlaceholders(v, outputsByLabel, outputsById);
+    resolvedSettings[k] = resolvePlaceholders(v, outputsByLabel, outputsById, undefined, variables);
   }
   return resolvedSettings;
 }
@@ -102,6 +130,8 @@ export async function executeSingleNodeStep(
   node: WorkflowNode,
   allNodes: WorkflowNode[],
   currentOutputs: Record<string, WorkflowOutput>,
+  edges: WorkflowEdge[] = [],
+  variables?: Record<string, string>,
 ): Promise<{ output: WorkflowOutput; conditionPassed?: boolean }> {
   const isFrozen = node.settings?.frozen === 'true' || Boolean(node.frozen);
   if (isFrozen) {
@@ -121,8 +151,9 @@ export async function executeSingleNodeStep(
     }
   }
 
-  const resolved = resolveNodeSettings(node, allNodes, currentOutputs);
-  return await executeStep(node, resolved);
+  const resolved = resolveNodeSettings(node, allNodes, currentOutputs, variables);
+  const upstreamItems = collectUpstreamOutputs(node, allNodes, edges, currentOutputs);
+  return await executeStepWithPolicy(node, resolved, upstreamItems);
 }
 
 /**
@@ -190,7 +221,7 @@ export function hasWorkflowCycle(nodes: WorkflowNode[], edges: WorkflowEdge[]): 
 }
 
 /**
- * Replace {{Label.output}} or {{id.output}} in string with previous outputs.
+ * Replace {{Label.output}}, {{id.output}}, and {{vars.key}} in string with previous outputs / variables.
  * Labels can contain any characters except "}".
  * Matching is supported by id and by label (case-insensitive, trimmed).
  * Unknown placeholders stay as they are and emit a warning.
@@ -200,11 +231,29 @@ export function resolvePlaceholders(
   outputsByLabel: Map<string, string>,
   outputsById: Map<string, string>,
   onWarning?: (warning: string) => void,
+  variables?: Record<string, string>,
 ): string {
   if (!text || typeof text !== 'string') return text || '';
-  return text.replace(/\{\{\s*([^}]+?)\.output\s*\}\}/gi, (match, rawKey) => {
+
+  // 1. Resolve {{vars.key}} global workflow variables
+  let result = text.replace(/\{\{\s*vars\.([^}\s]+)\s*\}\}/gi, (match, rawVarKey) => {
+    const target = rawVarKey.trim().toLowerCase();
+    if (variables) {
+      for (const [k, v] of Object.entries(variables)) {
+        if (k.trim().toLowerCase() === target) {
+          return v ?? '';
+        }
+      }
+    }
+    const warn = `Unknown variable: {{vars.${rawVarKey.trim()}}}`;
+    if (onWarning) onWarning(warn);
+    return match;
+  });
+
+  // 2. Resolve {{Label.output}} or {{id.output}}
+  result = result.replace(/\{\{\s*([^}]+?)\.output\s*\}\}/gi, (match, rawKey) => {
     const key = rawKey.trim();
-    // 1. Direct match by node ID (exact or case-insensitive)
+    // Direct match by node ID (exact or case-insensitive)
     if (outputsById.has(key)) {
       return outputsById.get(key)!;
     }
@@ -213,17 +262,120 @@ export function resolvePlaceholders(
         return val;
       }
     }
-    // 2. Direct match by node Label (case-insensitive, trimmed)
+    // Direct match by node Label (case-insensitive, trimmed)
     for (const [lbl, val] of outputsByLabel.entries()) {
       if (lbl.trim().toLowerCase() === key.toLowerCase()) {
         return val;
       }
     }
-    // 3. Unknown placeholder
+    // Unknown placeholder
     const warn = `Unknown placeholder: {{${key}.output}}`;
     if (onWarning) onWarning(warn);
     return match;
   });
+
+  return result;
+}
+
+function collectUpstreamOutputs(
+  node: WorkflowNode,
+  allNodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  outputs: Record<string, WorkflowOutput>,
+): Array<{ id: string; label: string; value: string }> {
+  const incomingIds = Array.from(
+    new Set(edges.filter((e) => e.to === node.id).map((e) => e.from)),
+  );
+  const nodeMap = new Map(allNodes.map((n) => [n.id, n]));
+  const items: Array<{ id: string; label: string; value: string }> = [];
+
+  if (incomingIds.length > 0) {
+    for (const pid of incomingIds) {
+      const pNode = nodeMap.get(pid);
+      const out = outputs[pid];
+      if (pNode && out && out.value !== undefined) {
+        items.push({ id: pNode.id, label: pNode.label, value: out.value });
+      }
+    }
+  } else {
+    // Fallback for linear pipelines without explicit edges
+    const idx = allNodes.findIndex((n) => n.id === node.id);
+    if (idx > 0) {
+      const prev = allNodes[idx - 1];
+      const out = outputs[prev.id];
+      if (out && out.value !== undefined) {
+        items.push({ id: prev.id, label: prev.label, value: out.value });
+      }
+    }
+  }
+  return items;
+}
+
+function extractJsonByPath(raw: string, pathStr: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1].trim() : trimmed;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(candidate);
+  } catch {
+    throw new Error('Transform input is not valid JSON.');
+  }
+  const path = pathStr.trim();
+  if (!path || path === '$' || path === '.') {
+    return typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+  }
+  const tokens = path
+    .replace(/^\$\.?/, '')
+    .replace(/\[(\d+)\]/g, '.$1')
+    .split('.')
+    .filter(Boolean);
+  let cur: unknown = parsed;
+  for (const token of tokens) {
+    if (cur === null || cur === undefined) {
+      return '';
+    }
+    if (Array.isArray(cur)) {
+      const index = Number(token);
+      cur = Number.isInteger(index) ? cur[index] : undefined;
+    } else if (typeof cur === 'object') {
+      cur = (cur as Record<string, unknown>)[token];
+    } else {
+      return '';
+    }
+  }
+  if (cur === null || cur === undefined) return '';
+  return typeof cur === 'string' ? cur : JSON.stringify(cur, null, 2);
+}
+
+async function executeStepWithPolicy(
+  node: WorkflowNode,
+  resolvedSettings: Record<string, string>,
+  upstreamItems: Array<{ id: string; label: string; value: string }>,
+  onLog?: (msg: string) => void,
+): Promise<{ output: WorkflowOutput; conditionPassed?: boolean }> {
+  const extraRetries = Math.max(0, Math.min(3, parseInt(resolvedSettings.retries || '0', 10) || 0));
+  let attempt = 0;
+  let lastError: unknown = null;
+
+  while (attempt <= extraRetries) {
+    try {
+      return await executeStep(node, resolvedSettings, upstreamItems);
+    } catch (err) {
+      lastError = err;
+      if (attempt < extraRetries) {
+        attempt++;
+        const delayMs = 1000 * attempt;
+        if (onLog) {
+          onLog(`Step "${node.label}" failed — retrying (${attempt}/${extraRetries}) in ${delayMs}ms...`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } else {
+        break;
+      }
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -255,6 +407,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 async function executeStep(
   node: WorkflowNode,
   resolvedSettings: Record<string, string>,
+  upstreamItems: Array<{ id: string; label: string; value: string }> = [],
 ): Promise<{ output: WorkflowOutput; conditionPassed?: boolean }> {
   switch (node.type) {
     case 'input': {
@@ -478,6 +631,108 @@ async function executeStep(
       return { output: { type: 'text', value: v1 }, conditionPassed: passed };
     }
 
+    case 'transform': {
+      const mode = resolvedSettings.mode || 'template';
+      const fallbackUpstream = upstreamItems.map((u) => u.value).join('\n\n');
+      const inputVal = (resolvedSettings.input ?? '') !== '' ? resolvedSettings.input : fallbackUpstream;
+
+      if (mode === 'jsonPath') {
+        const extracted = extractJsonByPath(inputVal, resolvedSettings.pattern || '');
+        return { output: { type: 'text', value: extracted } };
+      }
+      if (mode === 'regexExtract') {
+        const pattern = resolvedSettings.pattern || '';
+        if (!pattern) return { output: { type: 'text', value: inputVal } };
+        const rx = new RegExp(pattern, 'gm');
+        const matches = Array.from(inputVal.matchAll(rx), (m) => m[1] ?? m[0]);
+        return { output: { type: 'text', value: matches.join('\n') } };
+      }
+      if (mode === 'regexReplace') {
+        const pattern = resolvedSettings.pattern || '';
+        const replacement = resolvedSettings.replacement ?? '';
+        if (!pattern) return { output: { type: 'text', value: inputVal } };
+        const rx = new RegExp(pattern, 'gm');
+        return { output: { type: 'text', value: inputVal.replace(rx, replacement) } };
+      }
+      if (mode === 'bullets') {
+        const lines = inputVal
+          .split(/\r?\n/)
+          .map((line) => line.replace(/^[-*•\d.)\s]+/, '').trim())
+          .filter(Boolean);
+        return { output: { type: 'text', value: lines.map((l) => `- ${l}`).join('\n') } };
+      }
+      if (mode === 'uppercase') {
+        return { output: { type: 'text', value: inputVal.toUpperCase() } };
+      }
+      if (mode === 'lowercase') {
+        return { output: { type: 'text', value: inputVal.toLowerCase() } };
+      }
+      if (mode === 'trim') {
+        return {
+          output: {
+            type: 'text',
+            value: inputVal.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim(),
+          },
+        };
+      }
+      if (mode === 'truncate') {
+        const maxWords = Math.max(5, parseInt(resolvedSettings.maxWords || '120', 10) || 120);
+        const words = inputVal.trim().split(/\s+/).filter(Boolean);
+        const truncated = words.length > maxWords ? `${words.slice(0, maxWords).join(' ')}…` : words.join(' ');
+        return { output: { type: 'text', value: truncated } };
+      }
+      if (mode === 'stats') {
+        const trimmed = inputVal.trim();
+        const words = trimmed ? trimmed.split(/\s+/).length : 0;
+        const lines = trimmed ? trimmed.split(/\r?\n/).length : 0;
+        const chars = inputVal.length;
+        const readMins = Math.max(1, Math.ceil(words / 220));
+        return {
+          output: {
+            type: 'text',
+            value: `Words: ${words}\nLines: ${lines}\nCharacters: ${chars}\nEst. Reading Time: ~${readMins} min`,
+          },
+        };
+      }
+      return { output: { type: 'text', value: inputVal } };
+    }
+
+    case 'merge': {
+      const mode = resolvedSettings.mode || 'sections';
+      const rawSep = (resolvedSettings.separator ?? '\\n\\n---\\n\\n')
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t');
+
+      if (mode === 'template') {
+        return { output: { type: 'text', value: resolvedSettings.template || '' } };
+      }
+      if (upstreamItems.length === 0) {
+        return { output: { type: 'text', value: '' } };
+      }
+      if (mode === 'json') {
+        const obj: Record<string, string> = {};
+        for (const item of upstreamItems) {
+          obj[item.label] = item.value;
+        }
+        return { output: { type: 'json', value: JSON.stringify(obj, null, 2) } };
+      }
+      if (mode === 'numbered') {
+        const text = upstreamItems
+          .map((item, idx) => `${idx + 1}. ${item.label}\n${item.value}`)
+          .join(rawSep || '\n\n');
+        return { output: { type: 'text', value: text } };
+      }
+      if (mode === 'join') {
+        const text = upstreamItems.map((item) => item.value).join(rawSep || '\n\n');
+        return { output: { type: 'text', value: text } };
+      }
+      // Default: 'sections'
+      const text = upstreamItems
+        .map((item) => `### ${item.label}\n${item.value}`)
+        .join(rawSep || '\n\n---\n\n');
+      return { output: { type: 'text', value: text } };
+    }
+
     default: {
       return { output: { type: 'text', value: '' } };
     }
@@ -592,6 +847,7 @@ export async function runWorkflow(
   const outputsById = new Map<string, string>();
   const fullOutputsById = new Map<string, WorkflowOutput>();
   const ifResults = new Map<string, 'yes' | 'no'>();
+  const resolvedVariables = buildWorkflowVariableMap(workflow, options?.variables);
 
   const isPartialRun = Boolean(
     options?.startFromNodeId && nodeMap.has(options.startFromNodeId),
@@ -852,7 +1108,7 @@ export async function runWorkflow(
       callbacks.onLog(`Running step "${currentNode.label}" (${currentNode.type})...`);
     }
 
-    // Resolve placeholders in settings
+    // Resolve placeholders in settings (step outputs + global variables)
     const resolvedSettings: Record<string, string> = {};
     for (const [k, v] of Object.entries(currentNode.settings || {})) {
       resolvedSettings[k] = resolvePlaceholders(
@@ -860,20 +1116,50 @@ export async function runWorkflow(
         outputsByLabel,
         outputsById,
         callbacks.onWarning,
+        resolvedVariables,
       );
     }
 
+    const upstreamItems = collectUpstreamOutputs(
+      currentNode,
+      workflow.nodes,
+      workflow.edges || [],
+      Object.fromEntries(fullOutputsById.entries()),
+    );
+
     let stepResult: { output: WorkflowOutput; conditionPassed?: boolean };
     try {
-      stepResult = await executeStep(currentNode, resolvedSettings);
+      stepResult = await executeStepWithPolicy(
+        currentNode,
+        resolvedSettings,
+        upstreamItems,
+        callbacks.onLog,
+      );
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      setNodeStatus(currentId, 'error', undefined, errMsg);
-      if (callbacks.onLog) {
-        callbacks.onLog(`Error in step "${currentNode.label}": ${errMsg}`);
+      const continueOnError = currentNode.settings?.continueOnError === 'true';
+      if (continueOnError) {
+        const fallbackText =
+          (resolvedSettings.fallbackValue ?? '').trim() ||
+          `[Fallback] Step "${currentNode.label}" failed: ${errMsg}`;
+        if (callbacks.onWarning) {
+          callbacks.onWarning(`"${currentNode.label}" failed (${errMsg}) — continued with fallback.`);
+        }
+        if (callbacks.onLog) {
+          callbacks.onLog(`Step "${currentNode.label}" failed; continue-on-error applied fallback.`);
+        }
+        stepResult = {
+          output: { type: 'text', value: fallbackText },
+          conditionPassed: false,
+        };
+      } else {
+        setNodeStatus(currentId, 'error', undefined, errMsg);
+        if (callbacks.onLog) {
+          callbacks.onLog(`Error in step "${currentNode.label}": ${errMsg}`);
+        }
+        // Stop the workflow on step error
+        break;
       }
-      // Stop the workflow on step error
-      break;
     }
 
     // Mark done and save outputs
@@ -937,4 +1223,257 @@ export async function runWorkflow(
       setNodeStatus(n.id, 'skipped');
     }
   }
+}
+
+/**
+ * Pre-flight static analyzer returning actionable errors and warnings for a workflow.
+ */
+export function analyzeWorkflowHealth(workflow: Workflow | null | undefined): WorkflowValidationIssue[] {
+  if (!workflow) return [];
+  const issues: WorkflowValidationIssue[] = [];
+  const nodes = workflow.nodes || [];
+  const edges = workflow.edges || [];
+
+  if (nodes.length === 0) {
+    issues.push({
+      id: 'empty-workflow',
+      severity: 'error',
+      title: 'Workflow has no steps',
+      detail: 'Add at least an Input step and one action step before running.',
+    });
+    return issues;
+  }
+
+  // 1. Cycle detection
+  if (hasWorkflowCycle(nodes, edges)) {
+    issues.push({
+      id: 'cycle-detected',
+      severity: 'error',
+      title: 'Circular loop detected',
+      detail: 'One or more connections loop back to an earlier step. Remove the loop in Canvas mode.',
+    });
+  }
+
+  // 2. Duplicate labels
+  const seenLabels = new Map<string, WorkflowNode>();
+  for (const node of nodes) {
+    const key = (node.label || '').trim().toLowerCase();
+    if (!key) {
+      issues.push({
+        id: `empty-label-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label || node.type,
+        title: 'Step has an empty name',
+        detail: 'Give every step a clear name so downstream variables can reference it.',
+      });
+    } else if (seenLabels.has(key)) {
+      issues.push({
+        id: `dup-label-${node.id}`,
+        severity: 'warning',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Duplicate step name "${node.label}"`,
+        detail: 'Rename one of the steps so {{Step.output}} references stay unambiguous.',
+      });
+    } else {
+      seenLabels.set(key, node);
+    }
+  }
+
+  // 3. Reachability / disconnected nodes
+  const startNode = nodes.find((n) => n.type === 'input') || nodes[0];
+  if (nodes.length > 1 && startNode) {
+    const reachable = new Set<string>([startNode.id]);
+    const q = [startNode.id];
+    while (q.length > 0) {
+      const u = q.shift()!;
+      for (const e of edges) {
+        if (e.from === u && !reachable.has(e.to)) {
+          reachable.add(e.to);
+          q.push(e.to);
+        }
+      }
+    }
+    for (const node of nodes) {
+      if (node.id !== startNode.id && !reachable.has(node.id)) {
+        issues.push({
+          id: `orphan-${node.id}`,
+          severity: 'warning',
+          nodeId: node.id,
+          nodeLabel: node.label,
+          title: `Unreachable step "${node.label}"`,
+          detail: 'This step is not connected from the start step and will be skipped during a full run.',
+        });
+      }
+    }
+  }
+
+  // 4. Available variable keys & node names
+  const definedVars = new Set(
+    [...(workflow.automation?.variables || []), ...(workflow.variables || [])]
+      .map((v) => (v.key || '').trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const validNodeKeys = new Set<string>();
+  for (const n of nodes) {
+    validNodeKeys.add(n.id.trim().toLowerCase());
+    validNodeKeys.add(n.label.trim().toLowerCase());
+  }
+
+  let estimatedPromptTokens = 0;
+
+  // 5. Per-node required field checks & placeholder validation
+  for (const node of nodes) {
+    const s = node.settings || {};
+    const isDisabled = s.disabled === 'true';
+    const isFrozen = s.frozen === 'true' || Boolean(node.frozen);
+    if (isDisabled || isFrozen) continue;
+
+    if (node.type === 'webSearch' && !(s.query || '').trim()) {
+      issues.push({
+        id: `missing-query-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Empty search query in "${node.label}"`,
+        detail: 'Enter a search query or insert {{Input.output}}.',
+      });
+    }
+    if (node.type === 'scholar' && !(s.query || '').trim()) {
+      issues.push({
+        id: `missing-scholar-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Empty academic query in "${node.label}"`,
+        detail: 'Enter a research topic to search academic papers.',
+      });
+    }
+    if ((node.type === 'webFetch' || node.type === 'document') && !(s.url || '').trim()) {
+      issues.push({
+        id: `missing-url-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Missing URL in "${node.label}"`,
+        detail: 'Provide a public HTTP/HTTPS URL or variable reference.',
+      });
+    }
+    if (node.type === 'ai') {
+      const prompt = (s.prompt || '').trim();
+      if (!prompt) {
+        issues.push({
+          id: `missing-prompt-${node.id}`,
+          severity: 'error',
+          nodeId: node.id,
+          nodeLabel: node.label,
+          title: `Empty AI prompt in "${node.label}"`,
+          detail: 'Write instructions for the AI agent before running.',
+        });
+      }
+      estimatedPromptTokens += estimateTokens(prompt.length) + (parseInt(s.maxTokens || '1500', 10) || 1500);
+    }
+    if (node.type === 'image' && !(s.prompt || '').trim()) {
+      issues.push({
+        id: `missing-img-prompt-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Empty image prompt in "${node.label}"`,
+        detail: 'Add a description or {{Step.output}} for image generation.',
+      });
+    }
+    if (node.type === 'weather' && !(s.city || '').trim()) {
+      issues.push({
+        id: `missing-city-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Missing city in "${node.label}"`,
+        detail: 'Specify a city name or variable reference for weather lookup.',
+      });
+    }
+    if (node.type === 'email') {
+      if (!(s.to || '').trim() || !(s.body || '').trim()) {
+        issues.push({
+          id: `missing-email-${node.id}`,
+          severity: 'error',
+          nodeId: node.id,
+          nodeLabel: node.label,
+          title: `Incomplete email step "${node.label}"`,
+          detail: 'Both Recipients and Email Body are required.',
+        });
+      }
+    }
+    if (node.type === 'webhook' && !(s.url || '').trim()) {
+      issues.push({
+        id: `missing-webhook-${node.id}`,
+        severity: 'error',
+        nodeId: node.id,
+        nodeLabel: node.label,
+        title: `Missing webhook URL in "${node.label}"`,
+        detail: 'Provide an HTTPS webhook endpoint URL.',
+      });
+    }
+    if (node.type === 'if') {
+      const outEdges = edges.filter((e) => e.from === node.id);
+      const hasYes = outEdges.some((e) => !e.branch || e.branch === 'yes');
+      const hasNo = outEdges.some((e) => e.branch === 'no');
+      if (!hasYes && !hasNo) {
+        issues.push({
+          id: `if-no-branches-${node.id}`,
+          severity: 'warning',
+          nodeId: node.id,
+          nodeLabel: node.label,
+          title: `Condition "${node.label}" has no outgoing branches`,
+          detail: 'Connect YES and/or NO branches in Canvas view so branching has an effect.',
+        });
+      }
+    }
+
+    // Check placeholder references in every setting field
+    for (const val of Object.values(s)) {
+      if (typeof val !== 'string' || !val.includes('{{')) continue;
+      const stepMatches = val.matchAll(/\{\{\s*([^}]+?)\.output\s*\}\}/gi);
+      for (const m of stepMatches) {
+        const ref = m[1].trim().toLowerCase();
+        if (!validNodeKeys.has(ref)) {
+          issues.push({
+            id: `bad-ref-${node.id}-${ref}`,
+            severity: 'error',
+            nodeId: node.id,
+            nodeLabel: node.label,
+            title: `Broken reference {{${m[1].trim()}.output}}`,
+            detail: `Step "${node.label}" references a step that does not exist in this pipeline.`,
+          });
+        }
+      }
+      const varMatches = val.matchAll(/\{\{\s*vars\.([^}\s]+)\s*\}\}/gi);
+      for (const m of varMatches) {
+        const ref = m[1].trim().toLowerCase();
+        if (!definedVars.has(ref)) {
+          issues.push({
+            id: `bad-var-${node.id}-${ref}`,
+            severity: 'warning',
+            nodeId: node.id,
+            nodeLabel: node.label,
+            title: `Undefined variable {{vars.${m[1].trim()}}}`,
+            detail: `Add "${m[1].trim()}" in Workflow Variables so it resolves cleanly at runtime.`,
+          });
+        }
+      }
+    }
+  }
+
+  if (estimatedPromptTokens > 16000) {
+    issues.push({
+      id: 'high-token-budget',
+      severity: 'warning',
+      title: `High token budget (~${(estimatedPromptTokens / 1000).toFixed(1)}k tokens)`,
+      detail: 'Consider lowering Max Tokens on intermediate AI steps or freezing tested steps.',
+    });
+  }
+
+  return issues;
 }

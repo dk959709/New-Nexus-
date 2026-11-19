@@ -36,6 +36,8 @@ export const AUTOMATION_NODE_TYPES: WorkflowNodeType[] = [
   'document',
   'email',
   'webhook',
+  'transform',
+  'merge',
 ];
 
 const NODE_SETTING_KEYS: Record<WorkflowNodeType, string[]> = {
@@ -51,6 +53,8 @@ const NODE_SETTING_KEYS: Record<WorkflowNodeType, string[]> = {
   document: ['url'],
   email: ['to', 'subject', 'body'],
   webhook: ['url', 'body'],
+  transform: ['mode', 'input', 'pattern', 'replacement', 'maxWords'],
+  merge: ['mode', 'separator', 'template'],
 };
 
 const AI_ROLES = ['general', 'coder', 'architect', 'dataAnalyst'];

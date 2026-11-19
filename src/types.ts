@@ -1730,7 +1730,9 @@ export type WorkflowNodeType =
   | 'if'
   | 'document'
   | 'email'
-  | 'webhook';
+  | 'webhook'
+  | 'transform'
+  | 'merge';
 
 export interface WorkflowNode {
   id: string;
@@ -1774,6 +1776,8 @@ export interface Workflow {
   updatedAt: number;
   description?: string;
   tags?: string[];
+  pinned?: boolean;
+  variables?: WorkflowVariable[];
   automation?: WorkflowAutomationMeta;
 }
 
@@ -1795,6 +1799,16 @@ export type WorkflowStepStatus = 'idle' | 'running' | 'done' | 'error' | 'skippe
 export interface WorkflowRunOptions {
   startFromNodeId?: string;
   previousOutputs?: Record<string, WorkflowOutput>;
+  variables?: Record<string, string>;
+}
+
+export interface WorkflowValidationIssue {
+  id: string;
+  severity: 'error' | 'warning';
+  nodeId?: string;
+  nodeLabel?: string;
+  title: string;
+  detail: string;
 }
 
 export interface WorkflowRunStepRecord {

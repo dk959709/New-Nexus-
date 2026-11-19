@@ -57,6 +57,8 @@ import {
   Maximize2,
   Snowflake,
   Box,
+  Wand2,
+  GitMerge,
 } from 'lucide-react';
 
 export interface WorkflowCanvasProps {
@@ -177,6 +179,20 @@ export const NODE_CONFIG: Record<
     color: 'text-lime-400 bg-lime-500/10',
     textColor: 'text-lime-300',
     desc: 'Deliver JSON to a public HTTPS webhook',
+  },
+  transform: {
+    label: 'Transform',
+    icon: Wand2,
+    color: 'text-fuchsia-400 bg-fuchsia-500/10',
+    textColor: 'text-fuchsia-300',
+    desc: 'Format text, extract JSON/regex, or count words locally',
+  },
+  merge: {
+    label: 'Merge',
+    icon: GitMerge,
+    color: 'text-blue-400 bg-blue-500/10',
+    textColor: 'text-blue-300',
+    desc: 'Combine outputs from multiple upstream branches',
   },
 };
 
@@ -349,8 +365,12 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
       : null;
 
   const weatherLabel = type === 'weather' ? (settings?.city || '').trim() : null;
+  const transformLabel = type === 'transform' ? (settings?.mode || 'template') : null;
+  const mergeLabel = type === 'merge' ? (settings?.mode || 'sections') : null;
 
-  const hasMeta = Boolean(aiModelLabel || ifOpLabel || queryLabel || weatherLabel);
+  const hasMeta = Boolean(
+    aiModelLabel || ifOpLabel || queryLabel || weatherLabel || transformLabel || mergeLabel,
+  );
 
   const summaryText = useMemo(() => {
     if (outputSummary) return outputSummary;
@@ -422,10 +442,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         }`}
       />
 
-      {/* Quick-action Floating Bar when node is selected (Touch-friendly >= 40px targets) */}
+      {/* Quick-action Floating Bar when node is selected (Touch-friendly >= 40px targets, responsive wrap) */}
       {isSelected && (
         <div
-          className="wf-popover-enter nodrag nopan absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 flex items-center gap-1 p-1.5 rounded-xl bg-[#131317]/98 border border-[#49effd]/45 shadow-[0_16px_40px_rgba(0,0,0,0.85),0_0_18px_rgba(73,239,253,0.2)] backdrop-blur-2xl whitespace-nowrap"
+          className="wf-popover-enter nodrag nopan absolute bottom-full left-1/2 -translate-x-1/2 mb-3 z-50 flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5 p-2 rounded-xl bg-[#131317]/98 border border-[#49effd]/45 shadow-[0_16px_40px_rgba(0,0,0,0.85),0_0_18px_rgba(73,239,253,0.2)] backdrop-blur-2xl w-[max-content] max-w-[88vw]"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -435,11 +455,11 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onRunSingleNode?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/15 active:bg-emerald-500/25 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3 py-1.5 rounded-lg text-emerald-300 hover:bg-emerald-500/15 active:bg-emerald-500/25 font-mono text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
             title="Test this single step only"
           >
-            <Play size={12} className="fill-emerald-400 text-emerald-400" />
-            <span>Test Step</span>
+            <Play size={13} className="fill-emerald-400 text-emerald-400" />
+            <span>Test</span>
           </button>
 
           <button
@@ -449,11 +469,11 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onRunFromNode?.(id);
             }}
-            className="min-h-[40px] px-3 py-1.5 rounded-lg text-[#49effd] hover:bg-[#49effd]/15 active:bg-[#49effd]/25 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3 py-1.5 rounded-lg text-[#49effd] hover:bg-[#49effd]/15 active:bg-[#49effd]/25 font-mono text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-40 whitespace-nowrap shrink-0"
             title="Run workflow starting from this step"
           >
-            <Play size={12} className="fill-[#49effd]" />
-            <span>Run from here</span>
+            <Play size={13} className="fill-[#49effd]" />
+            <span>Run here</span>
           </button>
 
           <button
@@ -462,14 +482,14 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onToggleFreezeNode?.(id);
             }}
-            className={`min-h-[40px] px-2.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+            className={`min-h-[40px] px-3 py-1.5 rounded-lg font-mono text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
               isFrozen
-                ? 'text-cyan-200 bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500/30 shadow-[0_0_12px_rgba(73,239,253,0.25)]'
-                : 'text-[#b9cacb] hover:text-[#e4e1e7] hover:bg-[#2a292e]'
+                ? 'text-cyan-200 bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500/30'
+                : 'text-zinc-200 hover:bg-[#2a292e]'
             }`}
             title={isFrozen ? 'Unfreeze step (execute live)' : 'Freeze output (use cached / mock output)'}
           >
-            <Snowflake size={12} className={isFrozen ? 'text-cyan-300' : ''} />
+            <Snowflake size={13} className={isFrozen ? 'text-cyan-300' : ''} />
             <span>{isFrozen ? 'Frozen' : 'Freeze'}</span>
           </button>
 
@@ -479,11 +499,11 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onDuplicateNode?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-[#b9cacb] hover:text-[#e4e1e7] hover:bg-[#2a292e] font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3 py-1.5 rounded-lg text-zinc-200 hover:bg-[#2a292e] font-mono text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="Duplicate this step"
           >
-            <Copy size={12} />
-            <span>Duplicate</span>
+            <Copy size={13} />
+            <span>Clone</span>
           </button>
 
           <button
@@ -492,14 +512,14 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onToggleDisableNode?.(id);
             }}
-            className={`min-h-[40px] px-2.5 py-1.5 rounded-lg font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+            className={`min-h-[40px] px-3 py-1.5 rounded-lg font-mono text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
               isDisabled
                 ? 'text-amber-300 bg-amber-500/15 hover:bg-amber-500/25'
-                : 'text-[#b9cacb] hover:text-[#e4e1e7] hover:bg-[#2a292e]'
+                : 'text-zinc-200 hover:bg-[#2a292e]'
             }`}
             title={isDisabled ? 'Enable this step' : 'Disable this step'}
           >
-            <Ban size={12} />
+            <Ban size={13} />
             <span>{isDisabled ? 'Enable' : 'Disable'}</span>
           </button>
 
@@ -509,11 +529,11 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onOpenInspectorOutput?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-[#b9cacb] hover:text-[#e4e1e7] hover:bg-[#2a292e] font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3 py-1.5 rounded-lg text-zinc-200 hover:bg-[#2a292e] font-mono text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="View full output in inspector"
           >
-            <Eye size={12} />
-            <span>View output</span>
+            <Eye size={13} />
+            <span>Output</span>
           </button>
 
           <button
@@ -522,10 +542,10 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               e.stopPropagation();
               onDeleteNode?.(id);
             }}
-            className="min-h-[40px] px-2.5 py-1.5 rounded-lg text-[#ffb4ab] hover:bg-[#ffb4ab]/15 active:bg-[#ffb4ab]/25 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[40px] px-3 py-1.5 rounded-lg text-rose-300 hover:bg-rose-500/15 font-mono text-xs font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0"
             title="Delete this step"
           >
-            <Trash2 size={12} />
+            <Trash2 size={13} />
             <span>Delete</span>
           </button>
         </div>
@@ -545,13 +565,13 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`p-2 rounded-xl border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] flex-shrink-0 ${cfg.color}`}>
-            <IconComponent size={15} />
+            <IconComponent size={16} />
           </div>
           <div className="min-w-0">
-            <h4 className={`text-[13px] font-extrabold tracking-tight truncate leading-snug ${cfg.textColor}`}>
+            <h4 className={`text-sm font-extrabold tracking-tight truncate leading-snug ${cfg.textColor}`}>
               {label}
             </h4>
-            <span className="text-[10px] font-mono font-semibold uppercase tracking-wider wf-label-gradient block truncate">
+            <span className="text-xs font-mono font-semibold uppercase tracking-wider wf-label-gradient block truncate">
               {cfg.label}
             </span>
           </div>
@@ -560,40 +580,40 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         {/* Cyber semantic status indicator */}
         <div className="flex-shrink-0 pt-0.5">
           {isDisabled ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-400/35 text-[9px] font-mono font-bold uppercase tracking-wider text-amber-300">
-              <Ban size={10} />
-              <span>Disabled</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-400/35 text-xs font-mono font-bold text-amber-300">
+              <Ban size={11} />
+              <span>Off</span>
             </span>
           ) : isFrozen ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/45 text-[9px] font-mono font-bold uppercase tracking-wider text-cyan-200 shadow-[0_0_10px_rgba(73,239,253,0.2)]">
-              <Snowflake size={10} className="text-cyan-300" />
-              <span>{hasMock ? 'Mocked' : 'Frozen'}</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/45 text-xs font-mono font-bold text-cyan-200">
+              <Snowflake size={11} className="text-cyan-300" />
+              <span>{hasMock ? 'Mock' : 'Frozen'}</span>
             </span>
           ) : status === 'running' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#49effd]/15 border border-[#49effd]/55 text-[9px] font-mono font-bold uppercase tracking-wider text-[#49effd] shadow-[0_0_10px_rgba(73,239,253,0.25)]">
-              <Loader2 size={10} className="animate-spin" />
-              <span>Running</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#49effd]/15 border border-[#49effd]/55 text-xs font-mono font-bold text-[#49effd]">
+              <Loader2 size={11} className="animate-spin" />
+              <span>Run</span>
             </span>
           ) : status === 'done' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/45 text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-300">
-              <CheckCircle2 size={10} className="wf-check-pop" />
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/45 text-xs font-mono font-bold text-emerald-300">
+              <CheckCircle2 size={11} className="wf-check-pop" />
               <span>Done</span>
             </span>
           ) : status === 'error' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 text-[9px] font-mono font-bold uppercase tracking-wider text-[#ffb4ab]">
-              <AlertCircle size={10} />
-              <span>Error</span>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 text-xs font-mono font-bold text-[#ffb4ab]">
+              <AlertCircle size={11} />
+              <span>Err</span>
             </span>
           ) : status === 'skipped' ? (
             <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#0b0d14] border border-white/10 text-[9px] font-mono font-bold uppercase tracking-wider text-[#94a3b8]"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#0b0d14] border border-white/10 text-xs font-mono font-bold text-[#94a3b8]"
               title="Skipped"
             >
-              <MinusCircle size={10} />
-              <span>Skipped</span>
+              <MinusCircle size={11} />
+              <span>Skip</span>
             </span>
           ) : (
-            <span className="px-1.5 py-0.5 rounded-md bg-[#0b0d14] border border-white/10 text-[9px] font-mono font-semibold uppercase tracking-wider text-cyan-300">
+            <span className="px-2 py-0.5 rounded-md bg-[#0b0d14] border border-white/10 text-xs font-mono font-semibold text-cyan-300">
               Idle
             </span>
           )}
@@ -602,9 +622,9 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
 
       {/* Metadata Row */}
       {hasMeta && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-[#2a292e] text-[10px] font-mono text-[#b9cacb]">
+        <div className="flex flex-wrap items-center gap-1.5 mt-2.5 pt-2 border-t border-[#2a292e] text-xs font-mono text-[#b9cacb]">
           {type === 'ai' && aiModelLabel && (
-            <span className="text-[#49effd] truncate max-w-[130px]">
+            <span className="text-[#49effd] truncate max-w-[140px]">
               {aiModelLabel}
             </span>
           )}
@@ -613,7 +633,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
           )}
           {type === 'ai' && aiRoleMeta && (
             <span className="text-fuchsia-300 inline-flex items-center gap-1">
-              {React.createElement(aiRoleMeta.icon, { size: 11 })}
+              {React.createElement(aiRoleMeta.icon, { size: 12 })}
               <span>{aiRoleMeta.label}</span>
             </span>
           )}
@@ -632,6 +652,16 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               {weatherLabel}
             </span>
           )}
+          {type === 'transform' && transformLabel && (
+            <span className="text-fuchsia-300 truncate max-w-[190px]">
+              mode: {transformLabel}
+            </span>
+          )}
+          {type === 'merge' && mergeLabel && (
+            <span className="text-blue-300 truncate max-w-[190px]">
+              merge: {mergeLabel}
+            </span>
+          )}
         </div>
       )}
 
@@ -648,7 +678,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
               />
             </div>
           ) : output.value ? (
-            <p className="text-[11px] text-cyan-200 font-mono line-clamp-2 break-words leading-relaxed bg-[#0e0e12] border border-[#2a292e] rounded px-2 py-1.5">
+            <p className="text-xs text-cyan-200 font-mono line-clamp-2 break-words leading-relaxed bg-[#0e0e12] border border-[#2a292e] rounded px-2.5 py-1.5">
               {output.value}
             </p>
           ) : null}
@@ -660,15 +690,14 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
         status === 'done' ||
         status === 'error' ||
         (status === 'skipped' && errorText)) && (
-        <div className="mt-2.5 pt-2 border-t border-[#2a292e] flex items-center justify-between gap-2 text-[10px] font-mono tabular-nums">
+        <div className="mt-2.5 pt-2 border-t border-[#2a292e] flex items-center justify-between gap-2 text-xs font-mono tabular-nums">
           {status === 'running' && (
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-1.5 text-[#49effd] font-bold">
-                <Loader2 size={10} className="animate-spin" />
+                <Loader2 size={12} className="animate-spin" />
                 <RunningLiveTimer startedAt={startedAt} />
               </div>
-              {/* Animated Tensor Frequency Equalizer Bars (Stitch ODE visualizer) */}
-              <div className="flex items-center gap-0.5 h-3 px-1.5 py-0.5 rounded bg-[#0b0c10] border border-[#00f0ff]/30" title="Active Inference Flow">
+              <div className="flex items-center gap-0.5 h-3.5 px-1.5 py-0.5 rounded bg-[#0b0c10] border border-[#00f0ff]/30" title="Active Flow">
                 <div className="wf-eq-bar" />
                 <div className="wf-eq-bar" />
                 <div className="wf-eq-bar" />
@@ -684,7 +713,7 @@ const CustomWorkflowNodeComponent = React.memo(function CustomWorkflowNodeCompon
                 {durationMs !== undefined ? `${(durationMs / 1000).toFixed(1)}s` : '0.0s'}
                 {summaryText ? ` · ${summaryText}` : ''}
               </span>
-              <span className="text-[9px] uppercase tracking-wider text-[#49effd]">Inspect</span>
+              <span className="text-xs font-semibold text-[#49effd]">Inspect</span>
             </div>
           )}
 

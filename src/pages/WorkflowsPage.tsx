@@ -11,6 +11,7 @@ import type {
   WorkflowRunRecord,
   WorkflowRunStepRecord,
   WorkflowRunStatus,
+  WorkflowVariable,
 } from '@/types';
 import { storage } from '@/lib/storage';
 import { estimateTokens } from '@/lib/skills';
@@ -22,12 +23,21 @@ import {
   getDownstreamNodeIds,
   executeSingleNodeStep,
   resolveNodeSettings,
+  buildWorkflowVariableMap,
+  analyzeWorkflowHealth,
 } from '@/lib/workflowEngine';
 import {
   WorkflowCanvas,
   NODE_CONFIG,
 } from '@/components/workflows/WorkflowCanvas';
 import { WorkflowTelemetryGraphics } from '@/components/workflows/WorkflowTelemetryGraphics';
+import { WorkflowAiGeneratorModal } from '@/components/workflows/WorkflowAiGeneratorModal';
+import { WorkflowVariablesModal } from '@/components/workflows/WorkflowVariablesModal';
+import { WorkflowValidatorPanel } from '@/components/workflows/WorkflowValidatorPanel';
+import { WorkflowBatchRunnerModal } from '@/components/workflows/WorkflowBatchRunnerModal';
+import { WorkflowRunDiffModal } from '@/components/workflows/WorkflowRunDiffModal';
+import { WorkflowLibraryDrawer } from '@/components/workflows/WorkflowLibraryDrawer';
+import { WorkflowQuickJumpModal } from '@/components/workflows/WorkflowQuickJumpModal';
 import {
   Play,
   Square,
@@ -60,6 +70,18 @@ import {
   FileText,
   Mail,
   Webhook,
+  Wand2,
+  Sliders,
+  ShieldCheck,
+  Undo2,
+  Redo2,
+  ListChecks,
+  GitCompare,
+  Command,
+  Star,
+  Type,
+  ShieldAlert,
+  GitMerge,
 } from 'lucide-react';
 import { Connection } from '@xyflow/react';
 
@@ -341,11 +363,31 @@ export function WorkflowsPage() {
   const [showAddMenu, setShowAddMenu] = useState<boolean>(false);
   const [showTemplatesModal, setShowTemplatesModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [showAiGeneratorModal, setShowAiGeneratorModal] = useState<boolean>(false);
+  const [showVariablesModal, setShowVariablesModal] = useState<boolean>(false);
+  const [showValidatorPanel, setShowValidatorPanel] = useState<boolean>(false);
+  const [showBatchRunnerModal, setShowBatchRunnerModal] = useState<boolean>(false);
+  const [showRunDiffModal, setShowRunDiffModal] = useState<boolean>(false);
+  const [showLibraryDrawer, setShowLibraryDrawer] = useState<boolean>(false);
+  const [showQuickJumpModal, setShowQuickJumpModal] = useState<boolean>(false);
+  const [textComfortMode, setTextComfortMode] = useState<'normal' | 'large'>(() => {
+    try {
+      return localStorage.getItem('nexus_wf_text_scale') === 'large' ? 'large' : 'normal';
+    } catch {
+      return 'normal';
+    }
+  });
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
   const [runHistory, setRunHistory] = useState<WorkflowRunRecord[]>([]);
   const [selectedRunDetail, setSelectedRunDetail] = useState<WorkflowRunRecord | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const inspectorOutputRef = useRef<HTMLDivElement | null>(null);
   const importFileRef = useRef<HTMLInputElement | null>(null);
+  const stepCardRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  // Undo / Redo snapshot stacks for active workflow (max 30 snapshots)
+  const [undoStack, setUndoStack] = useState<Workflow[]>([]);
+  const [redoStack, setRedoStack] = useState<Workflow[]>([]);
 
   // Phone Connect Mode in Canvas
   const [connectSourceNodeId, setConnectSourceNodeId] = useState<string | null>(null);
@@ -364,7 +406,48 @@ export function WorkflowsPage() {
     }, 3200);
   }, []);
 
-  // Load workflow run history when active workflow changes
+  // Active workflow variables & pre-flight validation diagnostics
+  const activeWorkflowVariables = useMemo<WorkflowVariable[]>(() => {
+    if (!activeWorkflow) return [];
+    const seen = new Set<string>();
+    const merged: WorkflowVariable[] = [];
+    for (const v of [
+      ...(activeWorkflow.variables || []),
+      ...(activeWorkflow.automation?.variables || []),
+    ]) {
+      const k = (v.key || '').trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      merged.push(v);
+    }
+    return merged;
+  }, [activeWorkflow]);
+
+  const activeVariableMap = useMemo(
+    () => buildWorkflowVariableMap(activeWorkflow),
+    [activeWorkflow],
+  );
+
+  const validationIssues = useMemo(
+    () => analyzeWorkflowHealth(activeWorkflow),
+    [activeWorkflow],
+  );
+
+  const validationErrorCount = useMemo(
+    () => validationIssues.filter((i) => i.severity === 'error').length,
+    [validationIssues],
+  );
+
+  // Persist mobile text comfort preference
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexus_wf_text_scale', textComfortMode);
+    } catch {
+      // ignore storage errors
+    }
+  }, [textComfortMode]);
+
+  // Load workflow run history & reset undo/redo when active workflow changes
   useEffect(() => {
     if (activeWorkflow?.id) {
       setRunHistory(storage.getWorkflowRunHistory(activeWorkflow.id));
@@ -372,6 +455,8 @@ export function WorkflowsPage() {
       setRunHistory([]);
     }
     setSelectedRunDetail(null);
+    setUndoStack([]);
+    setRedoStack([]);
   }, [activeWorkflow?.id]);
 
   // Debounced auto-save to localStorage (400ms)
@@ -386,10 +471,15 @@ export function WorkflowsPage() {
     };
   }, [workflows]);
 
-  // Update current workflow helper
+  // Update current workflow helper (records snapshot for Undo/Redo)
   const updateCurrentWorkflow = useCallback(
-    (updater: (prev: Workflow) => Workflow) => {
+    (updater: (prev: Workflow) => Workflow, options?: { skipHistory?: boolean }) => {
       if (!activeWorkflow) return;
+      if (!options?.skipHistory) {
+        const snapshot: Workflow = JSON.parse(JSON.stringify(activeWorkflow));
+        setUndoStack((prev) => [...prev.slice(-29), snapshot]);
+        setRedoStack([]);
+      }
       setWorkflows((prevList) =>
         prevList.map((w) => {
           if (w.id === activeWorkflow.id) {
@@ -401,6 +491,245 @@ export function WorkflowsPage() {
       );
     },
     [activeWorkflow],
+  );
+
+  const handleUndo = useCallback(() => {
+    if (!activeWorkflow || undoStack.length === 0) return;
+    const previous = undoStack[undoStack.length - 1];
+    const currentSnapshot: Workflow = JSON.parse(JSON.stringify(activeWorkflow));
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev.slice(-29), currentSnapshot]);
+    setWorkflows((prevList) =>
+      prevList.map((w) => (w.id === activeWorkflow.id ? { ...previous, updatedAt: Date.now() } : w)),
+    );
+    showToast('Undid last change');
+  }, [activeWorkflow, undoStack, showToast]);
+
+  const handleRedo = useCallback(() => {
+    if (!activeWorkflow || redoStack.length === 0) return;
+    const nextSnapshot = redoStack[redoStack.length - 1];
+    const currentSnapshot: Workflow = JSON.parse(JSON.stringify(activeWorkflow));
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev.slice(-29), currentSnapshot]);
+    setWorkflows((prevList) =>
+      prevList.map((w) => (w.id === activeWorkflow.id ? { ...nextSnapshot, updatedAt: Date.now() } : w)),
+    );
+    showToast('Redid change');
+  }, [activeWorkflow, redoStack, showToast]);
+
+  // Keyboard shortcuts: Ctrl/Cmd+Z (Undo), Ctrl/Cmd+Shift+Z / Ctrl+Y (Redo), Ctrl/Cmd+K (Quick Jump)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditable =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setShowQuickJumpModal((prev) => !prev);
+        return;
+      }
+
+      if (isEditable) return;
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if (
+        ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && e.shiftKey) ||
+        ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y')
+      ) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // Jump / focus a specific node from validator or quick jump palette
+  const handleJumpToNode = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeId(nodeId);
+      setCollapsedSettings((prev) => ({ ...prev, [nodeId]: false }));
+      setHighlightedNodeId(nodeId);
+      setTimeout(() => {
+        setHighlightedNodeId((cur) => (cur === nodeId ? null : cur));
+      }, 2200);
+      if (viewMode === 'list') {
+        requestAnimationFrame(() => {
+          stepCardRefs.current[nodeId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      }
+    },
+    [viewMode],
+  );
+
+  // Pin/unpin, clone-by-id, delete-by-id, and update metadata for Workflow Library
+  const handleTogglePinWorkflow = useCallback(
+    (id: string) => {
+      setWorkflows((prev) =>
+        prev.map((w) => (w.id === id ? { ...w, pinned: !w.pinned, updatedAt: Date.now() } : w)),
+      );
+    },
+    [],
+  );
+
+  const handleUpdateWorkflowMeta = useCallback(
+    (id: string, patch: { description?: string; tags?: string[] }) => {
+      setWorkflows((prev) =>
+        prev.map((w) => (w.id === id ? { ...w, ...patch, updatedAt: Date.now() } : w)),
+      );
+      showToast('Pipeline notes & tags saved');
+    },
+    [showToast],
+  );
+
+  const handleDuplicateWorkflowById = useCallback(
+    (id: string) => {
+      const target = workflows.find((w) => w.id === id);
+      if (!target) return;
+      const now = Date.now();
+      const idMap = new Map<string, string>();
+      const newNodes = target.nodes.map((n, i) => {
+        const newId = `node-${now}-${i + 1}`;
+        idMap.set(n.id, newId);
+        return { ...n, id: newId, settings: { ...n.settings } };
+      });
+      const newEdges = target.edges.map((e, i) => ({
+        ...e,
+        id: `e-${now}-${i}`,
+        from: idMap.get(e.from) || e.from,
+        to: idMap.get(e.to) || e.to,
+      }));
+      const clone: Workflow = {
+        ...target,
+        id: `workflow-${now}`,
+        name: `${target.name} (Copy)`,
+        pinned: false,
+        nodes: newNodes,
+        edges: newEdges,
+        updatedAt: now,
+      };
+      setWorkflows((prev) => [clone, ...prev]);
+      setActiveWorkflowId(clone.id);
+      showToast(`Duplicated as "${clone.name}"`);
+    },
+    [workflows, showToast],
+  );
+
+  const handleDeleteWorkflowById = useCallback(
+    (id: string) => {
+      if (workflows.length <= 1) {
+        showToast('You cannot delete the only workflow. Create another one first.');
+        return;
+      }
+      const remaining = workflows.filter((w) => w.id !== id);
+      setWorkflows(remaining);
+      if (activeWorkflowId === id && remaining[0]) {
+        setActiveWorkflowId(remaining[0].id);
+        setSelectedNodeId(null);
+      }
+      showToast('Workflow deleted');
+    },
+    [workflows, activeWorkflowId, showToast],
+  );
+
+  // Export final output & full trace as Markdown / TXT / JSON report
+  const handleExportReport = useCallback(
+    (format: 'md' | 'txt' | 'json') => {
+      if (!activeWorkflow) return;
+      const safeName = (activeWorkflow.name || 'workflow').replace(/[^a-z0-9]/gi, '_');
+      const finalOut = lastExecutedNodeId ? stepOutputs[lastExecutedNodeId] : null;
+      const finalVal = finalOut
+        ? finalOut.type === 'image'
+          ? '[Generated Image]'
+          : finalOut.value
+        : '(No final output recorded)';
+
+      let content = '';
+      let mime = 'text/plain;charset=utf-8';
+
+      if (format === 'json') {
+        mime = 'application/json;charset=utf-8';
+        content = JSON.stringify(
+          {
+            workflowName: activeWorkflow.name,
+            exportedAt: new Date().toISOString(),
+            variables: activeVariableMap,
+            finalOutput: finalOut || null,
+            steps: activeWorkflow.nodes.map((n) => ({
+              label: n.label,
+              type: n.type,
+              status: stepStatuses[n.id] || 'idle',
+              durationMs: stepDurations[n.id] || 0,
+              output: stepOutputs[n.id] || null,
+              error: stepErrors[n.id] || null,
+            })),
+          },
+          null,
+          2,
+        );
+      } else if (format === 'md') {
+        mime = 'text/markdown;charset=utf-8';
+        content = [
+          `# ${activeWorkflow.name} — Run Report`,
+          `Generated: ${new Date().toLocaleString()}`,
+          activeWorkflow.description ? `\n> ${activeWorkflow.description}` : '',
+          '\n## Final Output\n',
+          finalVal,
+          '\n## Step-by-Step Breakdown\n',
+          ...activeWorkflow.nodes.map((n, i) => {
+            const st = stepStatuses[n.id] || 'idle';
+            const dur = stepDurations[n.id] ? `${(stepDurations[n.id] / 1000).toFixed(2)}s` : '—';
+            const out = stepOutputs[n.id];
+            const outText = out ? (out.type === 'image' ? '[Generated Image]' : out.value) : '—';
+            return `### ${i + 1}. ${n.label} (${n.type})\n- **Status:** ${st} | **Duration:** ${dur}\n\n${outText}\n`;
+          }),
+        ].join('\n');
+      } else {
+        content = [
+          `${activeWorkflow.name.toUpperCase()} — RUN REPORT`,
+          `Generated: ${new Date().toLocaleString()}`,
+          '========================================',
+          '',
+          'FINAL OUTPUT:',
+          finalVal,
+          '',
+          'STEPS:',
+          ...activeWorkflow.nodes.map((n, i) => {
+            const st = stepStatuses[n.id] || 'idle';
+            const dur = stepDurations[n.id] ? `${stepDurations[n.id]}ms` : '0ms';
+            return `${i + 1}. ${n.label} [${n.type}] — ${st} (${dur})`;
+          }),
+        ].join('\n');
+      }
+
+      const blob = new Blob([content], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}_report.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`Exported report (.${format})`);
+    },
+    [
+      activeWorkflow,
+      activeVariableMap,
+      lastExecutedNodeId,
+      stepOutputs,
+      stepStatuses,
+      stepDurations,
+      stepErrors,
+      showToast,
+    ],
   );
 
   // Check if current workflow has branching
@@ -494,7 +823,7 @@ export function WorkflowsPage() {
         const parsed = JSON.parse(String(reader.result ?? ''));
         if (!parsed || !Array.isArray(parsed.nodes)) throw new Error('invalid');
         const idMap = new Map<string, string>();
-        const newNodes = parsed.nodes.map((n: any, i: number) => {
+        const newNodes = (parsed.nodes as WorkflowNode[]).map((n, i) => {
           const newId = `node-${Date.now()}-${i + 1}`;
           idMap.set(n.id, newId);
           return {
@@ -503,7 +832,7 @@ export function WorkflowsPage() {
             settings: { ...(n.settings || {}) },
           };
         });
-        const newEdges = (parsed.edges || []).map((ed: any, i: number) => ({
+        const newEdges = ((parsed.edges || []) as WorkflowEdge[]).map((ed, i) => ({
           ...ed,
           id: `e-${Date.now()}-${i}`,
           from: idMap.get(ed.from) || ed.from,
@@ -616,8 +945,11 @@ export function WorkflowsPage() {
     setRunLogs([]);
   };
 
-  // Core execution runner (supports full run or starting from a specific node)
-  const executeWorkflowRun = async (startFromNodeId?: string) => {
+  // Core execution runner (supports full run, partial run, and runtime variable overrides)
+  const executeWorkflowRun = async (
+    startFromNodeId?: string,
+    overrideVariables?: Record<string, string>,
+  ) => {
     if (!activeWorkflow || isRunning) return;
 
     const nodeMap = new Map<string, WorkflowNode>();
@@ -777,8 +1109,12 @@ export function WorkflowsPage() {
           },
         },
         startFromNodeId
-          ? { startFromNodeId, previousOutputs: stepOutputs }
-          : undefined,
+          ? {
+              startFromNodeId,
+              previousOutputs: stepOutputs,
+              variables: overrideVariables || activeVariableMap,
+            }
+          : { variables: overrideVariables || activeVariableMap },
       );
     } catch (err: unknown) {
       executionErrorOccurred = true;
@@ -891,7 +1227,17 @@ export function WorkflowsPage() {
       label: newLabel,
       x: newX,
       y: newY,
-      settings: type === 'if' ? { operator: 'contains' } : {},
+      settings:
+        type === 'if'
+          ? { operator: 'contains' }
+          : type === 'transform'
+          ? {
+              mode: 'template',
+              input: lastNode ? `{{${lastNode.label}.output}}` : '{{Input.output}}',
+            }
+          : type === 'merge'
+          ? { mode: 'sections', separator: '\\n\\n---\\n\\n' }
+          : {},
     };
 
     updateCurrentWorkflow((wf) => {
@@ -1032,7 +1378,13 @@ export function WorkflowsPage() {
       setStepStartTimes((prev) => ({ ...prev, [nodeId]: now }));
 
       try {
-        const result = await executeSingleNodeStep(target, activeWorkflow.nodes, stepOutputs);
+        const result = await executeSingleNodeStep(
+          target,
+          activeWorkflow.nodes,
+          stepOutputs,
+          activeWorkflow.edges || [],
+          activeVariableMap,
+        );
         const duration = Math.max(0, Date.now() - now);
         setStepDurations((prev) => ({ ...prev, [nodeId]: duration }));
         setStepOutputs((prev) => ({ ...prev, [nodeId]: result.output }));
@@ -1064,7 +1416,7 @@ export function WorkflowsPage() {
         setIsRunning(false);
       }
     },
-    [activeWorkflow, isRunning, stepOutputs, showToast],
+    [activeWorkflow, isRunning, stepOutputs, showToast, activeVariableMap],
   );
 
   // Move node up (in list view)
@@ -1335,13 +1687,12 @@ export function WorkflowsPage() {
         </div>
       )}
 
-      {/* ================= ROW 1: TOP STUDIO HEADER BAR ================= */}
-      <div className="relative px-3 sm:px-4 py-2.5 border-b border-cyan-500/25 bg-[#050911]/95 backdrop-blur-xl flex items-center justify-between gap-2 z-10">
+      {/* ================= ROW 1: TOP STUDIO HEADER BAR (Mobile-friendly sizing & >= 40px touch targets) ================= */}
+      <div className="relative px-3.5 sm:px-5 py-3 border-b border-cyan-500/25 bg-[#050911]/95 backdrop-blur-xl flex flex-wrap items-center justify-between gap-2.5 z-10">
         <div className="mc-laser-line opacity-85" />
 
-        <div className="flex items-center gap-2 min-w-0">
-          {/* Animated SVG Pipeline Studio Badge */}
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 flex items-center justify-center shrink-0 overflow-hidden">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 flex items-center justify-center shrink-0 overflow-hidden">
             <svg className="w-5 h-5" viewBox="0 0 48 48" fill="none">
               <circle
                 cx="24"
@@ -1371,26 +1722,20 @@ export function WorkflowsPage() {
           </div>
 
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xs sm:text-sm font-bold tracking-tight wf-gradient-title truncate">
-                Workflows Orchestrator
-              </h1>
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-zinc-400 font-mono">
-              <span>{workflows.length} Pipelines</span>
+            <h1 className="text-base sm:text-lg font-extrabold tracking-tight wf-gradient-title truncate">
+              Workflows Studio
+            </h1>
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-zinc-400 font-mono flex-wrap">
+              <span>{workflows.length} pipelines</span>
               <span>·</span>
-              <span className="text-cyan-400">
-                v{activeWorkflow.nodes.length}/{ Math.max(1, activeWorkflow.nodes.length) }
-              </span>
-              <span className="hidden sm:inline">·</span>
-              <span className="hidden sm:inline">
+              <span className="text-cyan-300">
                 {activeWorkflow.nodes.length} {activeWorkflow.nodes.length === 1 ? 'step' : 'steps'}
               </span>
               {isRunning && (
                 <>
                   <span>·</span>
-                  <span className="text-[#49effd] font-bold inline-flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] animate-ping" />
+                  <span className="text-[#49effd] font-bold inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#49effd] animate-ping" />
                     Running
                   </span>
                 </>
@@ -1399,101 +1744,85 @@ export function WorkflowsPage() {
           </div>
         </div>
 
-        {/* Right Studio Controls (Matching Live AI Canvas Studio Header Buttons) */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 flex-wrap justify-end">
+        {/* Right Primary Studio Controls */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          {/* AI Build Button */}
           <button
             type="button"
-            onClick={() => setShowHistoryModal(true)}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-cyan-400/50 text-cyan-300 transition-colors flex items-center gap-1"
-            title="View Workflow Run History"
+            onClick={() => setShowAiGeneratorModal(true)}
+            className="min-h-[42px] px-3 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-gradient-to-r from-violet-500/20 to-cyan-500/20 hover:from-violet-500/30 hover:to-cyan-500/30 border border-violet-400/50 text-violet-100 transition-all flex items-center gap-1.5 whitespace-nowrap"
+            title="Generate a complete workflow from plain English using AI"
           >
-            <History size={13} className="text-cyan-400" />
-            <span className="hidden md:inline font-mono text-[11px]">History</span>
-            {runHistory.length > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
-                {runHistory.length}
-              </span>
-            )}
+            <Wand2 size={15} className="text-cyan-300" />
+            <span>AI Build</span>
           </button>
 
+          {/* Quick Jump / Command Palette */}
           <button
             type="button"
-            onClick={() => setShowTemplatesModal(true)}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-fuchsia-400/50 text-fuchsia-300 transition-colors flex items-center gap-1"
-            title="Load pre-configured Pipeline Templates"
+            onClick={() => setShowQuickJumpModal(true)}
+            className="min-h-[42px] px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            title="Quick command & jump to step (Ctrl+K)"
           >
-            <Sparkles size={13} className="text-[#49effd]" />
-            <span className="hidden md:inline font-mono text-[11px]">Templates</span>
+            <Command size={15} className="text-cyan-400" />
+            <span className="hidden sm:inline">Jump</span>
           </button>
 
+          {/* Mobile Readable Text Comfort Toggle */}
           <button
             type="button"
-            onClick={handleClearResults}
-            disabled={isRunning}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-amber-400/50 text-amber-300 disabled:opacity-40 transition-colors flex items-center gap-1"
-            title="Clear previous outputs & step statuses"
+            onClick={() => setTextComfortMode((m) => (m === 'large' ? 'normal' : 'large'))}
+            aria-pressed={textComfortMode === 'large'}
+            className={`min-h-[42px] px-3 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+              textComfortMode === 'large'
+                ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-300'
+            }`}
+            title="Toggle Larger Mobile-Friendly Text Size"
           >
-            <RotateCcw size={13} className="text-amber-400" />
-            <span className="hidden lg:inline font-mono text-[11px]">Reset</span>
+            <Type size={15} />
+            <span>{textComfortMode === 'large' ? 'Text: Large' : 'Text: Auto'}</span>
           </button>
 
-          <button
-            type="button"
-            onClick={handleExportWorkflow}
-            disabled={!activeWorkflow}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-emerald-400/50 text-emerald-300 disabled:opacity-40 transition-colors flex items-center gap-1"
-            title="Export current workflow as JSON"
-          >
-            <Download size={13} className="text-emerald-400" />
-            <span className="hidden md:inline font-mono text-[11px]">Export</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => importFileRef.current?.click()}
-            className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-sky-400/50 text-sky-300 transition-colors flex items-center gap-1"
-            title="Import workflow from JSON file"
-          >
-            <Upload size={13} className="text-sky-400" />
-            <span className="hidden md:inline font-mono text-[11px]">Import</span>
-          </button>
-
-          <input
-            ref={importFileRef}
-            type="file"
-            accept="application/json,.json"
-            onChange={handleImportWorkflow}
-            className="hidden"
-          />
-
+          {/* Primary Dispatch / Stop CTA */}
           {isRunning ? (
             <button
               type="button"
               onClick={handleStop}
-              className="wf-run-btn-busy relative overflow-hidden px-2.5 sm:px-3.5 py-1 rounded-lg bg-[#ffb4ab]/15 hover:bg-[#ffb4ab]/25 border border-[#ffb4ab]/55 text-[#ffb4ab] font-mono text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0"
+              className="wf-run-btn-busy min-h-[42px] relative overflow-hidden px-4 py-2 rounded-xl bg-[#ffb4ab]/15 hover:bg-[#ffb4ab]/25 border border-[#ffb4ab]/55 text-[#ffb4ab] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap shrink-0"
             >
-              <Square size={11} className="fill-[#ffb4ab] text-[#ffb4ab]" />
+              <Square size={13} className="fill-[#ffb4ab] text-[#ffb4ab]" />
               <span>Stop</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={handleRun}
-              className="wf-run-btn-idle relative overflow-hidden px-3 sm:px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#49effd] via-[#00f0ff] to-[#818cf8] hover:brightness-110 text-[#041318] font-mono text-[11px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-[0_0_25px_rgba(73,239,253,0.5)] active:scale-[0.98] whitespace-nowrap shrink-0 group"
-              title="Execute Quantum Pipeline (Dispatch Run)"
+              className="wf-run-btn-idle min-h-[42px] relative overflow-hidden px-4 sm:px-5 py-2 rounded-xl bg-gradient-to-r from-[#49effd] via-[#00f0ff] to-[#818cf8] hover:brightness-110 text-[#041318] font-mono text-xs sm:text-sm font-extrabold uppercase tracking-wider transition-all flex items-center gap-2 shadow-[0_0_24px_rgba(73,239,253,0.45)] active:scale-[0.98] whitespace-nowrap shrink-0"
+              title="Execute Pipeline (Dispatch Run)"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#041318] group-hover:scale-125 transition-transform" />
-              <Play size={12} className="fill-[#041318]" />
-              <span>Dispatch Run</span>
+              <Play size={14} className="fill-[#041318]" />
+              <span>Run Pipeline</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* ================= ROW 2: WORKFLOW SELECTOR & QUICK ACTIONS SUB-TOOLBAR ================= */}
-      <div className="px-3 sm:px-4 py-2 border-b border-cyan-500/20 bg-slate-900/60 flex items-center justify-between gap-2 flex-wrap shrink-0 z-20">
-        <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
-          <Layers size={13} className="text-cyan-400 shrink-0" />
+      {/* ================= ROW 2: WORKFLOW SELECTOR, LIBRARY, UNDO/REDO & POWER TOOLS ================= */}
+      <div className="px-3.5 sm:px-5 py-2.5 border-b border-cyan-500/20 bg-slate-900/60 flex items-center justify-between gap-2.5 flex-wrap shrink-0 z-20">
+        <div className="flex items-center gap-2 min-w-0 flex-1 flex-wrap">
+          {/* Library Drawer Trigger */}
+          <button
+            type="button"
+            onClick={() => setShowLibraryDrawer(true)}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-cyan-500/35 text-cyan-200 flex items-center gap-1.5 transition-colors shrink-0"
+            title="Browse, search, tag & pin workflows"
+          >
+            <Layers size={15} className="text-cyan-400" />
+            <span>Library</span>
+          </button>
+
+          {/* Workflow Picker */}
           <select
             value={activeWorkflow.id}
             onChange={(e) => {
@@ -1501,32 +1830,119 @@ export function WorkflowsPage() {
               setSelectedNodeId(null);
               handleClearResults();
             }}
-            className="min-w-0 flex-1 max-w-[180px] sm:max-w-xs rounded-lg bg-zinc-950 border border-zinc-700/80 px-2.5 py-1 text-xs text-zinc-100 font-mono outline-none focus:border-cyan-500 cursor-pointer truncate"
+            className="min-h-[40px] min-w-[160px] flex-1 max-w-xs rounded-xl bg-zinc-950 border border-zinc-700/80 px-3 py-1.5 text-base sm:text-sm text-zinc-100 font-semibold outline-none focus:border-cyan-500 cursor-pointer truncate"
           >
-            {workflows.map((w, idx) => (
-              <option key={w.id} value={w.id} className="bg-[#0b0d14] text-cyan-200">
-                {idx + 1}. [DAG] {w.name} ({w.nodes.length})
-              </option>
-            ))}
+            {[...workflows]
+              .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+              .map((w) => (
+                <option key={w.id} value={w.id} className="bg-[#0b0d14] text-cyan-200">
+                  {w.pinned ? '★ ' : ''}{w.name} ({w.nodes.length})
+                </option>
+              ))}
           </select>
 
-          {/* Delete Workflow (with inline confirmation) */}
+          {/* Pin Star */}
+          <button
+            type="button"
+            onClick={() => handleTogglePinWorkflow(activeWorkflow.id)}
+            className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl border transition-colors shrink-0 ${
+              activeWorkflow.pinned
+                ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
+                : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-zinc-400 hover:text-amber-300'
+            }`}
+            title={activeWorkflow.pinned ? 'Unpin favorite workflow' : 'Pin workflow to top'}
+          >
+            <Star size={15} className={activeWorkflow.pinned ? 'fill-amber-300' : ''} />
+          </button>
+
+          {/* Rename Workflow */}
+          {isRenaming ? (
+            <div className="flex items-center gap-1.5 bg-[#0b0d14] border border-[#49effd]/60 rounded-xl px-2.5 py-1">
+              <input
+                type="text"
+                value={renameDraft}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && renameDraft.trim()) {
+                    updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
+                    setIsRenaming(false);
+                  }
+                }}
+                className="bg-transparent text-cyan-200 text-base sm:text-sm px-1 py-0.5 focus:outline-none w-36 sm:w-44"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (renameDraft.trim()) {
+                    updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
+                  }
+                  setIsRenaming(false);
+                }}
+                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg bg-[#49effd] text-[#00363b]"
+              >
+                <Check size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRenaming(false)}
+                className="min-h-[34px] min-w-[34px] flex items-center justify-center rounded-lg text-zinc-400 hover:text-white"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setRenameDraft(activeWorkflow.name);
+                setIsRenaming(true);
+              }}
+              className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-violet-300 flex items-center gap-1.5 transition-colors shrink-0"
+              title="Rename workflow"
+            >
+              <Edit2 size={14} className="text-violet-400" />
+              <span className="hidden sm:inline">Rename</span>
+            </button>
+          )}
+
+          {/* New / Clone / Delete */}
+          <button
+            type="button"
+            onClick={handleCreateNew}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 flex items-center gap-1.5 transition-colors shrink-0"
+            title="Create new blank workflow"
+          >
+            <Plus size={14} className="text-cyan-400" />
+            <span>New</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDuplicate}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-emerald-300 flex items-center gap-1.5 transition-colors shrink-0"
+            title="Duplicate workflow"
+          >
+            <Copy size={14} className="text-emerald-400" />
+            <span className="hidden md:inline">Clone</span>
+          </button>
+
           {confirmDeleteWorkflow ? (
-            <div className="flex items-center gap-1 bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 rounded-lg px-2 py-0.5">
-              <span className="text-[10px] font-mono text-[#ffb4ab] font-bold uppercase">Del?</span>
+            <div className="flex items-center gap-1.5 bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 rounded-xl px-2.5 py-1">
+              <span className="text-xs font-mono text-[#ffb4ab] font-bold">Delete?</span>
               <button
                 type="button"
                 onClick={handleDeleteCurrent}
-                className="px-1.5 py-0.5 rounded bg-[#ffb4ab] text-[#131317] font-mono font-bold text-[10px] uppercase"
+                className="min-h-[32px] px-2.5 py-1 rounded-lg bg-[#ffb4ab] text-[#131317] font-bold text-xs"
               >
                 Yes
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDeleteWorkflow(false)}
-                className="p-0.5 rounded text-[#94a3b8] hover:text-white"
+                className="min-h-[32px] min-w-[32px] flex items-center justify-center rounded-lg text-zinc-300 hover:text-white"
               >
-                <X size={11} />
+                <X size={14} />
               </button>
             </div>
           ) : (
@@ -1539,124 +1955,163 @@ export function WorkflowsPage() {
                 }
                 setConfirmDeleteWorkflow(true);
               }}
-              className="p-1.5 rounded-lg bg-zinc-900 hover:bg-rose-950/70 border border-zinc-700/80 hover:border-rose-500/40 text-zinc-400 hover:text-rose-300 transition-colors shrink-0"
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-zinc-900 hover:bg-rose-950/70 border border-zinc-700/80 hover:border-rose-500/40 text-zinc-400 hover:text-rose-300 transition-colors shrink-0"
               title="Delete current workflow"
             >
-              <Trash2 size={12} />
+              <Trash2 size={15} />
             </button>
           )}
-
-          {/* + New Workflow (like + Vault in Live AI Canvas Studio) */}
-          <button
-            type="button"
-            onClick={handleCreateNew}
-            className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 flex items-center gap-1 transition-colors shrink-0"
-            title="Create new blank workflow"
-          >
-            <Plus size={12} className="text-cyan-400" />
-            <span>New ({workflows.length})</span>
-          </button>
-
-          {/* Rename Workflow */}
-          {isRenaming ? (
-            <div className="flex items-center gap-1 bg-[#0b0d14] border border-[#49effd]/60 rounded-lg px-2 py-0.5">
-              <input
-                type="text"
-                value={renameDraft}
-                onChange={(e) => setRenameDraft(e.target.value)}
-                className="bg-transparent text-cyan-200 font-mono text-xs px-1 py-0.5 focus:outline-none w-28 sm:w-36"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (renameDraft.trim()) {
-                    updateCurrentWorkflow((wf) => ({ ...wf, name: renameDraft.trim() }));
-                  }
-                  setIsRenaming(false);
-                }}
-                className="p-1 rounded bg-[#49effd] text-[#00363b]"
-              >
-                <Check size={11} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsRenaming(false)}
-                className="p-1 rounded text-[#94a3b8] hover:text-white"
-              >
-                <X size={11} />
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setRenameDraft(activeWorkflow.name);
-                setIsRenaming(true);
-              }}
-              className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-violet-300 flex items-center gap-1 transition-colors shrink-0"
-              title="Rename workflow"
-            >
-              <Edit2 size={11} className="text-violet-400" />
-              <span className="hidden sm:inline">Rename</span>
-            </button>
-          )}
-
-          {/* Duplicate Workflow */}
-          <button
-            type="button"
-            onClick={handleDuplicate}
-            className="px-2 py-1 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-emerald-300 flex items-center gap-1 transition-colors shrink-0"
-            title="Duplicate workflow"
-          >
-            <Copy size={11} className="text-emerald-400" />
-            <span className="hidden sm:inline">Clone</span>
-          </button>
         </div>
 
-        {/* Right: Step Count & Quick Add Step Pill */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Right: Undo/Redo + Power Tools Strip */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
           <button
             type="button"
-            onClick={() => setShowAddMenu((v) => !v)}
-            className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/50 text-purple-200 flex items-center gap-1 transition-colors shrink-0"
-            title="Add a new step to this pipeline"
+            disabled={undoStack.length === 0}
+            onClick={handleUndo}
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 disabled:opacity-35 transition-colors"
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
           >
-            <Plus size={12} className="text-purple-300" />
-            <span>Step</span>
+            <Undo2 size={15} />
           </button>
-          <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-cyan-500/15 text-cyan-200 border border-cyan-400/40 font-semibold">
-            {activeWorkflow.nodes.length}N
-          </span>
+          <button
+            type="button"
+            disabled={redoStack.length === 0}
+            onClick={handleRedo}
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 disabled:opacity-35 transition-colors"
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+          >
+            <Redo2 size={15} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowVariablesModal(true)}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-sky-400/50 text-sky-200 flex items-center gap-1.5 transition-colors"
+            title="Manage global {{vars.key}} variables"
+          >
+            <Sliders size={14} className="text-sky-400" />
+            <span>Vars</span>
+            {activeWorkflowVariables.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-md text-xs font-mono bg-sky-500/20 text-sky-200">
+                {activeWorkflowVariables.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowBatchRunnerModal(true)}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-fuchsia-400/50 text-fuchsia-200 flex items-center gap-1.5 transition-colors"
+            title="Run this workflow on a list of multiple inputs"
+          >
+            <ListChecks size={14} className="text-fuchsia-400" />
+            <span>Batch</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowValidatorPanel(true)}
+            className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold border flex items-center gap-1.5 transition-colors ${
+              validationErrorCount > 0
+                ? 'bg-rose-500/15 border-rose-400/50 text-rose-200'
+                : validationIssues.length > 0
+                ? 'bg-amber-500/15 border-amber-400/50 text-amber-200'
+                : 'bg-zinc-900 hover:bg-zinc-800 border-zinc-700/80 text-emerald-300'
+            }`}
+            title="Pre-flight pipeline health check"
+          >
+            <ShieldCheck size={14} />
+            <span className="hidden sm:inline">Check</span>
+            {validationIssues.length > 0 && (
+              <span className="px-1.5 rounded-md text-xs font-mono font-bold bg-black/30">
+                {validationIssues.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowHistoryModal(true)}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-cyan-200 flex items-center gap-1.5 transition-colors"
+            title="View Run History & Compare Runs"
+          >
+            <History size={14} className="text-cyan-400" />
+            <span className="hidden md:inline">History</span>
+            {runHistory.length > 0 && (
+              <span className="px-1.5 rounded-md text-xs font-mono bg-cyan-500/20 text-cyan-200">
+                {runHistory.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowTemplatesModal(true)}
+            className="min-h-[40px] px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-amber-200 flex items-center gap-1.5 transition-colors"
+            title="Load pre-configured Pipeline Templates"
+          >
+            <Sparkles size={14} className="text-amber-300" />
+            <span className="hidden lg:inline">Templates</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportWorkflow}
+            disabled={!activeWorkflow}
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-emerald-300 disabled:opacity-40 transition-colors"
+            title="Export workflow JSON"
+          >
+            <Download size={15} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => importFileRef.current?.click()}
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-sky-300 transition-colors"
+            title="Import workflow JSON"
+          >
+            <Upload size={15} />
+          </button>
+
+          <input
+            ref={importFileRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportWorkflow}
+            className="hidden"
+          />
         </div>
       </div>
 
-      {/* ================= ROW 3: SEGMENTED STUDIO TABS BAR (LIKE PREVIEW | SPLIT | CODE | DATA) ================= */}
-      <div className="px-3 sm:px-4 py-1.5 border-b border-zinc-800/80 bg-[#070a10]/90 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar shrink-0 z-20">
+      {/* ================= ROW 3: SEGMENTED STUDIO TABS BAR ================= */}
+      <div className="px-3.5 sm:px-5 py-2 border-b border-zinc-800/80 bg-[#070a10]/90 flex items-center justify-between gap-2.5 overflow-x-auto no-scrollbar shrink-0 z-20">
         <div className="flex items-center gap-1 bg-zinc-900/90 p-1 rounded-xl border border-zinc-800">
           <button
             type="button"
             onClick={() => setViewMode('list')}
-            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all whitespace-nowrap ${
+            className={`min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               viewMode === 'list'
                 ? 'bg-zinc-800 text-white shadow-sm border border-cyan-500/35'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <Layers size={12} className={viewMode === 'list' ? 'text-cyan-400' : ''} />
+            <Layers size={14} className={viewMode === 'list' ? 'text-cyan-400' : ''} />
             <span>Pipeline</span>
           </button>
 
           <button
             type="button"
             onClick={() => setViewMode('canvas')}
-            className={`px-3 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all whitespace-nowrap ${
+            className={`min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${
               viewMode === 'canvas'
                 ? 'bg-zinc-800 text-white shadow-sm border border-cyan-500/35'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <GitBranch size={12} className={viewMode === 'canvas' ? 'text-cyan-400' : ''} />
+            <GitBranch size={14} className={viewMode === 'canvas' ? 'text-cyan-400' : ''} />
             <span>Canvas</span>
           </button>
 
@@ -1665,12 +2120,12 @@ export function WorkflowsPage() {
             onClick={() => {
               finalOutputSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
-            className="px-3 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-all whitespace-nowrap"
+            className="min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all whitespace-nowrap"
           >
-            <Sparkles size={12} className="text-emerald-400" />
+            <Sparkles size={14} className="text-emerald-400" />
             <span>Output</span>
             {lastExecutedOutput && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
             )}
           </button>
 
@@ -1679,23 +2134,34 @@ export function WorkflowsPage() {
             onClick={() => {
               traceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
-            className="px-3 py-1 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-all whitespace-nowrap"
+            className="min-h-[38px] px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all whitespace-nowrap"
           >
-            <CheckCircle2 size={12} className="text-amber-400" />
+            <CheckCircle2 size={14} className="text-amber-400" />
             <span>Trace</span>
-            <span className="text-[10px] font-mono text-emerald-400">{runLogs.length}</span>
+            <span className="text-xs font-mono text-emerald-400">{runLogs.length}</span>
           </button>
         </div>
 
         {/* Right Contextual Studio Action */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleClearResults}
+            disabled={isRunning}
+            className="min-h-[38px] px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-amber-300 disabled:opacity-40 text-xs sm:text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap"
+            title="Clear outputs & step statuses"
+          >
+            <RotateCcw size={14} />
+            <span>Reset</span>
+          </button>
+
           {viewMode === 'canvas' ? (
             <button
               type="button"
               onClick={handleTidyLayout}
-              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-cyan-300 font-mono text-[11px] flex items-center gap-1 whitespace-nowrap"
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-cyan-300 text-xs sm:text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap"
             >
-              <Sparkles size={11} />
+              <Sparkles size={14} />
               <span>Tidy Graph</span>
             </button>
           ) : (
@@ -1709,13 +2175,13 @@ export function WorkflowsPage() {
                 }
                 setCollapsedSettings(next);
               }}
-              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-300 hover:text-white font-mono text-[11px] flex items-center gap-1 whitespace-nowrap"
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 hover:text-white text-xs sm:text-sm font-semibold flex items-center gap-1.5 whitespace-nowrap"
             >
-              <ChevronDown size={12} />
+              <ChevronDown size={15} />
               <span>
                 {activeWorkflow.nodes.every((n) => collapsedSettings[n.id])
-                  ? 'Expand Steps'
-                  : 'Compact Steps'}
+                  ? 'Expand All'
+                  : 'Compact All'}
               </span>
             </button>
           )}
@@ -1723,8 +2189,12 @@ export function WorkflowsPage() {
       </div>
 
       {/* ================= MAIN STUDIO WORKSPACE ================= */}
-      <div className="wf-studio-shell relative px-3 sm:px-6 pt-3 pb-12 border-0 rounded-none">
-        {/* Static Background Grid + Dual Radial Plasma Glows (pointer-events: none) */}
+      <div
+        className={`wf-studio-shell relative px-3.5 sm:px-6 pt-4 pb-16 border-0 rounded-none ${
+          textComfortMode === 'large' ? 'text-base leading-relaxed' : 'text-sm'
+        }`}
+      >
+        {/* Static Background Grid + Dual Radial Plasma Glows */}
         <div
           aria-hidden="true"
           className="pointer-events-none fixed inset-0 wf-cyber-matrix-grid opacity-65 z-0"
@@ -1735,8 +2205,37 @@ export function WorkflowsPage() {
         />
 
         <div className="relative z-10 max-w-[1380px] mx-auto">
-          {/* Live Telemetry Graphics Strip (throughput / mesh health / run timeline) */}
-          <WorkflowTelemetryGraphics isRunning={isRunning} />
+          {/* Active Workflow Description & Tags Banner (when set) */}
+          {(activeWorkflow.description || (activeWorkflow.tags && activeWorkflow.tags.length > 0)) && (
+            <div className="mb-3 px-4 py-3 rounded-2xl bg-[#0a101d]/90 border border-white/10 flex flex-wrap items-center justify-between gap-2">
+              {activeWorkflow.description && (
+                <p className="text-sm text-zinc-300 leading-relaxed">{activeWorkflow.description}</p>
+              )}
+              {activeWorkflow.tags && activeWorkflow.tags.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {activeWorkflow.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="px-2.5 py-0.5 rounded-md bg-violet-500/15 border border-violet-400/30 text-violet-200 text-xs font-mono"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Real Pipeline Insights & Health Strip */}
+          <WorkflowTelemetryGraphics
+            isRunning={isRunning}
+            workflow={activeWorkflow}
+            runHistory={runHistory}
+            stepStatuses={stepStatuses}
+            stepDurations={stepDurations}
+            validationIssues={validationIssues}
+            onOpenValidator={() => setShowValidatorPanel(true)}
+          />
 
           {/* Main Workspace Area */}
         {viewMode === 'list' ? (
@@ -1785,9 +2284,16 @@ export function WorkflowsPage() {
                 return (
                   <React.Fragment key={node.id}>
                     <section
+                      ref={(el) => {
+                        stepCardRefs.current[node.id] = el;
+                      }}
                       className={`wf-cyber-card wf-step-card-enter group/card rounded-2xl p-4 sm:p-5 transition-all duration-300 ${
                         isDisabled ? 'opacity-60' : ''
                       } ${
+                        highlightedNodeId === node.id
+                          ? 'ring-2 ring-cyan-400 shadow-[0_0_28px_rgba(73,239,253,0.35)] '
+                          : ''
+                      }${
                         isFrozen ? 'ring-1 ring-cyan-400/40 border-cyan-400/40 shadow-[0_0_18px_rgba(73,239,253,0.15)] ' : ''
                       }${
                         status === 'running'
@@ -1820,13 +2326,13 @@ export function WorkflowsPage() {
                       <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-white/[0.08]">
                         <div className="flex items-center gap-3 min-w-0">
                           {/* Cyber Step Index Badge */}
-                          <span className="text-[11px] font-mono font-extrabold tabular-nums text-[#49effd] bg-[#0b0d14] border border-[#49effd]/30 shadow-[0_0_12px_rgba(73,239,253,0.12)] px-2.5 py-1 rounded-lg flex-shrink-0 select-none">
+                          <span className="text-xs font-mono font-extrabold tabular-nums text-[#49effd] bg-[#0b0d14] border border-[#49effd]/30 shadow-[0_0_12px_rgba(73,239,253,0.12)] px-2.5 py-1 rounded-lg flex-shrink-0 select-none">
                             {String(index + 1).padStart(2, '0')}
                           </span>
 
                           {/* Node Type Icon */}
                           <div className={`p-2 rounded-xl border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] flex-shrink-0 ${cfg.color}`}>
-                            <IconComp size={16} />
+                            <IconComp size={17} />
                           </div>
 
                           {/* Editable Step Title & Unboxed Metadata */}
@@ -1835,13 +2341,23 @@ export function WorkflowsPage() {
                               type="text"
                               value={node.label}
                               onChange={(e) => handleUpdateNode(node.id, 'label', e.target.value)}
-                              className={`bg-transparent hover:bg-white/[0.04] focus:bg-[#0b0d14] font-extrabold ${cfg.textColor} tracking-tight text-sm sm:text-base rounded-lg px-2 py-0.5 border border-transparent focus:border-[#49effd]/55 focus:shadow-[0_0_14px_rgba(73,239,253,0.18)] focus:outline-none w-full max-w-[220px] sm:max-w-[290px] truncate transition-all`}
+                              className={`bg-transparent hover:bg-white/[0.04] focus:bg-[#0b0d14] font-extrabold ${cfg.textColor} tracking-tight text-base sm:text-lg rounded-lg px-2 py-1 border border-transparent focus:border-[#49effd]/55 focus:shadow-[0_0_14px_rgba(73,239,253,0.18)] focus:outline-none w-full max-w-[260px] sm:max-w-[320px] truncate transition-all`}
                               title="Click to rename step"
                             />
-                            <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider pl-2 sm:pl-0 flex-wrap">
+                            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider pl-2 sm:pl-0 flex-wrap">
                               <span className="wf-label-gradient font-bold">
                                 {cfg.label}
                               </span>
+                              {Number(node.settings?.retries || '0') > 0 && (
+                                <span className="text-xs font-mono text-amber-300 bg-amber-500/10 border border-amber-400/30 px-1.5 py-0.2 rounded normal-case">
+                                  {node.settings.retries}x retry
+                                </span>
+                              )}
+                              {node.settings?.continueOnError === 'true' && (
+                                <span className="text-xs font-mono text-sky-300 bg-sky-500/10 border border-sky-400/30 px-1.5 py-0.2 rounded normal-case">
+                                  fallback
+                                </span>
+                              )}
                               {durationMs !== undefined && status === 'done' && (
                                 <>
                                   <span aria-hidden="true" className="text-white/25">·</span>
@@ -1863,57 +2379,58 @@ export function WorkflowsPage() {
                         </div>
 
                         {/* Right Side Status Badge + Action Controls */}
-                        <div className="flex items-center justify-between sm:justify-end gap-2 pl-9 sm:pl-0 flex-wrap">
+                        <div className="flex items-center justify-between sm:justify-end gap-2 pl-1 sm:pl-0 flex-wrap">
                           {/* Cyber Status Indicator */}
                           <div className="mr-1 flex items-center">
                             {isDisabled ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-400/35 text-[10px] font-mono font-bold uppercase tracking-wider text-amber-300">
-                                <Ban size={12} />
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-400/35 text-xs font-mono font-bold uppercase tracking-wider text-amber-300">
+                                <Ban size={13} />
                                 <span>Disabled</span>
                               </span>
                             ) : isFrozen ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/45 text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-200 shadow-[0_0_12px_rgba(73,239,253,0.2)]">
-                                <Snowflake size={12} className="text-cyan-300" />
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/45 text-xs font-mono font-bold uppercase tracking-wider text-cyan-200 shadow-[0_0_12px_rgba(73,239,253,0.2)]">
+                                <Snowflake size={13} className="text-cyan-300" />
                                 <span>{hasMock ? 'Mocked' : 'Frozen'}</span>
                               </span>
                             ) : status === 'running' ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#49effd]/15 border border-[#49effd]/55 text-[10px] font-mono font-bold uppercase tracking-wider text-[#49effd] shadow-[0_0_16px_rgba(73,239,253,0.28)]">
-                                <Loader2 size={12} className="animate-spin" />
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#49effd]/15 border border-[#49effd]/55 text-xs font-mono font-bold uppercase tracking-wider text-[#49effd] shadow-[0_0_16px_rgba(73,239,253,0.28)]">
+                                <Loader2 size={13} className="animate-spin" />
                                 <span>Running</span>
                               </span>
                             ) : status === 'done' ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/45 text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.2)]">
-                                <CheckCircle2 size={12} className="wf-check-pop" />
-                                <span>Completed</span>
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/45 text-xs font-mono font-bold uppercase tracking-wider text-emerald-300 shadow-[0_0_14px_rgba(16,185,129,0.2)]">
+                                <CheckCircle2 size={13} className="wf-check-pop" />
+                                <span>Done</span>
                               </span>
                             ) : status === 'error' ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 text-[10px] font-mono font-bold uppercase tracking-wider text-[#ffb4ab]">
-                                <AlertCircle size={12} />
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#ffb4ab]/15 border border-[#ffb4ab]/45 text-xs font-mono font-bold uppercase tracking-wider text-[#ffb4ab]">
+                                <AlertCircle size={13} />
                                 <span>Failed</span>
                               </span>
                             ) : status === 'skipped' ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0b0d14] border border-white/10 text-[10px] font-mono font-bold uppercase tracking-wider text-[#94a3b8]">
-                                <MinusCircle size={12} />
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0b0d14] border border-white/10 text-xs font-mono font-bold uppercase tracking-wider text-[#94a3b8]">
+                                <MinusCircle size={13} />
                                 <span>Skipped</span>
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0b0d14]/90 border border-white/10 text-[10px] font-mono font-semibold uppercase tracking-wider text-cyan-300">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0b0d14]/90 border border-white/10 text-xs font-mono font-semibold uppercase tracking-wider text-cyan-300">
                                 <span className="w-1.5 h-1.5 rounded-full bg-[#49effd]/75 shadow-[0_0_6px_#49effd]" />
                                 <span>Ready</span>
                               </span>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {/* Test Single Step */}
                             <button
                               type="button"
                               disabled={isRunning}
                               onClick={() => handleRunSingleNode(node.id)}
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-emerald-500/15 border border-white/10 hover:border-emerald-400/45 text-emerald-300 hover:text-emerald-200 disabled:opacity-30 transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-emerald-500/15 border border-white/10 hover:border-emerald-400/45 text-emerald-300 hover:text-emerald-200 disabled:opacity-30 transition-all active:scale-95"
                               title="Test this single step only"
+                              aria-label="Test this single step"
                             >
-                              <Play size={13} className="fill-emerald-400/30" />
+                              <Play size={14} className="fill-emerald-400/30" />
                             </button>
 
                             {/* Run from this step */}
@@ -1921,24 +2438,26 @@ export function WorkflowsPage() {
                               type="button"
                               disabled={isRunning}
                               onClick={() => handleRunFromNode(node.id)}
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-[#49effd]/15 border border-white/10 hover:border-[#49effd]/45 text-cyan-300 hover:text-[#49effd] disabled:opacity-30 transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-[#49effd]/15 border border-white/10 hover:border-[#49effd]/45 text-cyan-300 hover:text-[#49effd] disabled:opacity-30 transition-all active:scale-95"
                               title="Run workflow starting from this step"
+                              aria-label="Run from this step"
                             >
-                              <Play size={13} />
+                              <Play size={14} />
                             </button>
 
                             {/* Freeze / Unfreeze Step */}
                             <button
                               type="button"
                               onClick={() => handleToggleFreezeNode(node.id)}
-                              className={`p-1.5 rounded-lg border transition-all active:scale-95 ${
+                              className={`min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg border transition-all active:scale-95 ${
                                 isFrozen
                                   ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200 shadow-[0_0_10px_rgba(73,239,253,0.25)]'
                                   : 'bg-[#0b0d14]/90 hover:bg-white/[0.06] border-white/10 hover:border-cyan-400/35 text-cyan-400 hover:text-[#f8fafc]'
                               }`}
                               title={isFrozen ? 'Unfreeze step (execute live)' : 'Freeze output (use cached / mock output)'}
+                              aria-label="Toggle freeze output"
                             >
-                              <Snowflake size={13} />
+                              <Snowflake size={14} />
                             </button>
 
                             {/* Move Up / Move Down */}
@@ -1946,39 +2465,43 @@ export function WorkflowsPage() {
                               type="button"
                               onClick={() => handleMoveNodeUp(index)}
                               disabled={hasBranches || index === 0}
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-sky-300 hover:text-[#f8fafc] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-sky-300 hover:text-[#f8fafc] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
                               title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step up'}
+                              aria-label="Move step up"
                             >
-                              <ArrowUp size={13} />
+                              <ArrowUp size={14} />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleMoveNodeDown(index)}
                               disabled={hasBranches || index === activeWorkflow.nodes.length - 1}
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-sky-300 hover:text-[#f8fafc] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-sky-300 hover:text-[#f8fafc] disabled:opacity-30 disabled:cursor-not-allowed transition-all active:scale-95"
                               title={hasBranches ? 'Reordering disabled for branching workflows' : 'Move step down'}
+                              aria-label="Move step down"
                             >
-                              <ArrowDown size={13} />
+                              <ArrowDown size={14} />
                             </button>
 
                             {/* Duplicate Step */}
                             <button
                               type="button"
                               onClick={() => handleDuplicateNode(node.id)}
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-violet-300 hover:text-[#f8fafc] transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-violet-300 hover:text-[#f8fafc] transition-all active:scale-95"
                               title="Duplicate step"
+                              aria-label="Duplicate step"
                             >
-                              <Copy size={13} />
+                              <Copy size={14} />
                             </button>
 
                             {/* Delete Step */}
                             <button
                               type="button"
                               onClick={() => handleDeleteNode(node.id)}
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-[#ffb4ab]/15 border border-white/10 hover:border-[#ffb4ab]/45 text-rose-300 hover:text-[#ffb4ab] transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-[#ffb4ab]/15 border border-white/10 hover:border-[#ffb4ab]/45 text-rose-300 hover:text-[#ffb4ab] transition-all active:scale-95"
                               title="Delete step"
+                              aria-label="Delete step"
                             >
-                              <Trash2 size={13} />
+                              <Trash2 size={14} />
                             </button>
 
                             {/* Toggle Settings Collapse */}
@@ -1990,10 +2513,11 @@ export function WorkflowsPage() {
                                   [node.id]: !prev[node.id],
                                 }))
                               }
-                              className="p-1.5 rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-amber-300 hover:text-[#f8fafc] transition-all active:scale-95"
+                              className="min-h-[38px] min-w-[38px] sm:min-h-[34px] sm:min-w-[34px] flex items-center justify-center rounded-lg bg-[#0b0d14]/90 hover:bg-white/[0.06] border border-white/10 hover:border-[#49effd]/35 text-amber-300 hover:text-[#f8fafc] transition-all active:scale-95"
                               title="Toggle step parameters"
+                              aria-label="Toggle step parameters"
                             >
-                              {isSettingsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              {isSettingsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                             </button>
                           </div>
                         </div>
@@ -2007,6 +2531,8 @@ export function WorkflowsPage() {
                             allNodes={activeWorkflow.nodes}
                             edges={activeWorkflow.edges}
                             stepOutputs={stepOutputs}
+                            workflowVariables={activeWorkflowVariables}
+                            textComfortMode={textComfortMode}
                             viewMode={viewMode}
                             isWorkflowRunning={isRunning}
                             onRunSingleNode={handleRunSingleNode}
@@ -2023,9 +2549,9 @@ export function WorkflowsPage() {
                           <div className="relative overflow-hidden rounded-xl bg-[#090b10]/95 border border-[#49effd]/25 shadow-[0_8px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.06)] px-4 py-3.5 space-y-2.5">
                             <div className="mc-laser-line opacity-65" />
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider">
+                              <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider">
                                 <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] shadow-[0_0_8px_#49effd]" />
-                                <span className="font-bold wf-label-gradient">Step Telemetry Output</span>
+                                <span className="font-bold wf-label-gradient">Step Output</span>
                                 {output?.type && (
                                   <>
                                     <span aria-hidden="true" className="text-white/20">·</span>
@@ -2046,16 +2572,16 @@ export function WorkflowsPage() {
                                   <button
                                     type="button"
                                     onClick={() => handleCopyText(output.value, `out-${node.id}`)}
-                                    className="font-mono text-[10px] font-bold uppercase tracking-wider text-cyan-300 hover:text-[#49effd] flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-[#49effd]/40 transition-all"
+                                    className="min-h-[36px] font-mono text-xs font-bold text-cyan-300 hover:text-[#49effd] flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-[#49effd]/40 transition-all"
                                   >
                                     {copiedKey === `out-${node.id}` ? (
                                       <>
-                                        <Check size={11} className="text-emerald-400" />
+                                        <Check size={13} className="text-emerald-400" />
                                         <span className="text-emerald-300">Copied</span>
                                       </>
                                     ) : (
                                       <>
-                                        <Copy size={11} />
+                                        <Copy size={13} />
                                         <span>Copy</span>
                                       </>
                                     )}
@@ -2069,9 +2595,10 @@ export function WorkflowsPage() {
                                       [node.id]: !prev[node.id],
                                     }))
                                   }
-                                  className="p-1 text-cyan-300 hover:text-[#f8fafc] rounded-lg bg-[#141722] hover:bg-[#1c2030] border border-white/10"
+                                  className="min-h-[36px] min-w-[36px] flex items-center justify-center text-cyan-300 hover:text-[#f8fafc] rounded-lg bg-[#141722] hover:bg-[#1c2030] border border-white/10"
+                                  aria-label="Toggle step output"
                                 >
-                                  {isOutputOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                  {isOutputOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                                 </button>
                               </div>
                             </div>
@@ -2079,12 +2606,25 @@ export function WorkflowsPage() {
                             {isOutputOpen && (
                               <div>
                                 {errorText && (
-                                  <div className="py-2.5 px-3 rounded-lg bg-[#ffb4ab]/10 border border-[#ffb4ab]/40 text-[#ffb4ab] text-xs font-mono">
+                                  <div className="py-2.5 px-3 rounded-lg bg-[#ffb4ab]/10 border border-[#ffb4ab]/40 text-[#ffb4ab] text-sm font-mono">
                                     {errorText}
                                   </div>
                                 )}
                                 {output?.type === 'text' && (
-                                  <pre className="text-xs text-cyan-200 font-mono whitespace-pre-wrap break-words max-h-60 overflow-y-auto pt-1 leading-relaxed">
+                                  <pre
+                                    className={`${
+                                      textComfortMode === 'large' ? 'text-base' : 'text-sm'
+                                    } text-cyan-200 font-mono whitespace-pre-wrap break-words max-h-72 overflow-y-auto pt-1 leading-relaxed`}
+                                  >
+                                    {output.value}
+                                  </pre>
+                                )}
+                                {output?.type === 'json' && (
+                                  <pre
+                                    className={`${
+                                      textComfortMode === 'large' ? 'text-base' : 'text-sm'
+                                    } text-emerald-200 font-mono whitespace-pre-wrap break-words max-h-72 overflow-y-auto pt-1 leading-relaxed`}
+                                  >
                                     {output.value}
                                   </pre>
                                 )}
@@ -2102,9 +2642,9 @@ export function WorkflowsPage() {
                                         download="workflow-image.png"
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="px-3.5 py-1.5 bg-gradient-to-r from-[#49effd] to-[#22d3ee] hover:brightness-110 text-[#00363b] font-mono text-[11px] font-extrabold uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 shadow-[0_0_16px_rgba(73,239,253,0.35)]"
+                                        className="min-h-[40px] px-4 py-2 bg-gradient-to-r from-[#49effd] to-[#22d3ee] hover:brightness-110 text-[#00363b] font-mono text-xs font-extrabold uppercase tracking-wider rounded-lg inline-flex items-center gap-1.5 shadow-[0_0_16px_rgba(73,239,253,0.35)]"
                                       >
-                                        <Download size={12} />
+                                        <Download size={14} />
                                         <span>Download Image</span>
                                       </a>
                                     </div>
@@ -2147,16 +2687,16 @@ export function WorkflowsPage() {
               <button
                 type="button"
                 onClick={() => setShowAddMenu((v) => !v)}
-                className="relative overflow-hidden w-full py-3.5 px-4 rounded-2xl border border-dashed border-[#49effd]/50 hover:border-[#49effd] bg-gradient-to-r from-[#49effd]/[0.05] via-indigo-500/[0.06] to-[#49effd]/[0.05] hover:from-[#49effd]/[0.12] hover:to-indigo-500/[0.12] text-[#49effd] font-mono text-xs font-extrabold uppercase tracking-[0.16em] flex items-center justify-center gap-2 transition-all group shadow-[0_0_24px_rgba(73,239,253,0.08)] active:scale-[0.99]"
+                className="relative overflow-hidden w-full min-h-[48px] py-3.5 px-4 rounded-2xl border border-dashed border-[#49effd]/50 hover:border-[#49effd] bg-gradient-to-r from-[#49effd]/[0.05] via-indigo-500/[0.06] to-[#49effd]/[0.05] hover:from-[#49effd]/[0.12] hover:to-indigo-500/[0.12] text-[#49effd] font-mono text-sm font-extrabold uppercase tracking-wider flex items-center justify-center gap-2 transition-all group shadow-[0_0_24px_rgba(73,239,253,0.08)] active:scale-[0.99]"
               >
                 <div className="mc-laser-line opacity-0 group-hover:opacity-100 transition-opacity" />
-                <Plus size={15} className="text-[#49effd] group-hover:rotate-90 transition-transform duration-200" />
+                <Plus size={16} className="text-[#49effd] group-hover:rotate-90 transition-transform duration-200" />
                 <span>Add Pipeline Step</span>
               </button>
 
               {/* Step Type Selection Popover */}
               {showAddMenu && (
-                <div className="wf-popover-enter mt-2.5 z-30 bg-[#131317]/98 border border-[#49effd]/40 rounded-xl p-3 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_20px_rgba(73,239,253,0.12)] backdrop-blur-2xl grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="wf-popover-enter mt-2.5 z-30 bg-[#131317]/98 border border-[#49effd]/40 rounded-2xl p-3 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_20px_rgba(73,239,253,0.12)] backdrop-blur-2xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
                     const item = NODE_CONFIG[type];
                     const Icon = item.icon;
@@ -2165,14 +2705,14 @@ export function WorkflowsPage() {
                         key={type}
                         type="button"
                         onClick={() => handleAddStep(type)}
-                        className="flex items-center gap-3 p-2.5 rounded-lg bg-[#1b1b1f]/80 hover:bg-[#2a292e] border border-[#2a292e] hover:border-[#49effd]/45 text-left transition-all active:scale-[0.98]"
+                        className="min-h-[54px] flex items-center gap-3 p-3 rounded-xl bg-[#1b1b1f]/80 hover:bg-[#2a292e] border border-[#2a292e] hover:border-[#49effd]/45 text-left transition-all active:scale-[0.98]"
                       >
-                        <div className={`p-2 rounded-lg border border-[#3b494b]/40 ${item.color}`}>
-                          <Icon size={16} />
+                        <div className={`p-2 rounded-lg border border-[#3b494b]/40 shrink-0 ${item.color}`}>
+                          <Icon size={17} />
                         </div>
                         <div className="min-w-0">
-                          <div className={`text-xs font-extrabold truncate ${item.textColor}`}>{item.label}</div>
-                          <div className="text-[10px] font-mono text-indigo-200/80 truncate">{item.desc}</div>
+                          <div className={`text-sm font-extrabold truncate ${item.textColor}`}>{item.label}</div>
+                          <div className="text-xs text-zinc-300 truncate">{item.desc}</div>
                         </div>
                       </button>
                     );
@@ -2257,15 +2797,15 @@ export function WorkflowsPage() {
               <button
                 type="button"
                 onClick={() => setShowAddMenu((v) => !v)}
-                className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-[0_0_24px_rgba(73,239,253,0.4)] transition-all active:scale-95 whitespace-nowrap shrink-0"
+                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono text-xs sm:text-sm font-extrabold uppercase tracking-wider flex items-center gap-2 shadow-[0_0_24px_rgba(73,239,253,0.4)] transition-all active:scale-95 whitespace-nowrap shrink-0"
               >
-                <Plus size={14} />
+                <Plus size={16} />
                 <span>Add Node</span>
               </button>
 
               {showAddMenu && (
-                <div className="wf-popover-enter absolute left-0 bottom-full mb-3 w-[min(20rem,calc(100vw-2.5rem))] bg-[#131317]/98 border border-[#49effd]/40 rounded-xl p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_20px_rgba(73,239,253,0.14)] backdrop-blur-2xl grid grid-cols-1 gap-1.5 max-h-96 overflow-y-auto">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider wf-label-gradient px-2.5 py-1 border-b border-[#2a292e]">
+                <div className="wf-popover-enter absolute left-0 bottom-full mb-3 w-[min(21rem,calc(100vw-2.5rem))] bg-[#131317]/98 border border-[#49effd]/40 rounded-2xl p-2.5 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_20px_rgba(73,239,253,0.14)] backdrop-blur-2xl grid grid-cols-1 gap-1.5 max-h-96 overflow-y-auto">
+                  <div className="text-xs font-mono font-bold uppercase tracking-wider wf-label-gradient px-2.5 py-1.5 border-b border-[#2a292e]">
                     Select Step Type
                   </div>
                   {(Object.keys(NODE_CONFIG) as WorkflowNodeType[]).map((type) => {
@@ -2276,14 +2816,14 @@ export function WorkflowsPage() {
                         key={type}
                         type="button"
                         onClick={() => handleAddStep(type)}
-                        className="flex items-center gap-3 p-2 rounded-lg bg-[#1b1b1f]/80 hover:bg-[#2a292e] border border-[#2a292e] hover:border-[#49effd]/45 text-left transition-all active:scale-[0.98]"
+                        className="min-h-[48px] flex items-center gap-3 p-2.5 rounded-xl bg-[#1b1b1f]/80 hover:bg-[#2a292e] border border-[#2a292e] hover:border-[#49effd]/45 text-left transition-all active:scale-[0.98]"
                       >
-                        <div className={`p-1.5 rounded-lg border border-[#3b494b]/40 ${item.color}`}>
-                          <Icon size={14} />
+                        <div className={`p-2 rounded-lg border border-[#3b494b]/40 shrink-0 ${item.color}`}>
+                          <Icon size={16} />
                         </div>
                         <div className="min-w-0">
-                          <div className={`text-xs font-extrabold truncate ${item.textColor}`}>{item.label}</div>
-                          <div className="text-[10px] font-mono text-indigo-200/80 truncate">{item.desc}</div>
+                          <div className={`text-sm font-extrabold truncate ${item.textColor}`}>{item.label}</div>
+                          <div className="text-xs text-zinc-300 truncate">{item.desc}</div>
                         </div>
                       </button>
                     );
@@ -2294,14 +2834,14 @@ export function WorkflowsPage() {
 
             {/* Phone Connect Mode Prompt Banner */}
             {connectSourceNodeId && (
-              <div className="wf-popover-enter absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-gradient-to-r from-[#49effd] to-[#00f0ff] text-[#00363b] font-mono font-extrabold text-[11px] uppercase tracking-wider px-4 py-2 rounded-lg shadow-[0_0_24px_rgba(73,239,253,0.45)] flex items-center gap-3">
+              <div className="wf-popover-enter absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-gradient-to-r from-[#49effd] to-[#00f0ff] text-[#00363b] font-mono font-extrabold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-[0_0_24px_rgba(73,239,253,0.45)] flex items-center gap-3">
                 <span>Tap a target node to connect</span>
                 <button
                   type="button"
                   onClick={() => setConnectSourceNodeId(null)}
-                  className="bg-[#00363b]/15 hover:bg-[#00363b]/30 p-1 rounded"
+                  className="bg-[#00363b]/15 hover:bg-[#00363b]/30 p-1.5 rounded-lg"
                 >
-                  <X size={12} />
+                  <X size={14} />
                 </button>
               </div>
             )}
@@ -2309,11 +2849,11 @@ export function WorkflowsPage() {
             {/* Branch choice modal if source is IF in connect mode */}
             {connectBranchPrompt && (
               <div className="wf-modal-backdrop absolute inset-0 z-50 bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-4">
-                <div className="wf-cyber-card wf-modal-panel rounded-xl p-5 max-w-xs w-full shadow-[0_20px_50px_rgba(0,0,0,0.85)] text-center space-y-4 backdrop-blur-2xl">
-                  <h4 className="text-sm font-extrabold text-[#e4e1e7] font-mono uppercase tracking-wider">
+                <div className="wf-cyber-card wf-modal-panel rounded-2xl p-5 max-w-xs w-full shadow-[0_20px_50px_rgba(0,0,0,0.85)] text-center space-y-4 backdrop-blur-2xl">
+                  <h4 className="text-base font-extrabold text-[#e4e1e7] font-mono uppercase tracking-wider">
                     Choose Condition Branch
                   </h4>
-                  <p className="text-xs text-[#b9cacb]">
+                  <p className="text-sm text-[#b9cacb]">
                     Connect on condition match (Yes) or condition fail (No)?
                   </p>
                   <div className="flex items-center justify-center gap-3">
@@ -2328,7 +2868,7 @@ export function WorkflowsPage() {
                         setConnectBranchPrompt(null);
                         setConnectSourceNodeId(null);
                       }}
-                      className="flex-1 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-[#00363b] font-mono font-extrabold text-xs uppercase tracking-wider active:scale-95 transition-all"
+                      className="flex-1 min-h-[42px] py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-[#00363b] font-mono font-extrabold text-xs uppercase tracking-wider active:scale-95 transition-all"
                     >
                       YES Branch
                     </button>
@@ -2343,7 +2883,7 @@ export function WorkflowsPage() {
                         setConnectBranchPrompt(null);
                         setConnectSourceNodeId(null);
                       }}
-                      className="flex-1 py-2 rounded-lg bg-[#ffb4ab] hover:brightness-110 text-[#131317] font-mono font-extrabold text-xs uppercase tracking-wider active:scale-95 transition-all"
+                      className="flex-1 min-h-[42px] py-2 rounded-xl bg-[#ffb4ab] hover:brightness-110 text-[#131317] font-mono font-extrabold text-xs uppercase tracking-wider active:scale-95 transition-all"
                     >
                       NO Branch
                     </button>
@@ -2351,7 +2891,7 @@ export function WorkflowsPage() {
                   <button
                     type="button"
                     onClick={() => setConnectBranchPrompt(null)}
-                    className="text-xs font-mono uppercase tracking-wider text-[#b9cacb] hover:text-[#e4e1e7]"
+                    className="min-h-[38px] px-4 text-xs font-mono uppercase tracking-wider text-[#b9cacb] hover:text-[#e4e1e7]"
                   >
                     Cancel
                   </button>
@@ -2361,24 +2901,24 @@ export function WorkflowsPage() {
 
             {/* Cyber Glassmorphic Inspector Drawer */}
             {selectedNode && (
-              <aside className="wf-drawer-enter absolute right-0 top-0 bottom-0 w-full sm:w-96 z-30 bg-[#131317]/95 border-l border-[#2a292e] shadow-[0_0_50px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-5 sm:p-6 flex flex-col justify-between overflow-y-auto">
+              <aside className="wf-drawer-enter absolute right-0 top-0 bottom-0 w-full sm:w-[420px] z-30 bg-[#131317]/95 border-l border-[#2a292e] shadow-[0_0_50px_rgba(0,0,0,0.85)] backdrop-blur-2xl p-5 sm:p-6 flex flex-col justify-between overflow-y-auto">
                 <div className="space-y-5">
                   <div className="flex items-center justify-between pb-4 border-b border-[#2a292e]">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`p-2 rounded-lg border border-[#3b494b]/40 flex-shrink-0 ${
+                        className={`p-2 rounded-xl border border-[#3b494b]/40 flex-shrink-0 ${
                           NODE_CONFIG[selectedNode.type]?.color
                         }`}
                       >
                         {React.createElement(NODE_CONFIG[selectedNode.type]?.icon || Sparkles, {
-                          size: 15,
+                          size: 16,
                         })}
                       </div>
                       <div className="min-w-0">
-                        <span className={`text-xs font-extrabold block truncate ${NODE_CONFIG[selectedNode.type]?.textColor || 'text-cyan-300'}`}>
+                        <span className={`text-sm font-extrabold block truncate ${NODE_CONFIG[selectedNode.type]?.textColor || 'text-cyan-300'}`}>
                           {selectedNode.label}
                         </span>
-                        <span className="text-[10px] font-mono uppercase tracking-wider wf-label-gradient block">
+                        <span className="text-xs font-mono uppercase tracking-wider wf-label-gradient block">
                           {NODE_CONFIG[selectedNode.type]?.label}
                         </span>
                       </div>
@@ -2386,15 +2926,15 @@ export function WorkflowsPage() {
                     <button
                       type="button"
                       onClick={() => setSelectedNodeId(null)}
-                      className="p-1.5 rounded-lg bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7]"
+                      className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7]"
                     >
-                      <X size={15} />
+                      <X size={17} />
                     </button>
                   </div>
 
                   {/* Step Label */}
                   <div>
-                    <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                    <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
                       Step Name
                     </label>
                     <input
@@ -2403,7 +2943,7 @@ export function WorkflowsPage() {
                       onChange={(e) =>
                         handleUpdateNode(selectedNode.id, 'label', e.target.value)
                       }
-                      className="wf-field-box w-full rounded-xl px-3 py-2 text-cyan-200 font-mono text-xs focus:outline-none"
+                      className="wf-field-box w-full min-h-[42px] rounded-xl px-3.5 py-2 text-cyan-200 font-mono text-base sm:text-sm focus:outline-none"
                     />
                   </div>
 
@@ -2413,6 +2953,8 @@ export function WorkflowsPage() {
                     allNodes={activeWorkflow.nodes}
                     edges={activeWorkflow.edges}
                     stepOutputs={stepOutputs}
+                    workflowVariables={activeWorkflowVariables}
+                    textComfortMode={textComfortMode}
                     viewMode={viewMode}
                     isWorkflowRunning={isRunning}
                     onRunSingleNode={handleRunSingleNode}
@@ -2429,9 +2971,9 @@ export function WorkflowsPage() {
                         setConnectSourceNodeId(selectedNode.id);
                         showToast('Connect mode active: Tap target node');
                       }}
-                      className="w-full py-2 rounded-lg bg-[#49effd]/12 hover:bg-[#49effd]/22 border border-[#49effd]/40 text-[#49effd] font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+                      className="w-full min-h-[42px] py-2 rounded-xl bg-[#49effd]/12 hover:bg-[#49effd]/22 border border-[#49effd]/40 text-[#49effd] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
                     >
-                      <GitBranch size={13} />
+                      <GitBranch size={15} />
                       <span>Connect to another node</span>
                     </button>
                   </div>
@@ -2443,10 +2985,10 @@ export function WorkflowsPage() {
                       className="pt-4 border-t border-[#2a292e] space-y-2"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient">
+                        <span className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient">
                           Recent Output
                         </span>
-                        {stepOutputs[selectedNode.id].type === 'text' && (
+                        {stepOutputs[selectedNode.id].type !== 'image' && (
                           <button
                             type="button"
                             onClick={() =>
@@ -2455,16 +2997,16 @@ export function WorkflowsPage() {
                                 `insp-out-${selectedNode.id}`,
                               )
                             }
-                            className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300 hover:text-[#49effd] px-2 py-0.5 rounded bg-[#0e0e12] border border-[#2a292e] flex items-center gap-1"
+                            className="min-h-[34px] text-xs font-mono font-bold text-cyan-300 hover:text-[#49effd] px-2.5 py-1 rounded-lg bg-[#0e0e12] border border-[#2a292e] flex items-center gap-1.5"
                           >
                             {copiedKey === `insp-out-${selectedNode.id}` ? (
                               <>
-                                <Check size={11} className="text-emerald-400" />
+                                <Check size={13} className="text-emerald-400" />
                                 <span className="text-emerald-300">Copied</span>
                               </>
                             ) : (
                               <>
-                                <Copy size={11} />
+                                <Copy size={13} />
                                 <span>Copy</span>
                               </>
                             )}
@@ -2479,7 +3021,11 @@ export function WorkflowsPage() {
                           className="rounded-lg max-h-60 object-contain w-full bg-[#0e0e12] border border-[#2a292e]"
                         />
                       ) : (
-                        <pre className="text-[11px] font-mono text-cyan-200 bg-[#0e0e12] border border-[#2a292e] p-3 rounded-lg max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed">
+                        <pre
+                          className={`${
+                            textComfortMode === 'large' ? 'text-base' : 'text-xs sm:text-sm'
+                          } font-mono text-cyan-200 bg-[#0e0e12] border border-[#2a292e] p-3 rounded-xl max-h-64 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed`}
+                        >
                           {stepOutputs[selectedNode.id].value}
                         </pre>
                       )}
@@ -2492,9 +3038,9 @@ export function WorkflowsPage() {
                   <button
                     type="button"
                     onClick={() => handleDeleteNode(selectedNode.id)}
-                    className="w-full py-2 rounded-lg bg-[#ffb4ab]/15 hover:bg-[#ffb4ab]/25 border border-[#ffb4ab]/40 text-[#ffb4ab] font-mono text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
+                    className="w-full min-h-[42px] py-2 rounded-xl bg-[#ffb4ab]/15 hover:bg-[#ffb4ab]/25 border border-[#ffb4ab]/40 text-[#ffb4ab] font-mono text-xs sm:text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-colors active:scale-[0.98]"
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={15} />
                     <span>Delete Step</span>
                   </button>
                 </div>
@@ -2508,37 +3054,81 @@ export function WorkflowsPage() {
           ref={finalOutputSectionRef}
           className="pt-8 pb-6 border-t border-white/[0.08] mt-8 space-y-4"
         >
-          <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="w-2.5 h-2.5 rounded-full bg-[#49effd] shadow-[0_0_10px_#49effd]" />
-              <h2 className="text-sm sm:text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider">
+              <h2 className="text-base sm:text-lg font-extrabold wf-gradient-title font-mono uppercase tracking-wider">
                 Final Pipeline Synthesis
               </h2>
               {lastExecutedNode && (
-                <span className="text-[11px] font-mono text-indigo-200 bg-[#0b0d14] border border-[#49effd]/30 px-2.5 py-0.5 rounded-lg shadow-[0_0_12px_rgba(73,239,253,0.1)]">
+                <span className="text-xs font-mono text-indigo-200 bg-[#0b0d14] border border-[#49effd]/30 px-2.5 py-1 rounded-lg shadow-[0_0_12px_rgba(73,239,253,0.1)]">
                   source: <span className="text-[#49effd] font-bold">{lastExecutedNode.label}</span>
                 </span>
               )}
             </div>
-            {lastExecutedOutput?.type === 'text' && (
-              <button
-                type="button"
-                onClick={() => handleCopyText(lastExecutedOutput.value, 'final-result')}
-                className="px-3.5 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-[#49effd]/45 text-cyan-300 font-mono text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all active:scale-95"
-              >
-                {copiedKey === 'final-result' ? (
-                  <>
-                    <Check size={13} className="text-emerald-400" />
-                    <span className="text-emerald-300">Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy size={13} className="text-[#49effd]" />
-                    <span>Copy Output</span>
-                  </>
-                )}
-              </button>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {runHistory.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => setShowRunDiffModal(true)}
+                  className="min-h-[40px] px-3 py-1.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/40 text-violet-200 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                  title="Compare outputs and timing across two runs"
+                >
+                  <GitCompare size={14} className="text-violet-300" />
+                  <span>Compare Runs</span>
+                </button>
+              )}
+              {lastExecutedOutput && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleExportReport('md')}
+                    className="min-h-[40px] px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-emerald-400/45 text-emerald-300 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export full run report as Markdown"
+                  >
+                    <Download size={14} />
+                    <span>.md</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportReport('txt')}
+                    className="min-h-[40px] px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-sky-400/45 text-sky-300 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export final output as plain text"
+                  >
+                    <FileText size={14} />
+                    <span>.txt</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportReport('json')}
+                    className="min-h-[40px] px-3 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-amber-400/45 text-amber-300 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+                    title="Export full run trace as JSON"
+                  >
+                    <Download size={14} />
+                    <span>.json</span>
+                  </button>
+                </>
+              )}
+              {lastExecutedOutput && lastExecutedOutput.type !== 'image' && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(lastExecutedOutput.value, 'final-result')}
+                  className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-[#141722] hover:bg-[#1c2030] border border-white/10 hover:border-[#49effd]/45 text-cyan-300 text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all active:scale-95"
+                >
+                  {copiedKey === 'final-result' ? (
+                    <>
+                      <Check size={14} className="text-emerald-400" />
+                      <span className="text-emerald-300">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} className="text-[#49effd]" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           {lastExecutedOutput ? (
@@ -2546,8 +3136,12 @@ export function WorkflowsPage() {
               <div className="wf-cyber-card rounded-2xl p-4 sm:p-5 relative overflow-hidden">
                 <div className="mc-laser-line opacity-85" />
                 <div className="mc-laser-line-bottom opacity-55" />
-                {lastExecutedOutput.type === 'text' && (
-                  <pre className="text-xs sm:text-sm text-cyan-200 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto leading-relaxed bg-[#090b10]/95 border border-white/10 rounded-xl p-4 shadow-inner">
+                {lastExecutedOutput.type !== 'image' && (
+                  <pre
+                    className={`${
+                      textComfortMode === 'large' ? 'text-base sm:text-lg' : 'text-sm sm:text-[15px]'
+                    } text-cyan-100 font-mono whitespace-pre-wrap break-words max-h-[28rem] overflow-y-auto leading-relaxed bg-[#090b10]/95 border border-white/10 rounded-xl p-4 shadow-inner`}
+                  >
                     {lastExecutedOutput.value}
                   </pre>
                 )}
@@ -2566,9 +3160,9 @@ export function WorkflowsPage() {
                       download="nexus-workflow-result.png"
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#49effd] to-[#22d3ee] hover:brightness-110 text-[#00363b] font-mono text-[11px] font-extrabold uppercase tracking-wider shadow-[0_0_22px_rgba(73,239,253,0.4)] transition-all active:scale-95"
+                      className="min-h-[42px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-[#49effd] to-[#22d3ee] hover:brightness-110 text-[#00363b] font-mono text-xs sm:text-sm font-extrabold uppercase tracking-wider shadow-[0_0_22px_rgba(73,239,253,0.4)] transition-all active:scale-95"
                     >
-                      <Download size={14} />
+                      <Download size={15} />
                       <span>Download Image</span>
                     </a>
                   </div>
@@ -2576,7 +3170,7 @@ export function WorkflowsPage() {
               </div>
             </div>
           ) : (
-            <div className="wf-cyber-card rounded-2xl py-5 px-5 text-xs font-mono wf-rainbow-subtext">
+            <div className="wf-cyber-card rounded-2xl py-5 px-5 text-sm font-mono wf-rainbow-subtext">
               No pipeline output recorded in this session yet. Click{' '}
               <span className="text-[#49effd] font-bold uppercase">Run</span> to execute steps.
             </div>
@@ -2589,7 +3183,7 @@ export function WorkflowsPage() {
           className="pt-6 border-t border-white/[0.08] space-y-3"
         >
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider">
+            <div className="flex items-center gap-2 text-sm font-mono uppercase tracking-wider">
               <span className="w-1.5 h-1.5 rounded-full bg-[#49effd] shadow-[0_0_8px_#49effd]" />
               <span className="font-bold wf-gradient-title">Execution Trace</span>
               <span aria-hidden="true" className="text-white/20">·</span>
@@ -2601,7 +3195,7 @@ export function WorkflowsPage() {
               <button
                 type="button"
                 onClick={() => setRunLogs([])}
-                className="font-mono text-[11px] font-bold uppercase tracking-wider text-rose-300 hover:text-[#49effd] px-2.5 py-1 rounded-lg bg-[#0b0d14] hover:bg-[#141722] border border-white/10 transition-colors"
+                className="min-h-[38px] font-mono text-xs font-bold uppercase tracking-wider text-rose-300 hover:text-[#49effd] px-3 py-1.5 rounded-lg bg-[#0b0d14] hover:bg-[#141722] border border-white/10 transition-colors"
               >
                 Clear Trace
               </button>
@@ -2609,35 +3203,35 @@ export function WorkflowsPage() {
           </div>
 
           {runLogs.length > 0 ? (
-            <div className="wf-cyber-card rounded-2xl overflow-hidden divide-y divide-white/[0.06] max-h-60 overflow-y-auto">
+            <div className="wf-cyber-card rounded-2xl overflow-hidden divide-y divide-white/[0.06] max-h-64 overflow-y-auto">
               {runLogs.map((log) => (
                 <div
                   key={log.id}
-                  className="flex items-center justify-between py-2.5 px-4 hover:bg-white/[0.03] text-xs font-mono tabular-nums transition-colors gap-2"
+                  className="flex items-center justify-between py-3 px-4 hover:bg-white/[0.03] text-xs sm:text-sm font-mono tabular-nums transition-colors gap-2"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     {log.status === 'done' ? (
-                      <CheckCircle2 size={13} className="text-emerald-400 flex-shrink-0" />
+                      <CheckCircle2 size={15} className="text-emerald-400 flex-shrink-0" />
                     ) : (
-                      <AlertCircle size={13} className="text-[#ffb4ab] flex-shrink-0" />
+                      <AlertCircle size={15} className="text-[#ffb4ab] flex-shrink-0" />
                     )}
                     <span className="font-bold text-cyan-200 truncate">
                       {log.label}
                     </span>
                     <span aria-hidden="true" className="text-[#3b494b] hidden sm:inline">·</span>
-                    <span className="text-[10px] uppercase tracking-wider text-fuchsia-300 bg-[#0e0e12] border border-[#2a292e] px-1.5 py-0.5 rounded hidden sm:inline">
+                    <span className="text-xs uppercase tracking-wider text-fuchsia-300 bg-[#0e0e12] border border-[#2a292e] px-2 py-0.5 rounded hidden sm:inline">
                       {log.type}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className="text-emerald-300 font-bold">{log.durationMs}ms</span>
-                    <span className="text-[11px] text-amber-300/80">{log.timestamp}</span>
+                    <span className="text-xs text-amber-300/80">{log.timestamp}</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="wf-cyber-card rounded-xl py-3.5 px-4 text-xs font-mono text-zinc-400">
+            <div className="wf-cyber-card rounded-xl py-4 px-4 text-sm font-mono text-zinc-400">
               No trace events logged yet.
             </div>
           )}
@@ -2647,22 +3241,37 @@ export function WorkflowsPage() {
 
       {/* ================= CYBER RUN HISTORY MODAL ================= */}
       {showHistoryModal && (
-        <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-          <div className="wf-cyber-card wf-modal-panel rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-4 backdrop-blur-2xl max-h-[85vh] flex flex-col">
+        <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="wf-cyber-card wf-modal-panel rounded-t-3xl sm:rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-4 backdrop-blur-2xl max-h-[88dvh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between gap-2 border-b border-[#2a292e] pb-3 shrink-0">
               <div className="min-w-0 flex-1 pr-2">
-                <h3 className="text-sm sm:text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2 min-w-0">
-                  <History size={16} className="text-[#49effd] shrink-0" />
+                <h3 className="text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2 min-w-0">
+                  <History size={17} className="text-[#49effd] shrink-0" />
                   <span className="truncate">
                     History · {activeWorkflow.name.length > 24 ? `${activeWorkflow.name.slice(0, 24)}…` : activeWorkflow.name}
                   </span>
                 </h3>
-                <p className="text-xs wf-rainbow-subtext mt-0.5 truncate">
+                <p className="text-xs sm:text-sm wf-rainbow-subtext mt-0.5 truncate">
                   Last 20 runs recorded for this workflow pipeline.
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {runHistory.length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowHistoryModal(false);
+                      setSelectedRunDetail(null);
+                      setShowRunDiffModal(true);
+                    }}
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold bg-violet-500/15 hover:bg-violet-500/25 text-violet-200 border border-violet-400/40 transition-colors flex items-center gap-1.5"
+                    title="Compare two runs side-by-side"
+                  >
+                    <GitCompare size={14} />
+                    <span>Compare</span>
+                  </button>
+                )}
                 {runHistory.length > 0 && (
                   <button
                     type="button"
@@ -2672,10 +3281,10 @@ export function WorkflowsPage() {
                       setSelectedRunDetail(null);
                       showToast('Run history cleared');
                     }}
-                    className="px-2.5 py-1 rounded-lg text-xs font-mono font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors flex items-center gap-1"
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-mono font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-colors flex items-center gap-1.5"
                     title="Clear history for this workflow"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={14} />
                     <span className="hidden sm:inline">Clear</span>
                   </button>
                 )}
@@ -2685,9 +3294,9 @@ export function WorkflowsPage() {
                     setShowHistoryModal(false);
                     setSelectedRunDetail(null);
                   }}
-                  className="p-1.5 rounded-lg bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7] transition-colors"
+                  className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7] transition-colors"
                 >
-                  <X size={16} />
+                  <X size={17} />
                 </button>
               </div>
             </div>
@@ -2695,22 +3304,22 @@ export function WorkflowsPage() {
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
               {runHistory.length === 0 ? (
-                <div className="py-12 text-center text-zinc-400 font-mono text-xs">
-                  <Clock size={28} className="mx-auto mb-2.5 text-zinc-600 opacity-60" />
+                <div className="py-12 text-center text-zinc-400 font-mono text-sm">
+                  <Clock size={30} className="mx-auto mb-2.5 text-zinc-600 opacity-60" />
                   <p>No runs recorded for this workflow yet.</p>
-                  <p className="text-[11px] text-zinc-500 mt-1">
+                  <p className="text-xs text-zinc-500 mt-1">
                     Execute the pipeline to record your first run history.
                   </p>
                 </div>
               ) : selectedRunDetail ? (
                 /* Detail View of a Single Run */
                 <div className="space-y-4 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#0b0d14] border border-[#2a292e]">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap p-3 rounded-xl bg-[#0b0d14] border border-[#2a292e]">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
                         onClick={() => setSelectedRunDetail(null)}
-                        className="px-2 py-1 rounded-lg text-xs font-mono bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 transition-colors"
+                        className="min-h-[38px] px-3 py-1 rounded-xl text-xs font-mono bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 transition-colors"
                       >
                         ← Back to List
                       </button>
@@ -2721,7 +3330,7 @@ export function WorkflowsPage() {
 
                     <div className="flex items-center gap-2">
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono font-bold uppercase tracking-wider ${
                           selectedRunDetail.status === 'success'
                             ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
                             : selectedRunDetail.status === 'error'
@@ -2729,13 +3338,13 @@ export function WorkflowsPage() {
                             : 'bg-amber-500/15 border border-amber-500/40 text-amber-300'
                         }`}
                       >
-                        {selectedRunDetail.status === 'success' && <CheckCircle2 size={10} />}
-                        {selectedRunDetail.status === 'error' && <AlertCircle size={10} />}
-                        {selectedRunDetail.status === 'stopped' && <Square size={10} />}
+                        {selectedRunDetail.status === 'success' && <CheckCircle2 size={12} />}
+                        {selectedRunDetail.status === 'error' && <AlertCircle size={12} />}
+                        {selectedRunDetail.status === 'stopped' && <Square size={12} />}
                         <span>{selectedRunDetail.status}</span>
                       </span>
 
-                      <span className="text-xs font-mono font-bold text-emerald-300">
+                      <span className="text-sm font-mono font-bold text-emerald-300">
                         {(selectedRunDetail.durationMs / 1000).toFixed(1)}s
                       </span>
                     </div>
@@ -2744,26 +3353,26 @@ export function WorkflowsPage() {
                   {/* Step Breakdown */}
                   <div>
                     <h4 className="text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider mb-2">
-                      Step Telemetry ({selectedRunDetail.steps.length} steps)
+                      Step Breakdown ({selectedRunDetail.steps.length} steps)
                     </h4>
                     <div className="space-y-2">
                       {selectedRunDetail.steps.map((st, idx) => (
                         <div
                           key={`${st.nodeId}-${idx}`}
-                          className="p-3 rounded-xl bg-[#0e0e12] border border-[#2a292e] flex flex-col gap-1.5"
+                          className="p-3.5 rounded-xl bg-[#0e0e12] border border-[#2a292e] flex flex-col gap-1.5"
                         >
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-[10px] font-mono text-zinc-500">#{idx + 1}</span>
-                              <span className="text-xs font-bold text-cyan-200 truncate">{st.label}</span>
-                              <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-zinc-800 text-fuchsia-300 border border-zinc-700">
+                              <span className="text-xs font-mono text-zinc-500">#{idx + 1}</span>
+                              <span className="text-sm font-bold text-cyan-200 truncate">{st.label}</span>
+                              <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-zinc-800 text-fuchsia-300 border border-zinc-700">
                                 {st.type}
                               </span>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
                               <span
-                                className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${
+                                className={`text-xs font-mono uppercase px-2 py-0.5 rounded ${
                                   st.status === 'done'
                                     ? 'text-emerald-300 bg-emerald-500/10'
                                     : st.status === 'error'
@@ -2782,7 +3391,7 @@ export function WorkflowsPage() {
                           </div>
 
                           {st.outputSummary && (
-                            <p className="text-[11px] font-mono text-zinc-300 bg-[#080b12] rounded px-2 py-1 border border-zinc-800/80 truncate">
+                            <p className="text-xs font-mono text-zinc-300 bg-[#080b12] rounded-lg px-2.5 py-1.5 border border-zinc-800/80 truncate">
                               Summary:{' '}
                               {st.outputSummary === '[1 image]' || st.outputSummary.startsWith('data:image/')
                                 ? '🖼️ 1 image'
@@ -2791,7 +3400,7 @@ export function WorkflowsPage() {
                           )}
 
                           {st.error && (
-                            <p className="text-[11px] font-mono text-rose-300 bg-rose-950/20 rounded px-2 py-1 border border-rose-900/40">
+                            <p className="text-xs font-mono text-rose-300 bg-rose-950/20 rounded-lg px-2.5 py-1.5 border border-rose-900/40">
                               Error: {st.error}
                             </p>
                           )}
@@ -2806,7 +3415,7 @@ export function WorkflowsPage() {
                       <h4 className="text-xs font-mono font-bold text-zinc-300 uppercase tracking-wider">
                         Final Output
                       </h4>
-                      <pre className="p-3 rounded-xl bg-[#080b12] border border-cyan-500/25 text-cyan-100 font-mono text-xs whitespace-pre-wrap break-words max-h-48 overflow-y-auto leading-relaxed">
+                      <pre className="p-3.5 rounded-xl bg-[#080b12] border border-cyan-500/25 text-cyan-100 font-mono text-sm whitespace-pre-wrap break-words max-h-52 overflow-y-auto leading-relaxed">
                         {selectedRunDetail.finalOutput === '[1 image]' ||
                         selectedRunDetail.finalOutput.startsWith('data:image/')
                           ? '🖼️ 1 image'
@@ -2825,26 +3434,26 @@ export function WorkflowsPage() {
                         setSelectedRunDetail(null);
                         handleRun();
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono font-extrabold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(73,239,253,0.3)] disabled:opacity-40"
+                      className="min-h-[42px] px-4 py-2 rounded-xl bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono font-extrabold text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(73,239,253,0.3)] disabled:opacity-40"
                     >
-                      <Play size={12} className="fill-[#00363b]" />
+                      <Play size={14} className="fill-[#00363b]" />
                       <span>Re-run Workflow</span>
                     </button>
                   </div>
                 </div>
               ) : (
                 /* Run List (Newest first) */
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {runHistory.map((run, idx) => (
                     <div
                       key={run.id || idx}
                       onClick={() => setSelectedRunDetail(run)}
-                      className="p-3.5 rounded-xl bg-[#0e0e12] hover:bg-[#1b1b1f] border border-[#2a292e] hover:border-[#49effd]/40 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+                      className="p-4 rounded-xl bg-[#0e0e12] hover:bg-[#1b1b1f] border border-[#2a292e] hover:border-[#49effd]/40 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
                     >
-                      <div className="min-w-0 space-y-1 flex-1">
+                      <div className="min-w-0 space-y-1.5 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider ${
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-mono font-bold uppercase tracking-wider ${
                               run.status === 'success'
                                 ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300'
                                 : run.status === 'error'
@@ -2852,27 +3461,27 @@ export function WorkflowsPage() {
                                 : 'bg-amber-500/15 border border-amber-500/40 text-amber-300'
                             }`}
                           >
-                            {run.status === 'success' && <CheckCircle2 size={10} />}
-                            {run.status === 'error' && <AlertCircle size={10} />}
-                            {run.status === 'stopped' && <Square size={10} />}
+                            {run.status === 'success' && <CheckCircle2 size={12} />}
+                            {run.status === 'error' && <AlertCircle size={12} />}
+                            {run.status === 'stopped' && <Square size={12} />}
                             <span>{run.status}</span>
                           </span>
 
-                          <span className="text-xs font-mono text-zinc-300">
+                          <span className="text-xs sm:text-sm font-mono text-zinc-300">
                             {new Date(run.startedAt).toLocaleString()}
                           </span>
 
-                          <span className="text-xs font-mono font-bold text-emerald-300 ml-auto sm:ml-0">
+                          <span className="text-xs sm:text-sm font-mono font-bold text-emerald-300 ml-auto sm:ml-0">
                             {(run.durationMs / 1000).toFixed(1)}s
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+                        <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
                           <span>{run.steps?.length || 0} steps</span>
                           {run.finalOutput && (
                             <>
                               <span>·</span>
-                              <span className="truncate max-w-[280px] text-zinc-500">
+                              <span className="truncate max-w-[280px] text-zinc-400">
                                 {run.finalOutput === '[1 image]' || run.finalOutput.startsWith('data:image/')
                                   ? '🖼️ 1 image'
                                   : run.finalOutput.length > 60
@@ -2884,7 +3493,7 @@ export function WorkflowsPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
                         <button
                           type="button"
                           disabled={isRunning}
@@ -2893,15 +3502,15 @@ export function WorkflowsPage() {
                             setShowHistoryModal(false);
                             handleRun();
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 font-mono text-[11px] flex items-center gap-1 transition-colors disabled:opacity-40"
+                          className="min-h-[38px] px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-300 border border-zinc-700 font-mono text-xs flex items-center gap-1.5 transition-colors disabled:opacity-40"
                           title="Run this workflow again"
                         >
-                          <Play size={10} className="fill-cyan-300" />
+                          <Play size={12} className="fill-cyan-300" />
                           <span>Re-run</span>
                         </button>
 
-                        <span className="text-zinc-500 group-hover:text-cyan-300 transition-colors text-xs font-mono">
-                          View details →
+                        <span className="text-zinc-400 group-hover:text-cyan-300 transition-colors text-xs sm:text-sm font-mono">
+                          Details →
                         </span>
                       </div>
                     </div>
@@ -2915,41 +3524,41 @@ export function WorkflowsPage() {
 
       {/* ================= CYBER TEMPLATES MODAL ================= */}
       {showTemplatesModal && (
-        <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="wf-cyber-card wf-modal-panel rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-5 backdrop-blur-2xl">
-            <div className="flex items-center justify-between border-b border-[#2a292e] pb-4">
+        <div className="wf-modal-backdrop fixed inset-0 z-[1300] bg-[#0e0e12]/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="wf-cyber-card wf-modal-panel rounded-t-3xl sm:rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-[0_24px_64px_rgba(0,0,0,0.85),0_0_24px_rgba(73,239,253,0.14)] space-y-5 backdrop-blur-2xl max-h-[88dvh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-[#2a292e] pb-4 shrink-0">
               <div>
-                <h3 className="text-base font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles size={15} className="text-[#49effd]" />
+                <h3 className="text-base sm:text-lg font-extrabold wf-gradient-title font-mono uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles size={16} className="text-[#49effd]" />
                   <span>Pipeline Templates</span>
                 </h3>
-                <p className="text-xs wf-rainbow-subtext mt-0.5">
+                <p className="text-xs sm:text-sm wf-rainbow-subtext mt-0.5">
                   Load pre-configured multi-step workflows.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTemplatesModal(false)}
-                className="p-1.5 rounded-lg bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7]"
+                className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl bg-[#0e0e12] hover:bg-[#2a292e] border border-[#2a292e] text-[#b9cacb] hover:text-[#e4e1e7]"
               >
-                <X size={16} />
+                <X size={17} />
               </button>
             </div>
 
-            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1">
               {DEFAULT_WORKFLOW_TEMPLATES.map((tmpl) => (
                 <div
                   key={tmpl.name}
-                  className="p-3.5 rounded-xl bg-[#0e0e12] hover:bg-[#1b1b1f] border border-[#2a292e] hover:border-[#49effd]/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="p-4 rounded-xl bg-[#0e0e12] hover:bg-[#1b1b1f] border border-[#2a292e] hover:border-[#49effd]/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
-                  <div className="space-y-1 min-w-0">
-                    <h4 className="text-sm font-bold wf-step-title-gradient">{tmpl.name}</h4>
-                    <p className="text-xs text-indigo-200/85 leading-relaxed">{tmpl.description}</p>
-                    <div className="flex items-center gap-2 pt-1 text-[10px] font-mono uppercase tracking-wider tabular-nums text-[#49effd]">
-                      <span className="bg-[#1b1b1f] border border-[#2a292e] px-2 py-0.5 rounded text-cyan-300">
+                  <div className="space-y-1.5 min-w-0">
+                    <h4 className="text-sm sm:text-base font-bold wf-step-title-gradient">{tmpl.name}</h4>
+                    <p className="text-xs sm:text-sm text-indigo-200/85 leading-relaxed">{tmpl.description}</p>
+                    <div className="flex items-center gap-2 pt-1 text-xs font-mono uppercase tracking-wider tabular-nums text-[#49effd]">
+                      <span className="bg-[#1b1b1f] border border-[#2a292e] px-2.5 py-0.5 rounded-md text-cyan-300">
                         {tmpl.nodes.length} steps
                       </span>
-                      <span className="bg-[#1b1b1f] border border-[#2a292e] px-2 py-0.5 rounded text-fuchsia-300">
+                      <span className="bg-[#1b1b1f] border border-[#2a292e] px-2.5 py-0.5 rounded-md text-fuchsia-300">
                         {tmpl.edges.length} links
                       </span>
                     </div>
@@ -2957,7 +3566,7 @@ export function WorkflowsPage() {
                   <button
                     type="button"
                     onClick={() => handleApplyTemplate(tmpl)}
-                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono font-extrabold text-[11px] uppercase tracking-wider flex-shrink-0 transition-all shadow-[0_0_16px_rgba(73,239,253,0.3)] active:scale-95 whitespace-nowrap"
+                    className="min-h-[42px] px-4 py-2 rounded-xl bg-gradient-to-r from-[#49effd] to-[#00f0ff] hover:brightness-110 text-[#00363b] font-mono font-extrabold text-xs sm:text-sm uppercase tracking-wider flex-shrink-0 transition-all shadow-[0_0_16px_rgba(73,239,253,0.3)] active:scale-95 whitespace-nowrap"
                   >
                     Use Template
                   </button>
@@ -2967,6 +3576,83 @@ export function WorkflowsPage() {
           </div>
         </div>
       )}
+
+      {/* ================= 10 POWER FEATURES: MODALS & DRAWERS ================= */}
+      <WorkflowAiGeneratorModal
+        isOpen={showAiGeneratorModal}
+        onClose={() => setShowAiGeneratorModal(false)}
+        onApplyWorkflow={(wf) => {
+          setWorkflows((prev) => [wf, ...prev]);
+          setActiveWorkflowId(wf.id);
+          setSelectedNodeId(null);
+          handleClearResults();
+          showToast(`AI generated "${wf.name}"`);
+        }}
+      />
+
+      <WorkflowVariablesModal
+        isOpen={showVariablesModal}
+        onClose={() => setShowVariablesModal(false)}
+        variables={activeWorkflowVariables}
+        onSaveVariables={(nextVars) => {
+          updateCurrentWorkflow((wf) => ({ ...wf, variables: nextVars }));
+          showToast(`Saved ${nextVars.length} workflow variable${nextVars.length === 1 ? '' : 's'}`);
+        }}
+        onRunWithVariables={(vals) => executeWorkflowRun(undefined, vals)}
+        isRunning={isRunning}
+      />
+
+      <WorkflowValidatorPanel
+        isOpen={showValidatorPanel}
+        onClose={() => setShowValidatorPanel(false)}
+        issues={validationIssues}
+        onFocusNode={handleJumpToNode}
+      />
+
+      <WorkflowBatchRunnerModal
+        isOpen={showBatchRunnerModal}
+        onClose={() => setShowBatchRunnerModal(false)}
+        workflow={activeWorkflow}
+      />
+
+      <WorkflowRunDiffModal
+        isOpen={showRunDiffModal}
+        onClose={() => setShowRunDiffModal(false)}
+        runs={runHistory}
+      />
+
+      <WorkflowLibraryDrawer
+        isOpen={showLibraryDrawer}
+        onClose={() => setShowLibraryDrawer(false)}
+        workflows={workflows}
+        activeWorkflowId={activeWorkflow.id}
+        onSelectWorkflow={(id) => {
+          setActiveWorkflowId(id);
+          setSelectedNodeId(null);
+          handleClearResults();
+        }}
+        onCreateNew={handleCreateNew}
+        onTogglePin={handleTogglePinWorkflow}
+        onDuplicateWorkflow={handleDuplicateWorkflowById}
+        onDeleteWorkflow={handleDeleteWorkflowById}
+        onUpdateMeta={handleUpdateWorkflowMeta}
+      />
+
+      <WorkflowQuickJumpModal
+        isOpen={showQuickJumpModal}
+        onClose={() => setShowQuickJumpModal(false)}
+        nodes={activeWorkflow.nodes}
+        onJumpToNode={handleJumpToNode}
+        onRun={handleRun}
+        onOpenAiGenerator={() => setShowAiGeneratorModal(true)}
+        onOpenBatchRunner={() => setShowBatchRunnerModal(true)}
+        onOpenVariables={() => setShowVariablesModal(true)}
+        onOpenValidator={() => setShowValidatorPanel(true)}
+        onOpenLibrary={() => setShowLibraryDrawer(true)}
+        onOpenHistory={() => setShowHistoryModal(true)}
+        onToggleViewMode={() => setViewMode((m) => (m === 'list' ? 'canvas' : 'list'))}
+        viewMode={viewMode}
+      />
     </div>
   );
 }
@@ -2992,14 +3678,15 @@ interface VariableFieldProps {
   earlierSteps: WorkflowNode[];
   allNodes: WorkflowNode[];
   stepOutputs: Record<string, WorkflowOutput>;
+  workflowVariables?: WorkflowVariable[];
+  textComfortMode?: 'normal' | 'large';
 }
 
 /**
  * Reusable text/textarea field with:
- * 1) "{ } Insert variable" button & popover showing earlier steps + 40-char output snippet
- * 2) "{{" autocomplete dropdown filtered by label (Escape to close)
- * 3) Live preview line under the field replacing placeholders with 60-char output,
- *    "Label (not run yet)" indicator, or "unknown step" indicator.
+ * 1) "{ } Insert variable" button & popover showing earlier steps + global {{vars.key}} variables
+ * 2) "{{" autocomplete dropdown filtered by step label or variable key (Escape to close)
+ * 3) Live preview line under the field resolving both {{Step.output}} and {{vars.key}}
  */
 function VariableField({
   label,
@@ -3012,6 +3699,8 @@ function VariableField({
   earlierSteps,
   allNodes,
   stepOutputs,
+  workflowVariables = [],
+  textComfortMode = 'normal',
 }: VariableFieldProps) {
   const fieldRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const [showInsertMenu, setShowInsertMenu] = useState(false);
@@ -3060,20 +3749,30 @@ function VariableField({
     }
   };
 
-  const handleInsertVariableAtCursor = (step: WorkflowNode) => {
-    const tag = `{{${step.label}.output}}`;
-    const el = fieldRef.current;
-    const start =
-      el && typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
-    const end =
-      el && typeof el.selectionEnd === 'number' ? el.selectionEnd : value.length;
+  const insertRawTagAtCursor = (tag: string, replaceAutocomplete = false) => {
+    let nextValue: string;
+    let nextCursor: number;
 
-    const nextValue = value.slice(0, start) + tag + value.slice(end);
+    if (replaceAutocomplete && autocompleteState) {
+      nextValue =
+        value.slice(0, autocompleteState.startIndex) +
+        tag +
+        value.slice(autocompleteState.endIndex);
+      nextCursor = autocompleteState.startIndex + tag.length;
+    } else {
+      const el = fieldRef.current;
+      const start =
+        el && typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
+      const end =
+        el && typeof el.selectionEnd === 'number' ? el.selectionEnd : value.length;
+      nextValue = value.slice(0, start) + tag + value.slice(end);
+      nextCursor = start + tag.length;
+    }
+
     onChange(nextValue);
     setShowInsertMenu(false);
     setAutocompleteState(null);
 
-    const nextCursor = start + tag.length;
     requestAnimationFrame(() => {
       if (fieldRef.current) {
         fieldRef.current.focus();
@@ -3082,27 +3781,16 @@ function VariableField({
     });
   };
 
-  const handleSelectAutocomplete = (step: WorkflowNode) => {
-    if (!autocompleteState) {
-      handleInsertVariableAtCursor(step);
-      return;
-    }
-    const tag = `{{${step.label}.output}}`;
-    const nextValue =
-      value.slice(0, autocompleteState.startIndex) +
-      tag +
-      value.slice(autocompleteState.endIndex);
-    onChange(nextValue);
-    const nextCursor = autocompleteState.startIndex + tag.length;
-    setAutocompleteState(null);
-    setShowInsertMenu(false);
+  const handleInsertVariableAtCursor = (step: WorkflowNode) => {
+    insertRawTagAtCursor(`{{${step.label}.output}}`, false);
+  };
 
-    requestAnimationFrame(() => {
-      if (fieldRef.current) {
-        fieldRef.current.focus();
-        fieldRef.current.setSelectionRange(nextCursor, nextCursor);
-      }
-    });
+  const handleSelectAutocomplete = (step: WorkflowNode) => {
+    insertRawTagAtCursor(`{{${step.label}.output}}`, Boolean(autocompleteState));
+  };
+
+  const handleInsertWorkflowVar = (variable: WorkflowVariable, replaceAutocomplete = false) => {
+    insertRawTagAtCursor(`{{vars.${variable.key}}}`, replaceAutocomplete);
   };
 
   const filteredAutocompleteSteps = useMemo(() => {
@@ -3111,6 +3799,18 @@ function VariableField({
     if (!q) return earlierSteps;
     return earlierSteps.filter((s) => s.label.toLowerCase().includes(q));
   }, [autocompleteState, earlierSteps]);
+
+  const filteredAutocompleteVars = useMemo(() => {
+    if (!autocompleteState) return [];
+    const q = autocompleteState.query.trim().toLowerCase();
+    if (!q) return workflowVariables;
+    return workflowVariables.filter(
+      (v) =>
+        v.key.toLowerCase().includes(q) ||
+        `vars.${v.key}`.toLowerCase().includes(q) ||
+        (v.label || '').toLowerCase().includes(q),
+    );
+  }, [autocompleteState, workflowVariables]);
 
   const previewSegments = useMemo(() => {
     if (!value) return [];
@@ -3121,7 +3821,7 @@ function VariableField({
       | { kind: 'unknown'; rawName: string }
     > = [];
 
-    const regex = /\{\{\s*([^}]+?)\.output\s*\}\}/gi;
+    const regex = /\{\{\s*(vars\.([a-zA-Z0-9_-]+)|([^}]+?)\.output)\s*\}\}/gi;
     let lastIndex = 0;
     let match: RegExpExecArray | null;
 
@@ -3132,41 +3832,64 @@ function VariableField({
           text: value.slice(lastIndex, match.index),
         });
       }
-      const rawKey = match[1].trim();
-      const matchedNode = allNodes.find(
-        (n) =>
-          n.id !== currentNodeId &&
-          (n.id.trim().toLowerCase() === rawKey.toLowerCase() ||
-            n.label.trim().toLowerCase() === rawKey.toLowerCase()),
-      );
 
-      if (!matchedNode) {
-        segments.push({ kind: 'unknown', rawName: rawKey });
-      } else {
-        const isFrozen = matchedNode.settings?.frozen === 'true' || Boolean(matchedNode.frozen);
-        const out =
-          stepOutputs[matchedNode.id] ||
-          (isFrozen && matchedNode.mockOutput) ||
-          (isFrozen && matchedNode.settings?.mockValue
-            ? {
-                type: (matchedNode.settings.mockType as 'text' | 'json' | 'image') || 'text',
-                value: matchedNode.settings.mockValue,
-              }
-            : undefined);
-        if (out && out.value !== undefined && out.value !== '') {
-          const displayVal =
-            out.type === 'image'
-              ? '[1 image]'
-              : out.value.length > 60
-              ? out.value.slice(0, 60) + '…'
-              : out.value;
-          segments.push({
-            kind: 'resolved',
-            label: matchedNode.label,
-            text: isFrozen ? `❄️ ${displayVal}` : displayVal,
-          });
+      const varKey = match[2]?.trim();
+      const stepKey = match[3]?.trim();
+
+      if (varKey) {
+        const matchedVar = workflowVariables.find(
+          (v) => v.key.trim().toLowerCase() === varKey.toLowerCase(),
+        );
+        if (!matchedVar) {
+          segments.push({ kind: 'unknown', rawName: `vars.${varKey}` });
         } else {
-          segments.push({ kind: 'unrun', label: matchedNode.label });
+          const val = matchedVar.defaultValue ?? matchedVar.example ?? '';
+          if (val !== '') {
+            segments.push({
+              kind: 'resolved',
+              label: `vars.${matchedVar.key}`,
+              text: val.length > 60 ? `${val.slice(0, 60)}…` : val,
+            });
+          } else {
+            segments.push({ kind: 'unrun', label: `vars.${matchedVar.key} (empty)` });
+          }
+        }
+      } else if (stepKey) {
+        const matchedNode = allNodes.find(
+          (n) =>
+            n.id !== currentNodeId &&
+            (n.id.trim().toLowerCase() === stepKey.toLowerCase() ||
+              n.label.trim().toLowerCase() === stepKey.toLowerCase()),
+        );
+
+        if (!matchedNode) {
+          segments.push({ kind: 'unknown', rawName: stepKey });
+        } else {
+          const isFrozen = matchedNode.settings?.frozen === 'true' || Boolean(matchedNode.frozen);
+          const out =
+            stepOutputs[matchedNode.id] ||
+            (isFrozen && matchedNode.mockOutput) ||
+            (isFrozen && matchedNode.settings?.mockValue
+              ? {
+                  type: (matchedNode.settings.mockType as 'text' | 'json' | 'image') || 'text',
+                  value: matchedNode.settings.mockValue,
+                }
+              : undefined);
+          if (out && out.value !== undefined && out.value !== '') {
+            const displayVal =
+              out.type === 'image'
+                ? '[1 image]'
+                : out.value.length > 60
+                ? out.value.slice(0, 60) + '…'
+                : out.value;
+            segments.push({
+              kind: 'resolved',
+              label: matchedNode.label,
+              text: isFrozen ? `❄️ ${displayVal}` : displayVal,
+            });
+          } else {
+            segments.push({ kind: 'unrun', label: matchedNode.label });
+          }
         }
       }
 
@@ -3178,10 +3901,10 @@ function VariableField({
     }
 
     return segments;
-  }, [value, allNodes, currentNodeId, stepOutputs]);
+  }, [value, allNodes, currentNodeId, stepOutputs, workflowVariables]);
 
   const hasAnyPlaceholder = useMemo(
-    () => /\{\{\s*([^}]+?)\.output\s*\}\}/i.test(value || ''),
+    () => /\{\{\s*(vars\.[a-zA-Z0-9_-]+|[^}]+?\.output)\s*\}\}/i.test(value || ''),
     [value],
   );
 
@@ -3215,31 +3938,66 @@ function VariableField({
         type="button"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => onPick(step)}
-        className="w-full flex items-center justify-between gap-2.5 p-2 rounded-lg hover:bg-[#49effd]/15 active:bg-[#49effd]/25 text-left transition-colors"
+        className="w-full min-h-[44px] flex items-center justify-between gap-2.5 p-2.5 rounded-xl hover:bg-[#49effd]/15 active:bg-[#49effd]/25 text-left transition-colors"
       >
         <div className="flex items-center gap-2 min-w-0">
-          <div className={`p-1.5 rounded-md border border-[#3b494b]/40 flex-shrink-0 ${cfg.color}`}>
-            <StepIcon size={13} />
+          <div className={`p-1.5 rounded-lg border border-[#3b494b]/40 flex-shrink-0 ${cfg.color}`}>
+            <StepIcon size={14} />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-bold text-[#e4e1e7] truncate">{step.label}</div>
-            <div className="text-[10px] font-mono text-[#b9cacb] truncate">
+            <div className="text-xs sm:text-sm font-bold text-[#e4e1e7] truncate">{step.label}</div>
+            <div className="text-xs font-mono text-[#b9cacb] truncate">
               {snippet ? snippet : 'No output yet'}
             </div>
           </div>
         </div>
-        <span className="text-[10px] font-mono text-[#49effd] bg-[#0e0e12] border border-[#2a292e] px-1.5 py-0.5 rounded flex-shrink-0">
+        <span className="text-xs font-mono text-[#49effd] bg-[#0e0e12] border border-[#2a292e] px-2 py-0.5 rounded-md flex-shrink-0">
           {`{{${step.label}.output}}`}
         </span>
       </button>
     );
   };
 
+  const renderVarPickerRow = (
+    variable: WorkflowVariable,
+    onPick: (v: WorkflowVariable) => void,
+  ) => (
+    <button
+      key={variable.key}
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onPick(variable)}
+      className="w-full min-h-[44px] flex items-center justify-between gap-2.5 p-2.5 rounded-xl hover:bg-sky-500/15 active:bg-sky-500/25 text-left transition-colors"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="p-1.5 rounded-lg border border-sky-400/35 bg-sky-500/15 text-sky-300 flex-shrink-0">
+          <Sliders size={14} />
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs sm:text-sm font-bold text-sky-100 truncate">
+            {variable.label || variable.key}
+          </div>
+          <div className="text-xs font-mono text-zinc-400 truncate">
+            {variable.defaultValue || variable.example || 'No default value'}
+          </div>
+        </div>
+      </div>
+      <span className="text-xs font-mono text-sky-300 bg-[#0e0e12] border border-sky-500/30 px-2 py-0.5 rounded-md flex-shrink-0">
+        {`{{vars.${variable.key}}}`}
+      </span>
+    </button>
+  );
+
+  const inputTextClass =
+    textComfortMode === 'large'
+      ? 'text-base sm:text-base'
+      : 'text-base sm:text-sm';
+
   return (
     <div className="relative space-y-1.5">
       {/* Header row with label and "{ } Insert variable" button */}
-      <div className="flex items-center justify-between gap-2">
-        <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient">
           {label}
         </label>
         <button
@@ -3249,8 +4007,8 @@ function VariableField({
             setShowInsertMenu((prev) => !prev);
             setAutocompleteState(null);
           }}
-          className="px-2.5 py-1 rounded-md bg-gradient-to-r from-[#49effd]/15 to-fuchsia-500/15 hover:from-[#49effd]/25 hover:to-fuchsia-500/25 border border-[#49effd]/40 text-[#49effd] text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
-          title="Insert output variable from an earlier step"
+          className="min-h-[36px] px-3 py-1 rounded-lg bg-gradient-to-r from-[#49effd]/15 to-fuchsia-500/15 hover:from-[#49effd]/25 hover:to-fuchsia-500/25 border border-[#49effd]/40 text-[#49effd] text-xs font-mono font-bold flex items-center gap-1 transition-all active:scale-95"
+          title="Insert output variable from an earlier step or global variable"
         >
           <span>{'{ } Insert variable'}</span>
         </button>
@@ -3258,28 +4016,31 @@ function VariableField({
 
       {/* "{ } Insert variable" Dropdown List */}
       {showInsertMenu && (
-        <div className="wf-popover-enter z-30 rounded-xl bg-[#131317]/98 border border-[#49effd]/40 p-2.5 shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl space-y-1.5">
+        <div className="wf-popover-enter z-30 rounded-xl bg-[#131317]/98 border border-[#49effd]/40 p-2.5 shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl space-y-2">
           <div className="flex items-center justify-between px-1 pb-1.5 border-b border-[#2a292e]">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider wf-label-gradient">
-              Earlier steps ({earlierSteps.length})
+            <span className="text-xs font-mono font-bold uppercase tracking-wider wf-label-gradient">
+              Steps ({earlierSteps.length}) & Global Vars ({workflowVariables.length})
             </span>
             <button
               type="button"
               onClick={() => setShowInsertMenu(false)}
-              className="text-[#b9cacb] hover:text-[#e4e1e7] p-0.5"
+              className="text-[#b9cacb] hover:text-[#e4e1e7] p-1"
             >
-              <X size={12} />
+              <X size={14} />
             </button>
           </div>
-          {earlierSteps.length > 0 ? (
-            <div className="space-y-0.5 max-h-48 overflow-y-auto pr-0.5">
+          {earlierSteps.length > 0 || workflowVariables.length > 0 ? (
+            <div className="space-y-1 max-h-56 overflow-y-auto pr-0.5">
+              {workflowVariables.map((v) =>
+                renderVarPickerRow(v, (picked) => handleInsertWorkflowVar(picked, false)),
+              )}
               {earlierSteps.map((step) =>
                 renderStepPickerRow(step, handleInsertVariableAtCursor),
               )}
             </div>
           ) : (
-            <div className="text-[11px] font-mono text-amber-300/90 py-2 px-1">
-              No earlier connected steps can reach this step yet.
+            <div className="text-xs font-mono text-amber-300/90 py-2 px-1">
+              No earlier steps or global variables available yet. Add a global variable via the Vars button.
             </div>
           )}
         </div>
@@ -3300,7 +4061,7 @@ function VariableField({
             )
           }
           placeholder={placeholder}
-          className="wf-field-box w-full rounded-xl p-3 text-cyan-200 placeholder-indigo-300/40 text-xs focus:outline-none font-mono resize-y"
+          className={`wf-field-box w-full rounded-xl p-3.5 text-cyan-100 placeholder-indigo-300/45 ${inputTextClass} leading-relaxed focus:outline-none font-mono resize-y`}
         />
       ) : (
         <input
@@ -3316,7 +4077,7 @@ function VariableField({
             )
           }
           placeholder={placeholder}
-          className="wf-field-box w-full rounded-xl px-3.5 py-2.5 text-cyan-200 placeholder-indigo-300/40 text-xs focus:outline-none font-mono"
+          className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2.5 text-cyan-100 placeholder-indigo-300/45 ${inputTextClass} focus:outline-none font-mono`}
         />
       )}
 
@@ -3324,26 +4085,29 @@ function VariableField({
       {autocompleteState && (
         <div className="wf-popover-enter z-30 rounded-xl bg-[#131317]/98 border border-[#49effd]/40 p-2.5 shadow-[0_16px_40px_rgba(0,0,0,0.85)] backdrop-blur-2xl space-y-1.5">
           <div className="flex items-center justify-between px-1 pb-1.5 border-b border-[#2a292e]">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#49effd]">
-              Autocomplete variable {autocompleteState.query ? `“${autocompleteState.query}”` : ''}
+            <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#49effd]">
+              Autocomplete {autocompleteState.query ? `“${autocompleteState.query}”` : ''}
             </span>
             <button
               type="button"
               onClick={() => setAutocompleteState(null)}
-              className="text-[10px] text-[#b9cacb] hover:text-[#e4e1e7] font-mono uppercase"
+              className="text-xs text-[#b9cacb] hover:text-[#e4e1e7] font-mono uppercase px-1.5 py-0.5"
             >
               Esc
             </button>
           </div>
-          {filteredAutocompleteSteps.length > 0 ? (
-            <div className="space-y-0.5 max-h-44 overflow-y-auto pr-0.5">
+          {filteredAutocompleteSteps.length > 0 || filteredAutocompleteVars.length > 0 ? (
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+              {filteredAutocompleteVars.map((v) =>
+                renderVarPickerRow(v, (picked) => handleInsertWorkflowVar(picked, true)),
+              )}
               {filteredAutocompleteSteps.map((step) =>
                 renderStepPickerRow(step, handleSelectAutocomplete),
               )}
             </div>
           ) : (
-            <div className="text-[11px] font-mono text-[#b9cacb] py-1.5 px-1">
-              No matching earlier steps found.
+            <div className="text-xs font-mono text-[#b9cacb] py-1.5 px-1">
+              No matching steps or global variables found.
             </div>
           )}
         </div>
@@ -3351,8 +4115,8 @@ function VariableField({
 
       {/* Live Preview line under the field */}
       {(hasAnyPlaceholder || value.includes('{{')) && (
-        <div className="py-1.5 px-2.5 rounded-lg bg-[#0e0e12] border border-[#2a292e] text-[11px] font-mono text-[#e4e1e7] leading-relaxed break-words">
-          <span className="text-[10px] uppercase tracking-wider text-[#49effd] font-bold mr-1.5 select-none">
+        <div className="py-2 px-3 rounded-xl bg-[#0e0e12] border border-[#2a292e] text-xs font-mono text-[#e4e1e7] leading-relaxed break-words">
+          <span className="text-xs uppercase tracking-wider text-[#49effd] font-bold mr-1.5 select-none">
             Preview:
           </span>
           {previewSegments.map((seg, idx) => {
@@ -3385,7 +4149,7 @@ function VariableField({
                 key={idx}
                 className="text-[#ffb4ab] mx-0.5"
               >
-                [{seg.rawName}: unknown step]
+                [{seg.rawName}: unknown]
               </span>
             );
           })}
@@ -3403,6 +4167,8 @@ interface StepSettingsFormProps {
   allNodes: WorkflowNode[];
   edges?: WorkflowEdge[];
   stepOutputs?: Record<string, WorkflowOutput>;
+  workflowVariables?: WorkflowVariable[];
+  textComfortMode?: 'normal' | 'large';
   viewMode?: 'list' | 'canvas';
   isWorkflowRunning?: boolean;
   onRunSingleNode?: (nodeId: string) => void;
@@ -3414,6 +4180,8 @@ export function StepSettingsForm({
   allNodes,
   edges = [],
   stepOutputs = {},
+  workflowVariables = [],
+  textComfortMode = 'normal',
   viewMode = 'list',
   isWorkflowRunning = false,
   onRunSingleNode,
@@ -3421,6 +4189,10 @@ export function StepSettingsForm({
 }: StepSettingsFormProps) {
   const settings = node.settings || {};
   const isFrozen = settings.frozen === 'true';
+  const continueOnError = settings.continueOnError === 'true';
+  const retryCount = settings.retries || '0';
+  const controlTextClass =
+    textComfortMode === 'large' ? 'text-base' : 'text-base sm:text-sm';
 
   const [configuredProviders, setConfiguredProviders] = useState<AIProviderConfig[]>(() => {
     try {
@@ -3497,19 +4269,27 @@ export function StepSettingsForm({
     return idx > 0 ? allNodes.slice(0, idx) : [];
   }, [allNodes, edges, node.id, viewMode]);
 
+  const variableMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const v of workflowVariables) {
+      if (v.key.trim()) map[v.key.trim()] = v.defaultValue ?? v.example ?? '';
+    }
+    return map;
+  }, [workflowVariables]);
+
   const resolvedSettings = useMemo(() => {
-    return resolveNodeSettings(node, allNodes, stepOutputs);
-  }, [node, allNodes, stepOutputs]);
+    return resolveNodeSettings(node, allNodes, stepOutputs, variableMap);
+  }, [node, allNodes, stepOutputs, variableMap]);
 
   const hasAnyVariables = useMemo(() => {
     return Object.values(settings).some((val) =>
-      /\{\{\s*([^}]+?)\.output\s*\}\}/i.test(val || ''),
+      /\{\{\s*(vars\.[a-zA-Z0-9_-]+|[^}]+?\.output)\s*\}\}/i.test(val || ''),
     );
   }, [settings]);
 
   const resolvedPreviewList = useMemo(() => {
     return Object.entries(settings)
-      .filter(([, v]) => /\{\{\s*([^}]+?)\.output\s*\}\}/i.test(v || ''))
+      .filter(([, v]) => /\{\{\s*(vars\.[a-zA-Z0-9_-]+|[^}]+?\.output)\s*\}\}/i.test(v || ''))
       .map(([k]) => ({
         field:
           k === 'query'
@@ -3518,6 +4298,10 @@ export function StepSettingsForm({
             ? 'AI Prompt'
             : k === 'url'
             ? 'Target URL'
+            : k === 'input'
+            ? 'Transform Input'
+            : k === 'template'
+            ? 'Merge Template'
             : k,
         resolved: resolvedSettings[k] || '',
       }));
@@ -3526,17 +4310,17 @@ export function StepSettingsForm({
   return (
     <div className="space-y-4">
       {/* Interactive Step Debugger & Runner Card */}
-      <div className="p-3.5 rounded-xl bg-[#0b0d14] border border-[#49effd]/25 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-3">
+      <div className="p-4 rounded-xl bg-[#0b0d14] border border-[#49effd]/25 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="p-1 rounded-md bg-[#49effd]/15 border border-[#49effd]/40 text-[#49effd]">
-              <Sparkles size={13} />
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 rounded-lg bg-[#49effd]/15 border border-[#49effd]/40 text-[#49effd]">
+              <Sparkles size={14} />
             </span>
             <div>
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-200 block">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-200 block">
                 Step Debugger
               </span>
-              <span className="text-[10px] text-cyan-300/70 block">
+              <span className="text-xs text-cyan-300/75 block">
                 Test and inspect this step in isolation
               </span>
             </div>
@@ -3547,31 +4331,31 @@ export function StepSettingsForm({
               type="button"
               disabled={isWorkflowRunning}
               onClick={() => onRunSingleNode(node.id)}
-              className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-40 active:scale-95 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
+              className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 font-mono text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all disabled:opacity-40 active:scale-95 shadow-[0_0_12px_rgba(16,185,129,0.25)]"
               title="Execute only this step with current inputs"
             >
-              <Play size={11} className="fill-emerald-400 text-emerald-400" />
-              <span>Test This Step</span>
+              <Play size={13} className="fill-emerald-400 text-emerald-400" />
+              <span>Test Step</span>
             </button>
           )}
         </div>
 
         {/* Live Resolved Inputs Preview */}
         {hasAnyVariables && (
-          <div className="pt-2 border-t border-[#2a292e] space-y-2">
-            <span className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-[#49effd] block select-none">
+          <div className="pt-2.5 border-t border-[#2a292e] space-y-2">
+            <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-[#49effd] block select-none">
               Live Resolved Inputs:
             </span>
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {resolvedPreviewList.map((item, idx) => (
                 <div
                   key={idx}
-                  className="bg-[#131317] rounded-lg p-2 border border-[#2a292e] text-[11px] font-mono"
+                  className="bg-[#131317] rounded-xl p-2.5 border border-[#2a292e] text-xs font-mono"
                 >
-                  <div className="text-[10px] text-[#49effd] font-bold uppercase tracking-wider mb-0.5">
+                  <div className="text-xs text-[#49effd] font-bold uppercase tracking-wider mb-1">
                     {item.field}
                   </div>
-                  <div className="text-cyan-100 whitespace-pre-wrap break-words max-h-24 overflow-y-auto leading-relaxed">
+                  <div className="text-cyan-100 whitespace-pre-wrap break-words max-h-28 overflow-y-auto leading-relaxed">
                     {item.resolved || <span className="text-[#94a3b8] italic">(empty)</span>}
                   </div>
                 </div>
@@ -3582,24 +4366,24 @@ export function StepSettingsForm({
       </div>
 
       {/* Freeze / Mock Output Toggle Card */}
-      <div className="p-3.5 rounded-xl bg-[#0b0d14] border border-cyan-400/30 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-2.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-[#0b0d14] border border-cyan-400/30 shadow-[0_4px_20px_rgba(0,0,0,0.5)] space-y-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
             <span
-              className={`p-1 rounded-md border ${
+              className={`p-1.5 rounded-lg border shrink-0 ${
                 isFrozen
                   ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200'
                   : 'bg-[#1b1b1f] border-white/10 text-[#b9cacb]'
               }`}
             >
-              <Snowflake size={13} className={isFrozen ? 'text-cyan-300 animate-pulse' : ''} />
+              <Snowflake size={14} className={isFrozen ? 'text-cyan-300 animate-pulse' : ''} />
             </span>
             <div>
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-200 block">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-200 block">
                 Freeze Output (Mock / Cache)
               </span>
-              <span className="text-[10px] text-cyan-300/70 block">
-                Lock step output so downstream nodes run instantly without API calls
+              <span className="text-xs text-cyan-300/75 block">
+                Lock output so downstream steps run instantly without API calls
               </span>
             </div>
           </div>
@@ -3616,16 +4400,16 @@ export function StepSettingsForm({
               }
               onUpdateSettings(nextSettings);
             }}
-            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${
               isFrozen
                 ? 'bg-cyan-400 border-cyan-300 shadow-[0_0_12px_rgba(73,239,253,0.35)]'
                 : 'bg-[#2a292e] border-[#3b494b]'
             }`}
           >
             <span
-              className={`pointer-events-none inline-block h-3.5 w-3.5 mt-0.5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
+              className={`pointer-events-none inline-block h-4 w-4 mt-0.5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
                 isFrozen
-                  ? 'translate-x-4 bg-[#131317]'
+                  ? 'translate-x-5 bg-[#131317]'
                   : 'translate-x-0.5 bg-[#b9cacb]'
               }`}
             />
@@ -3634,16 +4418,16 @@ export function StepSettingsForm({
 
         {/* When Frozen: Mock Output Value Editor */}
         {isFrozen && (
-          <div className="pt-2 border-t border-[#2a292e] space-y-2">
-            <div className="flex items-center justify-between flex-wrap gap-1">
-              <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+          <div className="pt-2.5 border-t border-[#2a292e] space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-1.5">
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
                 <span>Mock Output Payload</span>
-                <span className="text-[9px] text-[#94a3b8] font-normal lowercase">
+                <span className="text-xs text-[#94a3b8] font-normal lowercase">
                   ({(settings.mockValue || '').length} chars)
                 </span>
               </label>
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 {stepOutputs[node.id]?.value && (
                   <button
                     type="button"
@@ -3655,10 +4439,10 @@ export function StepSettingsForm({
                         mockType: stepOutputs[node.id].type || 'text',
                       });
                     }}
-                    className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-300 hover:text-[#49effd] px-2 py-0.5 rounded bg-[#131317] border border-cyan-500/35 flex items-center gap-1 transition-colors"
+                    className="min-h-[34px] text-xs font-mono font-bold text-cyan-300 hover:text-[#49effd] px-2.5 py-1 rounded-lg bg-[#131317] border border-cyan-500/35 flex items-center gap-1 transition-colors"
                     title="Copy last execution output into mock payload"
                   >
-                    <Copy size={10} />
+                    <Copy size={12} />
                     <span>Use Last Output</span>
                   </button>
                 )}
@@ -3671,10 +4455,10 @@ export function StepSettingsForm({
                         mockValue: '',
                       });
                     }}
-                    className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#ffb4ab] hover:bg-[#ffb4ab]/15 px-2 py-0.5 rounded bg-[#131317] border border-[#ffb4ab]/30 flex items-center gap-1 transition-colors"
+                    className="min-h-[34px] text-xs font-mono font-bold text-[#ffb4ab] hover:bg-[#ffb4ab]/15 px-2.5 py-1 rounded-lg bg-[#131317] border border-[#ffb4ab]/30 flex items-center gap-1 transition-colors"
                     title="Clear mock payload"
                   >
-                    <X size={10} />
+                    <X size={12} />
                     <span>Clear</span>
                   </button>
                 )}
@@ -3686,22 +4470,104 @@ export function StepSettingsForm({
               value={settings.mockValue || ''}
               onChange={(e) => handleChange('mockValue', e.target.value)}
               placeholder="Paste or edit the mock text to feed downstream steps..."
-              className="wf-field-box w-full rounded-xl p-2.5 text-cyan-200 placeholder-indigo-300/40 text-xs focus:outline-none font-mono resize-y"
+              className={`wf-field-box w-full rounded-xl p-3 text-cyan-200 placeholder-indigo-300/45 ${controlTextClass} focus:outline-none font-mono resize-y`}
             />
-            <p className="text-[10px] font-mono text-cyan-300/75">
-              ⚡ Downstream nodes will use this mocked payload without executing real API calls.
+            <p className="text-xs font-mono text-cyan-300/80">
+              Downstream nodes will use this mocked payload without executing real API calls.
             </p>
           </div>
         )}
       </div>
 
+      {/* Error Resilience: Retries & Fallback Card (non-input nodes) */}
+      {node.type !== 'input' && (
+        <div className="p-4 rounded-xl bg-[#0b0d14] border border-amber-400/25 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <span className="p-1.5 rounded-lg bg-amber-500/15 border border-amber-400/35 text-amber-300 shrink-0">
+                <ShieldAlert size={14} />
+              </span>
+              <div>
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-200 block">
+                  Error Resilience
+                </span>
+                <span className="text-xs text-zinc-400 block">
+                  Auto-retry flaky APIs or continue with fallback text
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-mono text-zinc-400">Retries:</label>
+              <select
+                value={retryCount}
+                onChange={(e) => handleChange('retries', e.target.value)}
+                className="wf-field-box min-h-[38px] rounded-lg px-2.5 py-1 text-amber-200 text-sm font-mono focus:outline-none"
+              >
+                <option value="0" className="bg-[#0b0d14]">0 (None)</option>
+                <option value="1" className="bg-[#0b0d14]">1 extra</option>
+                <option value="2" className="bg-[#0b0d14]">2 extra</option>
+                <option value="3" className="bg-[#0b0d14]">3 extra</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/[0.06]">
+            <div>
+              <span className="text-xs font-semibold text-zinc-200 block">
+                Continue workflow on error
+              </span>
+              <span className="text-xs text-zinc-400 block">
+                Keep downstream steps running using fallback value if this step fails
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={continueOnError}
+              onClick={() =>
+                handleChange('continueOnError', continueOnError ? 'false' : 'true')
+              }
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${
+                continueOnError
+                  ? 'bg-emerald-400 border-emerald-300'
+                  : 'bg-[#2a292e] border-[#3b494b]'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 mt-0.5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
+                  continueOnError
+                    ? 'translate-x-5 bg-[#131317]'
+                    : 'translate-x-0.5 bg-[#b9cacb]'
+                }`}
+              />
+            </button>
+          </div>
+
+          {continueOnError && (
+            <div>
+              <label className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-300 block mb-1.5">
+                Fallback Output Value
+              </label>
+              <input
+                type="text"
+                value={settings.fallbackValue || ''}
+                onChange={(e) => handleChange('fallbackValue', e.target.value)}
+                placeholder="e.g. Data unavailable — proceeding with remaining context."
+                className={`wf-field-box w-full min-h-[42px] rounded-xl px-3.5 py-2 text-amber-100 placeholder-zinc-500 ${controlTextClass} font-mono focus:outline-none`}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Disable this step toggle */}
-      <div className="flex items-center justify-between py-2.5 px-3 rounded-lg bg-[#0e0e12] border border-[#2a292e]">
+      <div className="flex items-center justify-between gap-3 py-3 px-3.5 rounded-xl bg-[#0e0e12] border border-[#2a292e]">
         <div>
-          <span className="text-[11px] font-mono font-bold uppercase tracking-wider wf-label-gradient block">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider wf-label-gradient block">
             Disable this step
           </span>
-          <span className="text-[11px] text-indigo-200/80 block">
+          <span className="text-xs text-indigo-200/80 block">
             Skip execution and pass through parent output
           </span>
         </div>
@@ -3712,16 +4578,16 @@ export function StepSettingsForm({
           onClick={() =>
             handleChange('disabled', settings.disabled === 'true' ? 'false' : 'true')
           }
-          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border transition-colors duration-200 ease-in-out focus:outline-none ${
             settings.disabled === 'true'
               ? 'bg-amber-400 border-amber-300'
               : 'bg-[#2a292e] border-[#3b494b]'
           }`}
         >
           <span
-            className={`pointer-events-none inline-block h-3.5 w-3.5 mt-0.5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
+            className={`pointer-events-none inline-block h-4 w-4 mt-0.5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out ${
               settings.disabled === 'true'
-                ? 'translate-x-4 bg-[#131317]'
+                ? 'translate-x-5 bg-[#131317]'
                 : 'translate-x-0.5 bg-[#b9cacb]'
             }`}
           />
@@ -3731,7 +4597,7 @@ export function StepSettingsForm({
       {/* Node Type Specific Inputs */}
       {node.type === 'input' && (
         <div>
-          <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+          <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
             Input Text Payload
           </label>
           <textarea
@@ -3739,7 +4605,7 @@ export function StepSettingsForm({
             value={settings.text || ''}
             onChange={(e) => handleChange('text', e.target.value)}
             placeholder="Type your initial input text or prompt..."
-            className="wf-field-box w-full rounded-xl p-3 text-cyan-200 placeholder-indigo-300/40 text-xs focus:outline-none font-mono resize-y"
+            className={`wf-field-box w-full rounded-xl p-3.5 text-cyan-100 placeholder-indigo-300/45 ${controlTextClass} leading-relaxed focus:outline-none font-mono resize-y`}
           />
         </div>
       )}
@@ -3754,6 +4620,8 @@ export function StepSettingsForm({
           earlierSteps={earlierSteps}
           allNodes={allNodes}
           stepOutputs={stepOutputs}
+          workflowVariables={workflowVariables}
+          textComfortMode={textComfortMode}
         />
       )}
 
@@ -3767,6 +4635,8 @@ export function StepSettingsForm({
           earlierSteps={earlierSteps}
           allNodes={allNodes}
           stepOutputs={stepOutputs}
+          workflowVariables={workflowVariables}
+          textComfortMode={textComfortMode}
         />
       )}
 
@@ -3780,6 +4650,8 @@ export function StepSettingsForm({
           earlierSteps={earlierSteps}
           allNodes={allNodes}
           stepOutputs={stepOutputs}
+          workflowVariables={workflowVariables}
+          textComfortMode={textComfortMode}
         />
       )}
 
@@ -3787,8 +4659,8 @@ export function StepSettingsForm({
         <div className="space-y-3.5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
-                AI provider
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                AI Provider
               </label>
               <select
                 value={settings.providerId || ''}
@@ -3805,7 +4677,7 @@ export function StepSettingsForm({
                     handleChange('modelId', firstModel);
                   }
                 }}
-                className="wf-field-box w-full rounded-xl px-3 py-2 text-violet-200 text-xs font-mono focus:outline-none"
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-violet-200 ${controlTextClass} font-mono focus:outline-none`}
               >
                 <option value="" className="bg-[#0b0d14]">Use my active AI</option>
                 <option value="existing" className="bg-[#0b0d14]">Default Built-in AI</option>
@@ -3819,13 +4691,13 @@ export function StepSettingsForm({
 
             {Boolean(settings.providerId) && settings.providerId !== 'existing' && (
               <div>
-                <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
                   Model
                 </label>
                 <select
                   value={settings.modelId || (selectedProviderModels[0]?.id || '')}
                   onChange={(e) => handleChange('modelId', e.target.value)}
-                  className="wf-field-box w-full rounded-xl px-3 py-2 text-cyan-200 text-xs font-mono focus:outline-none"
+                  className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-cyan-200 ${controlTextClass} font-mono focus:outline-none`}
                 >
                   {selectedProviderModels.length > 0 ? (
                     selectedProviderModels.map((m) => (
@@ -3843,13 +4715,13 @@ export function StepSettingsForm({
             )}
 
             <div>
-              <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
                 AI Persona Role
               </label>
               <select
                 value={settings.role || 'general'}
                 onChange={(e) => handleChange('role', e.target.value)}
-                className="wf-field-box w-full rounded-xl px-3 py-2 text-fuchsia-200 text-xs font-mono focus:outline-none"
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-fuchsia-200 ${controlTextClass} font-mono focus:outline-none`}
               >
                 <option value="general" className="bg-[#0b0d14]">General Assistant (Comprehensive)</option>
                 <option value="coder" className="bg-[#0b0d14]">Coder (Clean code & explanations)</option>
@@ -3859,7 +4731,7 @@ export function StepSettingsForm({
             </div>
 
             <div>
-              <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
                 Skill (optional)
               </label>
               {(() => {
@@ -3876,7 +4748,7 @@ export function StepSettingsForm({
                     <select
                       value={rawSkillId}
                       onChange={(e) => handleChange('skillId', e.target.value)}
-                      className="wf-field-box w-full rounded-xl px-3 py-2 text-emerald-200 text-xs font-mono focus:outline-none"
+                      className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-emerald-200 ${controlTextClass} font-mono focus:outline-none`}
                     >
                       <option value="" className="bg-[#0b0d14]">None</option>
                       {savedSkills.map((skill) => (
@@ -3891,15 +4763,15 @@ export function StepSettingsForm({
                       )}
                     </select>
                     {isSkillMissing ? (
-                      <p className="text-[10px] font-mono text-amber-300 mt-1">
+                      <p className="text-xs font-mono text-amber-300 mt-1">
                         Skill not found (will run without a skill)
                       </p>
                     ) : matchedSkill ? (
-                      <p className="text-[10px] font-mono text-emerald-300/90 mt-1">
+                      <p className="text-xs font-mono text-emerald-300/90 mt-1">
                         ~{Math.max(0.1, Number((estimateTokens(matchedSkill.text.length) / 1000).toFixed(1)))}k tokens added to this step
                       </p>
                     ) : savedSkills.length === 0 ? (
-                      <p className="text-[10px] font-mono text-indigo-300/80 mt-1">
+                      <p className="text-xs font-mono text-indigo-300/80 mt-1">
                         No skills yet. Add one in Settings → Skills.
                       </p>
                     ) : null}
@@ -3909,7 +4781,7 @@ export function StepSettingsForm({
             </div>
 
             <div>
-              <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
                 Max answer length (tokens)
               </label>
               <input
@@ -3920,9 +4792,9 @@ export function StepSettingsForm({
                 value={settings.maxTokens ?? '1500'}
                 onChange={(e) => handleChange('maxTokens', e.target.value)}
                 placeholder="1500"
-                className="wf-field-box w-full rounded-xl px-3 py-2 text-amber-200 text-xs focus:outline-none font-mono tabular-nums"
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-amber-200 ${controlTextClass} focus:outline-none font-mono tabular-nums`}
               />
-              <p className="text-[10px] font-mono text-indigo-300/80 mt-1">
+              <p className="text-xs font-mono text-indigo-300/80 mt-1">
                 Longer answers need a higher number.
               </p>
             </div>
@@ -3939,6 +4811,8 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
         </div>
       )}
@@ -3955,6 +4829,8 @@ export function StepSettingsForm({
           earlierSteps={earlierSteps}
           allNodes={allNodes}
           stepOutputs={stepOutputs}
+          workflowVariables={workflowVariables}
+          textComfortMode={textComfortMode}
         />
       )}
 
@@ -3968,12 +4844,14 @@ export function StepSettingsForm({
           earlierSteps={earlierSteps}
           allNodes={allNodes}
           stepOutputs={stepOutputs}
+          workflowVariables={workflowVariables}
+          textComfortMode={textComfortMode}
         />
       )}
 
       {node.type === 'nasa' && (
-        <div className="py-2.5 px-3 rounded-lg bg-[#49effd]/10 border border-[#49effd]/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
-          <Rocket size={15} className="text-[#49effd] flex-shrink-0" />
+        <div className="py-3 px-3.5 rounded-xl bg-[#49effd]/10 border border-[#49effd]/35 text-[#e4e1e7] font-mono text-xs sm:text-sm flex items-center gap-2.5">
+          <Rocket size={16} className="text-[#49effd] flex-shrink-0" />
           <span>
             Fetches the latest Astronomy Picture of the Day (APOD) directly from NASA telemetry. No fields required.
           </span>
@@ -3991,9 +4869,11 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
-          <div className="py-2.5 px-3 rounded-lg bg-orange-500/10 border border-orange-400/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
-            <FileText size={15} className="text-orange-300 flex-shrink-0" />
+          <div className="py-3 px-3.5 rounded-xl bg-orange-500/10 border border-orange-400/35 text-[#e4e1e7] font-mono text-xs sm:text-sm flex items-center gap-2.5">
+            <FileText size={16} className="text-orange-300 flex-shrink-0" />
             <span>Extracts text from PDF, DOCX, TXT, MD, CSV, JSON, or HTML. 8 MB / 24k character limit.</span>
           </div>
         </div>
@@ -4010,6 +4890,8 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
           <VariableField
             label="Subject"
@@ -4020,6 +4902,8 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
           <VariableField
             label="Email Body"
@@ -4032,9 +4916,11 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
-          <div className="py-2.5 px-3 rounded-lg bg-cyan-500/10 border border-cyan-400/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
-            <Mail size={15} className="text-cyan-300 flex-shrink-0" />
+          <div className="py-3 px-3.5 rounded-xl bg-cyan-500/10 border border-cyan-400/35 text-[#e4e1e7] font-mono text-xs sm:text-sm flex items-center gap-2.5">
+            <Mail size={16} className="text-cyan-300 flex-shrink-0" />
             <span>Sent server-side through Resend. Requires RESEND_API_KEY and EMAIL_FROM on the server.</span>
           </div>
         </div>
@@ -4051,6 +4937,8 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
           <VariableField
             label="Payload"
@@ -4063,10 +4951,168 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
-          <div className="py-2.5 px-3 rounded-lg bg-lime-500/10 border border-lime-400/35 text-[#e4e1e7] font-mono text-xs flex items-center gap-2.5">
-            <Webhook size={15} className="text-lime-300 flex-shrink-0" />
+          <div className="py-3 px-3.5 rounded-xl bg-lime-500/10 border border-lime-400/35 text-[#e4e1e7] font-mono text-xs sm:text-sm flex items-center gap-2.5">
+            <Webhook size={16} className="text-lime-300 flex-shrink-0" />
             <span>POSTs to a public HTTPS endpoint. Private and local addresses are blocked.</span>
+          </div>
+        </div>
+      )}
+
+      {node.type === 'transform' && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+              Transform Mode (Instant & Zero-Cost)
+            </label>
+            <select
+              value={settings.mode || 'template'}
+              onChange={(e) => handleChange('mode', e.target.value)}
+              className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-fuchsia-200 ${controlTextClass} font-mono focus:outline-none`}
+            >
+              <option value="template" className="bg-[#0b0d14]">Template Formatter (Interpolate variables)</option>
+              <option value="jsonPath" className="bg-[#0b0d14]">Extract JSON Path (e.g. data.items.0.title)</option>
+              <option value="regexExtract" className="bg-[#0b0d14]">Regex Extract Matches</option>
+              <option value="regexReplace" className="bg-[#0b0d14]">Regex Find & Replace</option>
+              <option value="bullets" className="bg-[#0b0d14]">Clean Bullet List</option>
+              <option value="trim" className="bg-[#0b0d14]">Clean Whitespace & Blank Lines</option>
+              <option value="truncate" className="bg-[#0b0d14]">Truncate to Max Words</option>
+              <option value="uppercase" className="bg-[#0b0d14]">UPPERCASE</option>
+              <option value="lowercase" className="bg-[#0b0d14]">lowercase</option>
+              <option value="stats" className="bg-[#0b0d14]">Text Statistics (Words / Lines / Reading Time)</option>
+            </select>
+          </div>
+
+          <VariableField
+            label="Source Input (leave blank to auto-use upstream)"
+            value={settings.input || ''}
+            onChange={(val) => handleChange('input', val)}
+            placeholder="e.g. {{AI.output}} or custom template with {{vars.topic}}"
+            multiline
+            rows={4}
+            currentNodeId={node.id}
+            earlierSteps={earlierSteps}
+            allNodes={allNodes}
+            stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
+          />
+
+          {(settings.mode === 'jsonPath' ||
+            settings.mode === 'regexExtract' ||
+            settings.mode === 'regexReplace') && (
+            <div>
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                {settings.mode === 'jsonPath' ? 'JSON Dot Path' : 'Regex Pattern'}
+              </label>
+              <input
+                type="text"
+                value={settings.pattern || ''}
+                onChange={(e) => handleChange('pattern', e.target.value)}
+                placeholder={
+                  settings.mode === 'jsonPath'
+                    ? 'e.g. results.0.summary'
+                    : 'e.g. https?://\\S+'
+                }
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-cyan-100 placeholder-zinc-500 ${controlTextClass} font-mono focus:outline-none`}
+              />
+            </div>
+          )}
+
+          {settings.mode === 'regexReplace' && (
+            <div>
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                Replacement Text
+              </label>
+              <input
+                type="text"
+                value={settings.replacement || ''}
+                onChange={(e) => handleChange('replacement', e.target.value)}
+                placeholder="Replacement string (supports $1 capture groups)"
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-cyan-100 placeholder-zinc-500 ${controlTextClass} font-mono focus:outline-none`}
+              />
+            </div>
+          )}
+
+          {settings.mode === 'truncate' && (
+            <div>
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                Max Word Count
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={5000}
+                value={settings.maxWords || '120'}
+                onChange={(e) => handleChange('maxWords', e.target.value)}
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-amber-200 ${controlTextClass} font-mono focus:outline-none`}
+              />
+            </div>
+          )}
+
+          <div className="py-3 px-3.5 rounded-xl bg-fuchsia-500/10 border border-fuchsia-400/30 text-[#e4e1e7] font-mono text-xs sm:text-sm flex items-center gap-2.5">
+            <Wand2 size={16} className="text-fuchsia-300 flex-shrink-0" />
+            <span>Runs locally in milliseconds with zero API cost. Great for cleaning or extracting structured data.</span>
+          </div>
+        </div>
+      )}
+
+      {node.type === 'merge' && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+              Merge Strategy
+            </label>
+            <select
+              value={settings.mode || 'sections'}
+              onChange={(e) => handleChange('mode', e.target.value)}
+              className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-teal-200 ${controlTextClass} font-mono focus:outline-none`}
+            >
+              <option value="sections" className="bg-[#0b0d14]">Markdown Sections (### Step Label)</option>
+              <option value="join" className="bg-[#0b0d14]">Join Raw Outputs</option>
+              <option value="numbered" className="bg-[#0b0d14]">Numbered List</option>
+              <option value="json" className="bg-[#0b0d14]">Combined JSON Object</option>
+              <option value="template" className="bg-[#0b0d14]">Custom Merge Template</option>
+            </select>
+          </div>
+
+          {settings.mode !== 'json' && settings.mode !== 'template' && (
+            <div>
+              <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+                Separator (supports \n)
+              </label>
+              <input
+                type="text"
+                value={settings.separator ?? '\\n\\n---\\n\\n'}
+                onChange={(e) => handleChange('separator', e.target.value)}
+                placeholder="\\n\\n---\\n\\n"
+                className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-teal-100 placeholder-zinc-500 ${controlTextClass} font-mono focus:outline-none`}
+              />
+            </div>
+          )}
+
+          {settings.mode === 'template' && (
+            <VariableField
+              label="Custom Merge Template"
+              value={settings.template || ''}
+              onChange={(val) => handleChange('template', val)}
+              placeholder="e.g. Web: {{Web Search.output}}\n\nAcademic: {{Scholar.output}}"
+              multiline
+              rows={4}
+              currentNodeId={node.id}
+              earlierSteps={earlierSteps}
+              allNodes={allNodes}
+              stepOutputs={stepOutputs}
+              workflowVariables={workflowVariables}
+              textComfortMode={textComfortMode}
+            />
+          )}
+
+          <div className="py-3 px-3.5 rounded-xl bg-teal-500/10 border border-teal-400/30 text-[#e4e1e7] font-mono text-xs sm:text-sm flex items-center gap-2.5">
+            <GitMerge size={16} className="text-teal-300 flex-shrink-0" />
+            <span>Automatically combines outputs from all incoming connected branches into a single unified payload.</span>
           </div>
         </div>
       )}
@@ -4082,16 +5128,18 @@ export function StepSettingsForm({
             earlierSteps={earlierSteps}
             allNodes={allNodes}
             stepOutputs={stepOutputs}
+            workflowVariables={workflowVariables}
+            textComfortMode={textComfortMode}
           />
 
           <div>
-            <label className="text-[10px] font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
+            <label className="text-xs font-mono font-extrabold uppercase tracking-wider wf-label-gradient block mb-1.5">
               Operator Rule
             </label>
             <select
               value={settings.operator || 'contains'}
               onChange={(e) => handleChange('operator', e.target.value)}
-              className="wf-field-box w-full rounded-xl px-3 py-2 text-emerald-200 text-xs font-mono focus:outline-none"
+              className={`wf-field-box w-full min-h-[44px] rounded-xl px-3.5 py-2 text-emerald-200 ${controlTextClass} font-mono focus:outline-none`}
             >
               <option value="contains" className="bg-[#0e0e12]">Contains</option>
               <option value="notContains" className="bg-[#0e0e12]">Does not contain</option>
@@ -4113,6 +5161,8 @@ export function StepSettingsForm({
               earlierSteps={earlierSteps}
               allNodes={allNodes}
               stepOutputs={stepOutputs}
+              workflowVariables={workflowVariables}
+              textComfortMode={textComfortMode}
             />
           )}
         </div>
